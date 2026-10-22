@@ -121,7 +121,7 @@ DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由*
 node build.mjs        # 从源码合成 client.js
 node preview.mjs      # 生成 whale-preview.html
 npm run check         # 语法检查
-npm test              # 十四组 126 项
+npm test              # 十四组 127 项
 node build.mjs --check
 npm pack --ignore-scripts
 ```

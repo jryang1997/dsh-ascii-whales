@@ -219,6 +219,6 @@
 
 ### 验证
 
-`reef.test.js` 13 项（同种子确定性、带域与中央留空、石群不重叠/外接圆、缩放、圆形障碍、假 target 绘制与 fade/NaN），`water.test.js` 16 项（拍点判定、滑行静默、寿命/扩张/上限/尾点、假 target 绘制与 fade），`motion-circle.test.js` 6 项（圆形障碍安装与推出、路线目标、resize、3 处礁石 60 秒逐帧身体站点不进入、矩形与圆混装）。全量 14 组 126 项通过；`node build.mjs --check` 通过。
+`reef.test.js` 13 项（同种子确定性、带域与中央留空、石群不重叠/外接圆、缩放、圆形障碍、假 target 绘制与 fade/NaN），`water.test.js` 16 项（拍点判定、滑行静默、寿命/扩张/上限/尾点、假 target 绘制与 fade），`motion-circle.test.js` 7 项（圆形障碍安装与推出、路线目标、resize、3 处礁石 60 秒逐帧身体站点不进入、矩形与圆混装、390×844 八鲸双礁压力）。全量 14 组 127 项通过；`node build.mjs --check` 通过。
 
 浏览器验收（headless Chrome + CDP，预览页，非真实 DSH 窗口）：礁石/水波开关、明暗主题、磨砂阅读区叠加均无页面异常；`docs/reefs.png` 与 `docs/ripples.gif` 即该页截图。边界：礁石在真实 DSH 中会被阅读栏玻璃的羽化边缘裁掉一部分，这是刻意的可读性取舍；未在真实 DSH 窗口测量帧率。

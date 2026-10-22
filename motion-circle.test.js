@@ -113,3 +113,22 @@ test('rectangles and circles can be installed together without changing either c
     assert.ok(Number.isFinite(whale.x) && Number.isFinite(whale.y));
   }
 });
+
+test('a crowded phone-sized sea still keeps eight whales clear of two reefs', () => {
+  const scene = makeScene(8, 390, 844);
+  const reefs = [{ x: 30, y: 300, radius: 26 }, { x: 362, y: 520, radius: 28 }];
+  setSceneObstacles(scene, reefs);
+  for (let frame = 0; frame < 45 * 60; frame++) {
+    stepScene(scene, 1 / 60, 1);
+    if (frame % 20) continue;
+    for (const whale of scene.whales) {
+      assert.ok([whale.x, whale.y, whale.heading, whale.turn, whale.speed].every(Number.isFinite));
+      for (const reef of reefs) {
+        for (const distance of stationDistances(whale, reef)) {
+          assert.ok(distance >= reef.radius + CELL_CLEARANCE - 1e-6,
+            `frame ${frame}: station ${distance.toFixed(2)} inside reef ${reef.x},${reef.y}`);
+        }
+      }
+    }
+  }
+});
