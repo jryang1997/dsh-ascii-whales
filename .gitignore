@@ -7,6 +7,9 @@ node_modules/
 # 第三方参考实现，仅本地用于思路对照
 ascii-sharks-reference/
 
+# 并行代理的本地 git worktree
+.agents/
+
 # 构建产物：安装包通过 Releases 分发
 *.tgz
 

@@ -3,7 +3,7 @@
   "version": "0.11.0",
   "private": true,
   "type": "module",
-  "description": "Five whale species with shaded cells or ASCII fill, fixed reef rocks the school steers around, tail-stroke ripples, frosted panes for the reading column and the input box, optional input-box avoidance, a whale-size slider, and in-place config updates that never restart the school.",
+  "description": "Five whale species with shaded cells or ASCII fill; fixed reef rocks the school steers around, tail-stroke ripples, frosted glass panes with whales blurred behind them, optional input-box avoidance, a whale-size slider, and in-place config updates that never restart the school.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -32,6 +32,7 @@
     "locale/*.json",
     "icon.svg",
     "README.md",
+    "CHANGELOG.md",
     "SOURCE-NOTES.md",
     "build.mjs",
     "model.test.js",
