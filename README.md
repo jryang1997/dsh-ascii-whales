@@ -1,5 +1,7 @@
 # 文字蓝鲸
 
+> 感谢 [ascii-sharks](https://github.com/stackedlol/ascii-sharks)——最初的画面灵感来自这个项目。本插件是独立实现，未复制它的源码或素材。
+
 [![DSH plugin](https://img.shields.io/badge/DSH%20plugin-0.10.0-2e6f9e)](https://github.com/jryang1997/dsh-ascii-whales/releases/latest)
 
 DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由**文字**组成的鲸鱼在字格海面上巡游。默认文字是「探索未至之境」，可以换成你自己的 40 个字。没有图片素材，没有外部请求——每一格都是一个字符或一块深色字格。
@@ -125,4 +127,4 @@ npm pack --ignore-scripts
 | [WHALE-REFERENCES.md](./WHALE-REFERENCES.md) | 五种鲸类俯视造型的照片依据 |
 | [docs/archive](./docs/archive) | 早期版本的验证截图 |
 
-鲸体、代码与 [图标](./icon.svg) 为本插件原创。算法思路参考 [ascii-sharks](https://github.com/stackedlol/ascii-sharks)，未复制其源码或素材。真实参考照片、验证证据和第三方参考仓库保留在本地，不随仓库发布（见 [.gitignore](./.gitignore)）。
+鲸体、代码与 [图标](./icon.svg) 为本插件原创；灵感致谢见顶部。真实参考照片、验证证据和第三方参考仓库保留在本地，不随仓库发布（见 [.gitignore](./.gitignore)）。
