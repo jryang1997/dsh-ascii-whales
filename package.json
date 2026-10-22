@@ -55,15 +55,16 @@
     "water.test.js",
     "motion-circle.test.js",
     "dive-water.test.js",
-    "dive-geometry.test.js"
+    "dive-geometry.test.js",
+    "demo-card.test.js"
   ],
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.5"
   },
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test model.test.js motion.test.js regression.test.js rig.test.js shading.test.js overhead.test.js glass.test.js species.test.js surface.test.js update.test.js content-glass.test.js composer.test.js spout.test.js dive.test.js random-dive.test.js reef.test.js water.test.js motion-circle.test.js dive-water.test.js dive-geometry.test.js",
-    "check": "node --check index.js && node --check rig.js && node --check shading.js && node --check motion.js && node --check model.js && node --check glass.js && node --check engine.js && node --check settings.js && node --check client.js && node --check build.mjs && node --check model.test.js && node --check motion.test.js && node --check regression.test.js && node --check rig.test.js && node --check shading.test.js && node --check overhead.test.js && node --check glass.test.js && node --check species.js && node --check species.test.js && node --check preview.mjs && node --check surface.js && node --check surface.test.js && node --check update.test.js && node --check content-glass.test.js && node --check composer.test.js && node --check spout.js && node --check spout.test.js && node --check dive.test.js && node --check random-dive.test.js && node --check reef.js && node --check water.js && node --check reef.test.js && node --check water.test.js && node --check motion-circle.test.js && node --check dive-water.test.js && node --check dive-geometry.test.js"
+    "test": "node --test model.test.js motion.test.js regression.test.js rig.test.js shading.test.js overhead.test.js glass.test.js species.test.js surface.test.js update.test.js content-glass.test.js composer.test.js spout.test.js dive.test.js random-dive.test.js reef.test.js water.test.js motion-circle.test.js dive-water.test.js dive-geometry.test.js demo-card.test.js",
+    "check": "node --check index.js && node --check rig.js && node --check shading.js && node --check motion.js && node --check model.js && node --check glass.js && node --check engine.js && node --check settings.js && node --check client.js && node --check build.mjs && node --check model.test.js && node --check motion.test.js && node --check regression.test.js && node --check rig.test.js && node --check shading.test.js && node --check overhead.test.js && node --check glass.test.js && node --check species.js && node --check species.test.js && node --check preview.mjs && node --check surface.js && node --check surface.test.js && node --check update.test.js && node --check content-glass.test.js && node --check composer.test.js && node --check spout.js && node --check spout.test.js && node --check dive.test.js && node --check random-dive.test.js && node --check reef.js && node --check water.js && node --check reef.test.js && node --check water.test.js && node --check motion-circle.test.js && node --check dive-water.test.js && node --check dive-geometry.test.js && node --check demo-card.test.js"
   },
   "dsh": {
     "bundle": {

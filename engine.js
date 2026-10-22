@@ -27,6 +27,16 @@ const CONTENT_MAX_AREA_RATIO = 0.55;
 const CONTENT_MAX_HEIGHT_RATIO = 0.9;
 const CONTENT_MIN_ALPHA = 0.9;
 
+// The injected demo card (settings preview): one near-opaque rounded body plus
+// grey text lines, standing in for a DSH content card that the preview canvas
+// has no DOM hook for. Two theme variants, like the material below.
+const DEMO_CARD_BODY_DARK = 'rgba(24, 26, 31, 0.96)';
+const DEMO_CARD_BODY_LIGHT = 'rgba(252, 253, 254, 0.96)';
+const DEMO_LINE_DARK = 'rgba(203, 217, 231, 0.34)';
+const DEMO_LINE_LIGHT = 'rgba(45, 66, 88, 0.32)';
+const DEMO_LINE_INSET = 14;
+const DEMO_LINE_HEIGHT = 7;
+
 
 // Which option belongs to which kind of work. A group only rebuilds its own
 // part; `live` options are read straight from the config while painting, so
@@ -211,10 +221,17 @@ function normalizeLayerConfig(value) {
  * painter and the draw loop read the new opacity/speed straight away instead of
  * being rebuilt.
  */
-export function createWhaleLayer(canvas, initialConfig) {
+export function createWhaleLayer(canvas, initialConfig, options = {}) {
   const ink = canvas.getContext('2d');
   if (!ink) return { update() {}, dispose() {} };
   const config = normalizeLayerConfig(initialConfig);
+  // Optional preview injection: `demoCard` places one card by canvas ratios
+  // (0..1) with a pixel radius. With it, measure() never reads the DOM — the
+  // settings preview has no conversation hooks to find, yet the glass and
+  // avoidance options still need a card to act on. Without it every path below
+  // is byte-for-byte the default one; Overlay and the standalone preview never
+  // pass a third argument.
+  const demo = options.demoCard || null;
   const scenerySeed = Math.floor(Math.random() * 0x100000000) >>> 0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
@@ -360,6 +377,46 @@ export function createWhaleLayer(canvas, initialConfig) {
     setSceneObstacles(scene, obstacles);
   }
 
+  /** The demo card as a pixel rectangle for the current canvas size. */
+  function demoCardRect() {
+    if (!demo || !width || !height) return null;
+    const left = demo.x * width, top = demo.y * height;
+    const cardWidth = demo.width * width, cardHeight = demo.height * height;
+    if (!(cardWidth >= 1) || !(cardHeight >= 1)) return null;
+    return { left, top, width: cardWidth, height: cardHeight,
+      radius: Number.isFinite(demo.radius) ? demo.radius : 0 };
+  }
+
+  /**
+   * Preview measurement: the injected ratios replace every DOM read. The card
+   * is both the one glass pane and the avoidance target, so those two options
+   * show their real effect inside the settings preview; with both off the sea
+   * is simply open water and nothing is painted for the card. Resizes need no
+   * extra bookkeeping: every resize invalidates the measurement, and the ratios
+   * are re-applied to the new canvas size.
+   */
+  function measureDemoCard() {
+    const card = demoCardRect();
+    if (card && config.glass) {
+      panes = glassContentPanes({ canvas: { left: 0, top: 0, width, height }, boxes: [card], max: 1 });
+      tone = glassContentTone(config.glassStrength,
+        { dark: document.body.hasAttribute('data-ds-dark-theme'), reducedTransparency: reducedTransparency.matches });
+    }
+    if (card && config.composerAvoid) {
+      // Same shapes as the real composer: the margin obstacle steers the
+      // school, and the 8px rectangle guarantees no ink on the card even from
+      // a transiently bent fluke.
+      composerCard = { card, canvas: { left: 0, top: 0, width, height } };
+      const left = Math.max(0, card.left - 8);
+      const top = Math.max(0, card.top - 8);
+      const right = Math.min(width, card.left + card.width + 8);
+      const bottom = Math.min(height, card.top + card.height + 8);
+      avoidRect = right - left > 0 && bottom - top > 0
+        ? { x: left, y: top, width: right - left, height: bottom - top } : null;
+    }
+    applySceneObstacles();
+  }
+
   /**
    * Re-read the conversation geometry: one box list for the content glass, plus
    * the input card for avoidance.
@@ -375,6 +432,7 @@ export function createWhaleLayer(canvas, initialConfig) {
     composerCard = null;
     avoidRect = null;
     if (!width || !height || !scene || disposed) return;
+    if (demo) { measureDemoCard(); return; }
     if (!config.glass && !config.composerAvoid) {
       applySceneObstacles();
       return;
@@ -418,7 +476,6 @@ export function createWhaleLayer(canvas, initialConfig) {
     resolveDepthGrid(projected, grid, scene.triangles, scene.decals);
     // Reduced transparency withholds the material, not the readability work: the
     // panes still hold the glyphs out, they just paint no glass over the words.
-    const frosted = Boolean(tone) && tone.mode === 'frost';
     const visiblePanes = tone ? panes : [];
     const openWater = !visiblePanes.length && !avoidRect;
     const featherOf = pane => pane.feather ?? (tone ? tone.feather : 10) ?? 10;
@@ -440,12 +497,21 @@ export function createWhaleLayer(canvas, initialConfig) {
     if (config.ripples) drawWater(ink, water, scenery);
     paintGlyphs(ink, fade);
     spout.paint(ink, fade);
-    if (openWater || !frosted || !visiblePanes.length) return;
-    if (!seaBuffers(tone)) return;
-    paintBlurredSea(tone);
-    // One shared sea image for every pane, then the cheap per-pane surface work.
-    paintPaneSeaUnion(visiblePanes, tone);
-    for (const pane of visiblePanes) paintPaneSurface(pane, tone);
+    // The demo card is the preview's stand-in for a DSH card: whale ink is
+    // already held out of it by the fade above, the card body covers the open
+    // sea, the ordinary glass pipeline stacks on the body, and the text lines
+    // stay crisp on top — the same composite the real overlay produces over
+    // the DOM. Avoidance mode skips the material and keeps body plus lines.
+    if (demo && (config.glass || config.composerAvoid)) {
+      const card = demoCardRect();
+      if (card) {
+        paintDemoCardBody(card);
+        paintGlassMaterial();
+        paintDemoCardText(card);
+      }
+      return;
+    }
+    paintGlassMaterial();
   }
 
   /**
@@ -511,6 +577,51 @@ export function createWhaleLayer(canvas, initialConfig) {
     ink.fillStyle = shade;
     ink.fillRect(panel.x, panel.y + panel.height - material.shadeHeight, panel.width, material.shadeHeight);
     ink.restore();
+  }
+
+  /**
+   * The whole glass pipeline behind one guard: nothing to paint unless the
+   * material is frost and there is a pane. This is the exact condition the draw
+   * tail used to test inline (open water / clear mode / no pane), so the default
+   * path paints the same calls in the same order as before; the demo card reuses
+   * it between its card body and its text lines.
+   */
+  function paintGlassMaterial() {
+    if (!tone || tone.mode !== 'frost' || !panes.length) return;
+    if (!seaBuffers(tone)) return;
+    paintBlurredSea(tone);
+    // One shared sea image for every pane, then the cheap per-pane surface work.
+    paintPaneSeaUnion(panes, tone);
+    for (const pane of panes) paintPaneSurface(pane, tone);
+  }
+
+  /** The demo card's own body: one near-opaque rounded fill under the glass. */
+  function paintDemoCardBody(card) {
+    glassRoundedPath(ink, { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius });
+    ink.fillStyle = document.body.hasAttribute('data-ds-dark-theme') ? DEMO_CARD_BODY_DARK : DEMO_CARD_BODY_LIGHT;
+    ink.fill();
+  }
+
+  /**
+   * Four grey text lines, the last one 70% wide — the "text stays crisp" half
+   * of the demo. A card too short for four lines (the narrow-screen preview)
+   * draws as many as fit instead of overlapping them.
+   */
+  function paintDemoCardText(card) {
+    const inner = Math.max(0, card.height - DEMO_LINE_INSET * 2);
+    const count = Math.min(4, Math.floor(inner / DEMO_LINE_HEIGHT));
+    if (count < 1 || !(card.width > DEMO_LINE_INSET * 2 + 2)) return;
+    const step = count > 1 ? (inner - DEMO_LINE_HEIGHT) / (count - 1) : 0;
+    ink.fillStyle = document.body.hasAttribute('data-ds-dark-theme') ? DEMO_LINE_DARK : DEMO_LINE_LIGHT;
+    for (let line = 0; line < count; line++) {
+      const width = (card.width - DEMO_LINE_INSET * 2) * (line === count - 1 ? 0.7 : 1);
+      glassRoundedPath(ink, {
+        x: card.left + DEMO_LINE_INSET,
+        y: card.top + DEMO_LINE_INSET + step * line,
+        width, height: DEMO_LINE_HEIGHT, radius: DEMO_LINE_HEIGHT / 2,
+      });
+      ink.fill();
+    }
   }
 
   function frame(now) {

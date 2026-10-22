@@ -289,10 +289,16 @@ function harness(options = {}) {
       || (Boolean(options.reduceTransparency) && query.includes('reduced-transparency')),
     addEventListener() {}, removeEventListener() {} });
   function install() {
-    for (const key of ['window', 'document', 'requestAnimationFrame', 'cancelAnimationFrame', 'ResizeObserver', 'MutationObserver', 'getComputedStyle']) {
+    for (const key of ['window', 'document', 'requestAnimationFrame', 'cancelAnimationFrame', 'ResizeObserver', 'MutationObserver', 'getComputedStyle', 'performance']) {
       saved[key] = globalThis[key];
     }
     globalThis.window = { devicePixelRatio: 1, matchMedia: media, addEventListener() {}, removeEventListener() {} };
+    // The engine throttles paints with `now - lastPaint`, and update() stamps
+    // lastPaint with performance.now(). Leaving that on the real process clock
+    // races it against the stub's step clock: under load the real clock runs
+    // ahead of the stepped one and a paused layer never repaints. One clock for
+    // everything makes the 30fps throttle and the pause deterministic.
+    globalThis.performance = { now: () => raf.now };
     globalThis.document = {
       hidden: false, body: { hasAttribute: () => false },
       querySelectorAll: selector => {
