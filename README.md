@@ -2,9 +2,9 @@
 
 > 感谢 [ascii-sharks](https://github.com/stackedlol/ascii-sharks)——最初的画面灵感来自这个项目。本插件是独立实现，未复制它的源码或素材。
 
-[![DSH plugin](https://img.shields.io/badge/DSH%20plugin-0.10.0-2e6f9e)](https://github.com/jryang1997/dsh-ascii-whales/releases/latest)
+[![DSH plugin](https://img.shields.io/badge/DSH%20plugin-0.11.0-2e6f9e)](https://github.com/jryang1997/dsh-ascii-whales/releases/latest)
 
-DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由**文字**组成的鲸鱼在字格海面上巡游。默认文字是「探索未至之境」，可以换成你自己的 40 个字。没有图片素材，没有外部请求——每一格都是一个字符或一块深色字格。
+DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由**文字**组成的鲸鱼在字格海面上巡游。默认文字是「探索未至之境」，可以换成你自己的 40 个字。海面上随机散布着几处固定的礁石，鲸鱼会主动绕开；主动甩尾时，尾鳍会推出一圈向外扩散的涟漪。没有图片素材，没有外部请求——每一格都是一个字符或一块深色字格。
 
 ![对话里的鲸鱼：正文背后一整块磨砂玻璃，输入框也盖了一层](docs/hero.png)
 
@@ -29,6 +29,7 @@ DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由*
 - **整条鲸鱼是字格**：一格一个字。自定义文字保留你的原文，ASCII 模式按明暗选疏密；彩色字格再给每格铺上深浅底色。
 - **正俯视，五种鲸类**：蓝鲸、座头鲸、抹香鲸、长须鲸、弓头鲸，各有体形与动作参数，可混合或单选。
 - **真的在游**：尾柄与尾鳍上下摆动，连续摆尾后自然过渡到滑行；转向带身体跟随，不是贴图平移。
+- **礁石与水波**：每次加载随机生成 2–3 处固定礁石（避开正文），鲸鱼沿身体轮廓提前转向、主动绕开；主动甩尾时尾鳍推出涟漪与水花，滑行时安静。
 - **磨砂阅读区**：正文背后一整块圆角玻璃，鲸影只透出模糊轮廓；强度 0–1，正文对比度按 WCAG 预算守住。
 - **输入框毛玻璃 / 鱼群避让**（互斥二选一）：框内鲸鱼变成模糊剪影，或整群把输入框当障碍绕开，身体不穿框。
 - **鲸鱼大小 0.55–1.55**：只改体长，游速与摆尾节奏不变。
@@ -51,6 +52,14 @@ DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由*
 
 开启后鲸鱼把输入框当作障碍绕开，框内始终干净；与「输入框毛玻璃」互斥，二选一。
 
+## 礁石与水波
+
+| 礁石：鲸鱼主动绕开 | 甩尾涟漪 |
+| :---: | :---: |
+| <img src="docs/reefs.png" width="410"> | <img src="docs/ripples.gif" width="410"> |
+
+礁石每次加载随机生成 2–3 处，位置之后固定不动；只落在阅读栏外侧的字格海面，鲸鱼按身体五个轮廓站点提前转向，不会穿石。水波只在鲸鱼**主动上下甩尾**时出现：每完成一拍，尾鳍位置推出一圈先快后慢的涟漪，并带几颗短暂的溅落点；滑行阶段不产生。两者都遵守阅读区玻璃与输入框的字形留白，不会压到文字上，可在设置里分别关闭。
+
 ## 体长
 
 ![鲸鱼大小 0.55 / 1.00 / 1.55](docs/sizes.png)
@@ -69,7 +78,7 @@ DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由*
 | 填充内容 | 自定义文字 / ASCII（两者可自由组合） |
 | 鱼身文字 | ≤ 40 个字符，支持中文、英文、emoji、组合字形 |
 | 海洋色调 | 深海蓝 / 晴空蓝 / 靛蓝 |
-| 开关 | 显示蓝鲸、减淡阅读区域、圆角毛玻璃、输入框毛玻璃 ⇄ 鱼群避让 |
+| 开关 | 显示蓝鲸、减淡阅读区域、圆角毛玻璃、输入框毛玻璃 ⇄ 鱼群避让、礁石、甩尾水波 |
 
 <details>
 <summary>设置页截图</summary>
@@ -80,15 +89,15 @@ DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由*
 
 ## 安装
 
-1. 从 [Releases](https://github.com/jryang1997/dsh-ascii-whales/releases/latest) 下载 `local-dsh-ascii-ocean-0.10.0.tgz`；
+1. 从 [Releases](https://github.com/jryang1997/dsh-ascii-whales/releases/latest) 下载 `local-dsh-ascii-ocean-0.11.0.tgz`；
 2. 用 DSH 插件管理器安装；
 3. 打开 **插件 → 文字蓝鲸**，调整后点**保存**。
 
-包名 `@local/dsh-ascii-ocean`，Host 行 id `ascii-whale-background`。从 0.9.0 升级只新增两个默认关闭的开关，旧设置全部沿用。
+包名 `@local/dsh-ascii-ocean`，Host 行 id `ascii-whale-background`。从 0.10.0 升级新增礁石与甩尾水波两个默认开启的开关，旧设置全部沿用。
 
 ## 先看效果
 
-直接打开 [whale-preview.html](./whale-preview.html)：四种组合对照 + 实时预览（鲸类、渲染样式、填充内容、鲸鱼大小、速度、玻璃、深浅主题），底部有个假输入框可单独演示毛玻璃与避让。它使用插件的正式渲染器，不需要起服务器。
+直接打开 [whale-preview.html](./whale-preview.html)：四种组合对照 + 实时预览（鲸类、渲染样式、填充内容、鲸鱼大小、速度、玻璃、深浅主题），底部有个假输入框可单独演示毛玻璃与避让，还可以开关礁石与甩尾水波。它使用插件的正式渲染器，不需要起服务器。
 
 ## 实现一览
 
@@ -96,7 +105,9 @@ DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由*
 | --- | --- |
 | [species.js](./species.js) | 五种鲸类的体型与动作参数 |
 | [model.js](./model.js) | 表面、投影、字格覆盖、配置指纹 |
-| [motion.js](./motion.js) | 巡游、转向、滑行、状态迁移、输入框避让 |
+| [motion.js](./motion.js) | 巡游、转向、滑行、状态迁移、输入框与礁石避让 |
+| [reef.js](./reef.js) | 固定随机礁石场、字格石群绘制、圆形障碍 |
+| [water.js](./water.js) | 甩尾判定、涟漪扩散与水花绘制 |
 | [rig.js](./rig.js) | 海面内转向与上下尾拍分开计算 |
 | [shading.js](./shading.js) | 背部隆起与水深字色 |
 | [glass.js](./glass.js) | 阅读区 / 输入框面板几何与材质 |
@@ -110,7 +121,7 @@ DSH（DeepSeek Harness）对话页的背景层：从正上方俯看，一群由*
 node build.mjs        # 从源码合成 client.js
 node preview.mjs      # 生成 whale-preview.html
 npm run check         # 语法检查
-npm test              # 十一组 91 项
+npm test              # 十四组 126 项
 node build.mjs --check
 npm pack --ignore-scripts
 ```
