@@ -1,9 +1,9 @@
 {
   "name": "@local/dsh-ascii-ocean",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
-  "description": "Five whale species with shaded cells or ASCII fill, frosted panes for the reading column and the input box, optional input-box avoidance, a whale-size slider, and in-place config updates that never restart the school.",
+  "description": "Five whale species with shaded cells or ASCII fill; every content card and the input box is frosted glass with whales blurred behind it, plus optional input-box avoidance, a whale-size slider, and in-place config updates that never restart the school.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -27,6 +27,7 @@
     "locale/*.json",
     "icon.svg",
     "README.md",
+    "CHANGELOG.md",
     "SOURCE-NOTES.md",
     "build.mjs",
     "model.test.js",
