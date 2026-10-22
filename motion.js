@@ -129,14 +129,21 @@ function motionHullReach(whale) {
 
 /** Soft boundary of one obstacle for one point, grown by that point's allowance. */
 function motionObstacleBounds(obstacle, allowance) {
+  if (obstacle.circle) {
+    const reach = obstacle.radius + allowance;
+    return { left: obstacle.x - reach, right: obstacle.x + reach,
+      top: obstacle.y - reach, bottom: obstacle.y + reach };
+  }
   return { left: obstacle.x - allowance, right: obstacle.x + obstacle.width + allowance,
     top: obstacle.y - allowance, bottom: obstacle.y + obstacle.height + allowance };
 }
 
 /**
- * Obstacles are canvas-space rectangles the school must swim around. Accept
- * anything rectangular and finite; unusable entries are dropped so a broken
- * measurement can never push a whale to NaN.
+ * Obstacles are canvas-space shapes the school must swim around. The reading
+ * column and the input card are rectangles; reefs are circles, because a
+ * bounding box would make the school dodge the empty corners of a round rock.
+ * Anything unusable is dropped so a broken measurement can never push a whale
+ * to NaN.
  */
 function motionObstacleNormalize(obstacles) {
   if (!Array.isArray(obstacles)) return [];
@@ -145,9 +152,17 @@ function motionObstacleNormalize(obstacles) {
     if (!obstacle) continue;
     const x = Number(obstacle.x), y = Number(obstacle.y);
     const width = Number(obstacle.width), height = Number(obstacle.height);
+    const radius = Number(obstacle.radius);
+    // No extent plus a positive radius means a circle (see reef.js). A rect may
+    // also carry a corner radius, so the extent check decides the shape.
+    if (!(width > 0) && !(height > 0)) {
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(radius) || !(radius > 0)) continue;
+      normalized.push({ x, y, radius, circle: true });
+      continue;
+    }
     if (![x, y, width, height].every(Number.isFinite) || !(width > 0) || !(height > 0)) continue;
     normalized.push({ x, y, width, height,
-      radius: motionLimit(motionFinite(Number(obstacle.radius), 0), 0, Math.min(width, height) / 2) });
+      radius: motionLimit(motionFinite(radius, 0), 0, Math.min(width, height) / 2) });
   }
   return normalized;
 }
@@ -160,6 +175,17 @@ function motionObstacleNormalize(obstacles) {
  * glass, so the steering has to anticipate rather than react *inside* it.
  */
 function motionObstacleApproach(obstacle, allowance, x, y, band) {
+  if (obstacle.circle) {
+    // Radial signed distance: positive inside the rock plus the hull's own
+    // clearance, negative outside and still inside the turning band.
+    const dx = x - obstacle.x, dy = y - obstacle.y;
+    const distance = Math.hypot(dx, dy);
+    const clearance = obstacle.radius + allowance;
+    const gap = distance - clearance;
+    if (!(gap < band)) return null;
+    if (distance > 1e-6) return { depth: -gap, nx: dx / distance, ny: dy / distance };
+    return { depth: -gap, nx: 1, ny: 0 };
+  }
   const { left, right, top, bottom } = motionObstacleBounds(obstacle, allowance);
   const insideX = x > left && x < right, insideY = y > top && y < bottom;
   if (insideX && insideY) {
@@ -196,6 +222,7 @@ function motionObstacleApproachBody(whale, obstacle, band) {
 
 /** True when this station's silhouette disc reaches into the obstacle bounds. */
 function motionHullInside(obstacle, x, y, radius) {
+  if (obstacle.circle) return Math.hypot(x - obstacle.x, y - obstacle.y) < obstacle.radius + radius;
   const { left, right, top, bottom } = motionObstacleBounds(obstacle, radius);
   return x > left && x < right && y > top && y < bottom;
 }
@@ -222,6 +249,31 @@ function motionPushOut(whale, obstacles, width, height) {
     let changed = false;
     for (const obstacle of obstacles) {
       const hull = motionBodyHull(whale);
+      if (obstacle.circle) {
+        // A round rock has no sides to slide along, so the rigid move is radial:
+        // away from the rock centre, far enough for the last-reaching station.
+        const centreX = motionFinite(whale.x, 0), centreY = motionFinite(whale.y, 0);
+        let dx = centreX - obstacle.x, dy = centreY - obstacle.y;
+        let length = Math.hypot(dx, dy);
+        if (!(length > 0.001)) {
+          dx = Math.cos(motionFinite(whale.heading, 0));
+          dy = Math.sin(motionFinite(whale.heading, 0));
+          length = 1;
+        }
+        const nx = dx / length, ny = dy / length;
+        let shift = 0;
+        for (let i = 0; i < hull.length; i += 3) {
+          const clearance = obstacle.radius + hull[i + 2];
+          if (!(Math.hypot(hull[i] - obstacle.x, hull[i + 1] - obstacle.y) < clearance)) continue;
+          shift = Math.max(shift, clearance - ((hull[i] - obstacle.x) * nx + (hull[i + 1] - obstacle.y) * ny));
+        }
+        if (shift > 0) {
+          whale.x = motionLimit(centreX + nx * shift, 0, width);
+          whale.y = motionLimit(centreY + ny * shift, 0, height);
+          moved = changed = true;
+        }
+        continue;
+      }
       let leftShift = 0, rightShift = 0, upShift = 0, downShift = 0, inside = false;
       for (let i = 0; i < hull.length; i += 3) {
         const x = hull[i], y = hull[i + 1], radius = hull[i + 2];
@@ -263,6 +315,16 @@ function motionAvoidTarget(whale, x, y, obstacles, width, height) {
   if (!obstacles || !obstacles.length) return { x, y };
   const allowance = motionHullReach(whale) + Math.max(8, motionFinite(whale.length, 0) * 0.08);
   for (const obstacle of obstacles) {
+    if (obstacle.circle) {
+      const clearance = obstacle.radius + allowance;
+      const dx = x - obstacle.x, dy = y - obstacle.y;
+      const distance = Math.hypot(dx, dy);
+      if (!(distance < clearance)) continue;
+      const nx = distance > 0.001 ? dx / distance : 1, ny = distance > 0.001 ? dy / distance : 0;
+      x = motionLimit(obstacle.x + nx * clearance, 0, width);
+      y = motionLimit(obstacle.y + ny * clearance, 0, height);
+      continue;
+    }
     const { left, right, top, bottom } = motionObstacleBounds(obstacle, allowance);
     if (!(x > left && x < right && y > top && y < bottom)) continue;
     if (top >= 0) { x = motionLimit(x, 0, width); y = top; continue; }
@@ -313,6 +375,10 @@ export function resizeScene(scene, width, height) {
     const scaleX = width / oldWidth, scaleY = height / oldHeight;
     for (const obstacle of scene.obstacles) {
       obstacle.x *= scaleX; obstacle.y *= scaleY;
+      if (obstacle.circle) {
+        obstacle.radius *= Math.min(scaleX, scaleY);
+        continue;
+      }
       obstacle.width *= scaleX; obstacle.height *= scaleY;
     }
   }

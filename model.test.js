@@ -20,7 +20,9 @@ test('configuration preserves saved text and sizes, with readable new defaults a
   assert.equal(DEFAULTS.whaleSize, 1);
   assert.equal(DEFAULTS.composerGlass, false);
   assert.equal(DEFAULTS.composerAvoid, false);
-  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'quietCenter', 'leftInset', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid']);
+  assert.equal(DEFAULTS.reefs, true);
+  assert.equal(DEFAULTS.ripples, true);
+  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'quietCenter', 'leftInset', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'reefs', 'ripples']);
   for (let glyphSize = 7; glyphSize <= 16; glyphSize++) {
     const saved = { ...DEFAULTS, glyphSize, opacity: 0.18, text: '原有文字 Whale 🐋', leftInset: 320 };
     assert.deepEqual(normalizeConfig(saved), saved);
@@ -213,7 +215,7 @@ test('manifest ships the glyph-whale runtime and matching configuration locales 
   const root = new URL('./', import.meta.url), read = name => readFile(new URL(name, root), 'utf8');
   const manifest = JSON.parse(await read('package.json'));
   assert.equal(manifest.name, '@local/dsh-ascii-ocean');
-  assert.equal(manifest.version, '0.10.0');
+  assert.equal(manifest.version, '0.11.0');
   assert.equal(manifest.dependencies['@deepseek-ai/schemastery'], '3.18.5');
   assert.equal(manifest.dsh.client.platform, 'web');
   assert.deepEqual(Object.keys(manifest.scripts).sort(), ['build', 'check', 'test']);
@@ -221,7 +223,7 @@ test('manifest ships the glyph-whale runtime and matching configuration locales 
   for (const name of manifest.files.filter(name => !name.includes('*'))) assert.ok((await stat(new URL(name, root))).isFile());
   // Every module the shipped runtime imports must itself ship, or the installed
   // plugin fails at load time while the workspace copy keeps working.
-  for (const name of ['index.js', 'client.js', 'engine.js', 'settings.js', 'model.js', 'surface.js', 'glass.js']) {
+  for (const name of ['index.js', 'client.js', 'engine.js', 'settings.js', 'model.js', 'surface.js', 'glass.js', 'reef.js', 'water.js']) {
     const source = await read(name);
     for (const [, specifier] of source.matchAll(/from '\.\/([\w.-]+\.js)'/g)) {
       assert.ok(manifest.files.includes(specifier), `${name} imports ${specifier}, which package.json does not ship`);

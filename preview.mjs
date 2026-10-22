@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 const root = new URL('./', import.meta.url);
-const names = ['species.js', 'rig.js', 'shading.js', 'motion.js', 'model.js', 'surface.js', 'glass.js', 'engine.js'];
+const names = ['species.js', 'rig.js', 'shading.js', 'reef.js', 'water.js', 'motion.js', 'model.js', 'surface.js', 'glass.js', 'engine.js'];
 const strip = text => text.replace(/^import .*;\r?\n/gm, '').replace(/^export \{.*\} from .*;\r?\n/gm, '').replace(/^export /gm, '');
 const source = (await Promise.all(names.map(name => readFile(new URL(name, root), 'utf8')))).map(strip).join('\n');
 const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>文字鲸鱼 · 彩色字格与 ASCII</title>
@@ -22,11 +22,11 @@ input[type=range]{width:150px;padding:0;border:0;background:transparent;accent-c
 <article class="card"><h2>彩色字格 · 自定义文字</h2><canvas data-style="cells" data-fill="custom" aria-label="彩色字格自定义文字"></canvas><p>文字仍是原文，格子底色显示背部、侧身和鳍尾的深浅。</p></article>
 <article class="card"><h2>纯字符 · ASCII</h2><canvas data-style="glyphs" data-fill="ascii" aria-label="纯字符ASCII"></canvas><p>按明暗选择疏密不同的符号，使用等宽字体。</p></article>
 <article class="card"><h2>彩色字格 · ASCII</h2><canvas data-style="cells" data-fill="ascii" aria-label="彩色字格ASCII"></canvas><p>先绘深浅底格，再叠加 ASCII 字符，接近参考截图的构成。</p></article>
-</div><section><h2>巡游与阅读区预览</h2><p>先查看鲸鱼，再开启磨砂阅读区比较。所有数值项都是滑杆：拖动数量、大小和速度会直接更新同一层鲸鱼，不会让鱼群回到起点。输入框毛玻璃会在输入框位置盖一块与阅读区同材质的磨砂玻璃；鱼群避让会把输入框当成障碍绕开。两项互斥，打开一项会自动关掉另一项。实际插件保存设置后生效。</p>
-<div class="controls"><label>渲染样式<select id="renderStyle"><option value="glyphs">纯字符</option><option value="cells" selected>彩色字格</option></select></label><label>填充内容<select id="fillMode"><option value="custom">自定义文字</option><option value="ascii" selected>ASCII</option></select></label><label>鱼身文字<input id="text" type="text" value="探索未至之境" maxlength="40"></label><label>鲸类<select id="species"><option value="mixed">混合鲸群</option><option value="blue">蓝鲸</option><option value="humpback">座头鲸</option><option value="sperm">抹香鲸</option><option value="fin">长须鲸</option><option value="bowhead">弓头鲸</option></select></label><label class="slider">数量<input id="count" type="range" min="1" max="8" step="1" value="3"><output id="countOut" for="count">3</output></label><label class="slider">鲸鱼大小<input id="whaleSize" type="range" min="0.55" max="1.55" step="0.05" value="1"><output id="whaleSizeOut" for="whaleSize">1.00</output></label><label class="slider">速度<input id="speed" type="range" min="0.3" max="2" step="0.05" value="0.65"><output id="speedOut" for="speed">0.65</output></label><label><input id="glass" type="checkbox" checked>磨砂阅读区</label><label><input id="dark" type="checkbox">深色背景</label><label><input id="composerGlass" type="checkbox">输入框毛玻璃</label><label><input id="composerAvoid" type="checkbox">鱼群避让输入框</label><button id="pause" type="button">暂停</button> <span id="status" role="status"></span></div>
+</div><section><h2>巡游与阅读区预览</h2><p>先查看鲸鱼，再开启磨砂阅读区比较。所有数值项都是滑杆：拖动数量、大小和速度会直接更新同一层鲸鱼，不会让鱼群回到起点。输入框毛玻璃会在输入框位置盖一块与阅读区同材质的磨砂玻璃；鱼群避让会把输入框当成障碍绕开。两项互斥，打开一项会自动关掉另一项。礁石是每次加载随机一次的固定石群，鲸鱼会绕开；水波只在鲸鱼主动甩尾时从尾鳍散开。实际插件保存设置后生效。</p>
+<div class="controls"><label>渲染样式<select id="renderStyle"><option value="glyphs">纯字符</option><option value="cells" selected>彩色字格</option></select></label><label>填充内容<select id="fillMode"><option value="custom">自定义文字</option><option value="ascii" selected>ASCII</option></select></label><label>鱼身文字<input id="text" type="text" value="探索未至之境" maxlength="40"></label><label>鲸类<select id="species"><option value="mixed">混合鲸群</option><option value="blue">蓝鲸</option><option value="humpback">座头鲸</option><option value="sperm">抹香鲸</option><option value="fin">长须鲸</option><option value="bowhead">弓头鲸</option></select></label><label class="slider">数量<input id="count" type="range" min="1" max="8" step="1" value="3"><output id="countOut" for="count">3</output></label><label class="slider">鲸鱼大小<input id="whaleSize" type="range" min="0.55" max="1.55" step="0.05" value="1"><output id="whaleSizeOut" for="whaleSize">1.00</output></label><label class="slider">速度<input id="speed" type="range" min="0.3" max="2" step="0.05" value="0.65"><output id="speedOut" for="speed">0.65</output></label><label><input id="glass" type="checkbox" checked>磨砂阅读区</label><label><input id="dark" type="checkbox">深色背景</label><label><input id="composerGlass" type="checkbox">输入框毛玻璃</label><label><input id="composerAvoid" type="checkbox">鱼群避让输入框</label><label><input id="reefs" type="checkbox" checked>礁石</label><label><input id="ripples" type="checkbox" checked>甩尾水波</label><button id="pause" type="button">暂停</button> <span id="status" role="status"></span></div>
 <div class="stage" id="stage" data-conversation-scroll><div class="reading" data-chat-flow><h3>鲸鱼从文字旁经过</h3><p>这是一段用于预览的阅读文字。彩色格子和字符在阅读区边缘一起淡出，玻璃内保留柔和的鲸影。</p><p>自定义文字与 ASCII 可以随时切换，原来的鱼身文字会保留。关闭彩色底格，鲸体恢复为纯字符。</p><p>五种鲸类沿用各自的体型和沉稳的上下摆尾；调整鲸鱼大小只改体长，不改游速与摆尾节奏。</p></div><div class="composer-seat" data-composer-seat><div class="composer-card" data-composer-card>给鲸鱼发一条消息，按 Enter 发送<span class="composer-note">预览用假输入框：座位 [data-composer-seat] 与卡片 [data-composer-card] 的结构和实际 DSH 一致</span></div></div><canvas id="live" aria-label="鲸鱼巡游动态预览"></canvas></div>
 <p class="hint">使用插件的正式渲染器：控件变化只调用 update()，不重建画布；暂停冻结最后一帧，恢复后从原地继续。系统减少动态效果时显示静态姿态，页面在后台时暂停。</p>
-<p class="hint">鲸鱼大小只改体长：0.55 约半身，1.00 默认，1.55 最大。输入框两项互斥：开“毛玻璃”会关“避让”，反之亦然。独立预览不替代实际 DSH 窗口的最终观感。</p></section><p class="hint">原版字格研究见 ASCII-RENDER-NOTES.md，鲸类图片依据见 WHALE-REFERENCES.md。</p></main>
+<p class="hint">鲸鱼大小只改体长：0.55 约半身，1.00 默认，1.55 最大。输入框两项互斥：开“毛玻璃”会关“避让”，反之亦然。礁石只生成 2–3 处、避开阅读栏；水波跟随鲸鱼的主动摆尾节奏，滑行时安静。独立预览不替代实际 DSH 窗口的最终观感。</p></section><p class="hint">原版字格研究见 ASCII-RENDER-NOTES.md，鲸类图片依据见 WHALE-REFERENCES.md。</p></main>
 <script>
 ${source}
 const el=id=>document.getElementById(id);
@@ -54,6 +54,8 @@ function readConfig(){
     quietCenter:false,
     composerGlass:el('composerGlass').checked,
     composerAvoid:el('composerAvoid').checked,
+    reefs:el('reefs').checked,
+    ripples:el('ripples').checked,
   };
 }
 
@@ -70,7 +72,8 @@ function syncDom(config){
   el('status').textContent=paused?'已暂停'
     :config.composerGlass?'输入框毛玻璃开'
     :config.composerAvoid?'鱼群避让开'
-    :'上下摆尾与滑行';
+    :!config.reefs&&!config.ripples?'仅鲸鱼巡游'
+    :'礁石、甩尾水波与滑行';
 }
 
 function drawSamples(){
@@ -86,7 +89,7 @@ function apply(){const config=readConfig();syncDom(config);if(layer)layer.update
 function boot(){layer=createWhaleLayer(el('live'),readConfig());}
 function disposeLayer(){if(layer){layer.dispose();layer=null;}}
 
-const controls=['renderStyle','fillMode','text','species','count','whaleSize','speed','glass'];
+const controls=['renderStyle','fillMode','text','species','count','whaleSize','speed','glass','reefs','ripples'];
 for(const id of controls){el(id).addEventListener('input',apply);el(id).addEventListener('change',apply);}
 el('whaleSize').addEventListener('input',scheduleSamples);
 el('dark').addEventListener('change',()=>{apply();scheduleSamples();});
@@ -117,6 +120,12 @@ window.__previewTest={
     const id=which==='glass'?'composerGlass':'composerAvoid';
     el(id).checked=Boolean(on);
     if(on)el(EXCLUSIVE[id]).checked=false;
+    apply();
+  },
+  /** Toggle the reef field or the tail ripples without touching the school. */
+  scenery(reefs,ripples){
+    if(reefs!==undefined)el('reefs').checked=Boolean(reefs);
+    if(ripples!==undefined)el('ripples').checked=Boolean(ripples);
     apply();
   },
 };

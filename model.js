@@ -22,6 +22,8 @@ export const FIELDS = Object.freeze({
   glassStrength: { kind: 'number', min: 0, max: 1, step: 0.05, default: 0.55 },
   composerGlass: { kind: 'boolean', default: false },
   composerAvoid: { kind: 'boolean', default: false },
+  reefs: { kind: 'boolean', default: true },
+  ripples: { kind: 'boolean', default: true },
 });
 export const DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));

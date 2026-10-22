@@ -1,7 +1,10 @@
 import { createWhalePainter } from './surface.js';
-import { createScene, resizeScene, stepScene, whalePose, projectParticle, createDepthGrid, resolveDepthGrid, fitCanvas, normalizeConfig } from './model.js';
+import { createScene, resizeScene, stepScene, whalePose, projectParticle, createDepthGrid, resolveDepthGrid, fitCanvas, normalizeConfig, attenuation } from './model.js';
 import { adoptSceneState, setSceneObstacles } from './motion.js';
 import { glassPanes, glassComposerPane, glassRoundedPath, glassTone, glassComposerTone, glassFrostSize, glassEdgeFade, glassDistance } from './glass.js';
+import { createReefField, resizeReefField, reefObstacles, drawReefs } from './reef.js';
+import { createWaterField, resetWaterField, stepWater, drawWater } from './water.js';
+import { createInkPalette } from './shading.js';
 
 // DSH publishes these hooks on the conversation subtree. Every one of them is
 // optional: without them the whales simply paint as before, so an unknown
@@ -23,7 +26,7 @@ const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset']);
+const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'reefs', 'ripples']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -141,7 +144,15 @@ export function createWhaleLayer(canvas, initialConfig) {
   let frost = null, frostInk = null, blurScratch = null, blurInk = null, blurSupport = false;
   let panes = [], tone = null, composerPane = null, composerTone = null, composerCard = null;
   let avoidRect = null;
+  // Sea floor and surface: the reef layout is shared by every rebuild (only the
+  // seed decides it), and the ripple field is simulation state like the whales.
+  const reefSeed = Math.floor(Math.random() * 0x7fffffff);
+  let reef = null;
+  const water = createWaterField();
   let raf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+
+  /** Three rocks are a composition; a narrow phone gets two so the sea stays open. */
+  const reefCount = () => (width * height < 360000 ? 2 : 3);
 
   /** The widest/tallest glyph decides the cell size, so measure the whole alphabet. */
   function measureGlyphs() {
@@ -180,17 +191,24 @@ export function createWhaleLayer(canvas, initialConfig) {
   }
 
   /**
-   * Install the obstacle for the current scene from the card recorded by the
-   * last measure. No DOM read: a scene rebuild only changes the school, so the
-   * margin (which depends on the largest body) is refreshed without measuring.
+   * Install every obstacle for the current scene: the reefs from the current
+   * field, plus the input card from the last measure. No DOM read — a scene
+   * rebuild only changes the school, so the card margin (which depends on the
+   * largest body) is refreshed without measuring.
    */
-  function applyComposerObstacle() {
+  function applySceneObstacles() {
     if (!scene) return;
-    if (!config.composerAvoid || !composerCard) { setSceneObstacles(scene, []); return; }
-    let largest = 0;
-    for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
-    const obstacle = composerObstacle(composerCard.canvas, composerCard.card, largest);
-    setSceneObstacles(scene, obstacle ? [obstacle] : []);
+    const obstacles = [];
+    if (config.reefs && reef && width && height) {
+      for (const obstacle of reefObstacles(reef)) obstacles.push(obstacle);
+    }
+    if (config.composerAvoid && composerCard) {
+      let largest = 0;
+      for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
+      const obstacle = composerObstacle(composerCard.canvas, composerCard.card, largest);
+      if (obstacle) obstacles.push(obstacle);
+    }
+    setSceneObstacles(scene, obstacles);
   }
 
   /**
@@ -210,7 +228,8 @@ export function createWhaleLayer(canvas, initialConfig) {
     avoidRect = null;
     if (!width || !height || !scene || disposed) return;
     if (!config.glass && !config.composerGlass && !config.composerAvoid) {
-      setSceneObstacles(scene, []);
+      // The sea still has reefs to steer around even when no pane is painted.
+      applySceneObstacles();
       return;
     }
     const canvasRect = rectOf(canvas);
@@ -253,7 +272,25 @@ export function createWhaleLayer(canvas, initialConfig) {
           : null;
       }
     }
-    applyComposerObstacle();
+    applySceneObstacles();
+  }
+
+  /**
+   * How much ink the sharp layer may leave at a point: glyphs and the scenery
+   * share one hold-out, so reefs and ripples dissolve at exactly the same pane
+   * edges and never sit on the input card.
+   */
+  function sharpFadeAt(readingPanes, composer, featherOf) {
+    if (!readingPanes.length && !composer && !avoidRect) return null;
+    return (x, y) => {
+      // The input card is opaque to ink when avoidance is on (see avoidRect).
+      if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width
+        && y > avoidRect.y && y < avoidRect.y + avoidRect.height) return 0;
+      let fade = 1;
+      for (const pane of readingPanes) fade = Math.min(fade, glassEdgeFade(pane, x, y, featherOf(pane)));
+      if (composer) fade = Math.min(fade, glassEdgeFade(composer, x, y, featherOf(composer)));
+      return fade;
+    };
   }
 
   function draw() {
@@ -270,19 +307,33 @@ export function createWhaleLayer(canvas, initialConfig) {
     const frosted = Boolean(tone) && tone.mode === 'frost';
     const readingPanes = tone ? panes : [];
     const composer = tone ? composerPane : null;
-    if (!readingPanes.length && !composer && !avoidRect) { paintGlyphs(ink); return; }
     const featherOf = pane => (pane.feather ?? tone.feather) || 26;
     // Glyphs hold out of every pane across that pane's own feather, so no whale
     // is cut by a line; the ramp keeps the body readable right up to the glass.
-    paintGlyphs(ink, (x, y) => {
-      // The input card is opaque to whale ink when avoidance is on (see avoidRect).
-      if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width
-        && y > avoidRect.y && y < avoidRect.y + avoidRect.height) return 0;
-      let fade = 1;
-      for (const pane of readingPanes) fade = Math.min(fade, glassEdgeFade(pane, x, y, featherOf(pane)));
-      if (composer) fade = Math.min(fade, glassEdgeFade(composer, x, y, featherOf(composer)));
-      return fade;
-    });
+    const paneFade = sharpFadeAt(readingPanes, composer, featherOf);
+    // The sea floor and the surface obey the same readability budget, plus the
+    // usual bottom/centre attenuation, so scenery never competes with the words.
+    const sceneryFade = (x, y) => {
+      const base = attenuation(x, y, width, height, config.quietCenter);
+      if (base <= 0) return 0;
+      return paneFade ? base * paneFade(x, y) : base;
+    };
+    if (config.reefs && reef) {
+      drawReefs(ink, reef, {
+        width, height, ratio, font: painter.font, palette: createInkPalette(config.color),
+        cellWidth: grid.cellWidth, cellHeight: grid.cellHeight,
+        opacity: config.opacity, fade: sceneryFade,
+      });
+    }
+    if (config.ripples) {
+      drawWater(ink, water, {
+        width, height, ratio, font: painter.font, palette: createInkPalette(config.color),
+        cellWidth: grid.cellWidth, cellHeight: grid.cellHeight,
+        opacity: config.opacity, fade: sceneryFade,
+      });
+    }
+    // Bodies last: a whale passing over a rock or a ripple stays on top of it.
+    paintGlyphs(ink, paneFade);
     // Reading column first, input card second: the two panes overlap when both
     // are enabled, and the card material has to stay the top surface.
     if (!frosted) return;
@@ -403,7 +454,13 @@ export function createWhaleLayer(canvas, initialConfig) {
   function frame(now) {
     raf = 0;
     if (disposed || document.hidden || reduced.matches || !width || !height || !scene) return;
-    if (previous !== null) stepScene(scene, Math.min(0.1, (now - previous) / 1000), config.speed);
+    if (previous !== null) {
+      const startedAt = scene.time;
+      stepScene(scene, Math.min(0.1, (now - previous) / 1000), config.speed);
+      // Ripples ride the same simulation clock as the whales: pausing the scene
+      // (speed 0) freezes them, and a reduced-motion static pose never ages them.
+      if (config.ripples) stepWater(water, scene, scene.time - startedAt);
+    }
     previous = now;
     if (now - lastPaint >= 1000 / 30) { draw(); lastPaint = now; }
     raf = requestAnimationFrame(frame);
@@ -436,6 +493,7 @@ export function createWhaleLayer(canvas, initialConfig) {
     const next = normalizeLayerConfig(nextConfig);
     const changes = diffWhaleConfig(config, next);
     if (noChange(changes)) return;
+    const previousScenery = { reefs: config.reefs, ripples: config.ripples };
     // The draw loop and the painter share this object, so live options such as
     // opacity and speed apply from the next frame without any rebuild.
     Object.assign(config, next);
@@ -454,9 +512,10 @@ export function createWhaleLayer(canvas, initialConfig) {
       scene = replacement;
       poses = scene.whales.map(() => ({}));
       projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
-      // A new scene starts without obstacles: put the already-measured card
-      // back in front of it (margin follows the new body sizes), no DOM read.
-      applyComposerObstacle();
+      // A new scene starts without obstacles: put the already-measured card and
+      // the current reefs back in front of it (margin follows the new body
+      // sizes), no DOM read.
+      applySceneObstacles();
     }
     // A scene change also brings a new glyph alphabet (the user's body text), so
     // the painter is rebuilt for it as well — not only for font and style.
@@ -468,11 +527,16 @@ export function createWhaleLayer(canvas, initialConfig) {
       painter = createWhalePainter(scene, config);
     }
     // Only the glass groups re-read the DOM; a scene change already reused the
-    // measured card through applyComposerObstacle above.
+    // measured card through applySceneObstacles above.
     if (changes.glass || changes.composer) {
       measuredAt = -Infinity;
       if (width && height) measure();
     }
+    // Scenery toggles are live options, but they change what the school has to
+    // avoid: turning rocks on installs circles at once, turning them off clears
+    // them. Ripples start from a clean surface in either direction.
+    if (previousScenery.reefs !== config.reefs) applySceneObstacles();
+    if (previousScenery.ripples !== config.ripples) resetWaterField(water);
 
     lastPaint = -Infinity;
     if (!document.hidden && width && height) {
@@ -500,6 +564,12 @@ export function createWhaleLayer(canvas, initialConfig) {
     ink.setTransform(ratio, 0, 0, ratio, 0, 0);
     grid = createDepthGrid(width, height, config.glyphSize, metrics);
     resizeScene(scene, width, height);
+    // The reef field keeps its normalized layout across resizes; a brand new sea
+    // (first layout) gets a fresh random scatter.
+    if (width > 0 && height > 0) {
+      if (reef) resizeReefField(reef, width, height);
+      else reef = createReefField({ width, height, seed: reefSeed, count: reefCount() });
+    }
     measuredAt = -Infinity;
     sync();
   }
@@ -530,6 +600,8 @@ export function createWhaleLayer(canvas, initialConfig) {
     painter = null;
     poses = [];
     projected = [];
+    reef = null;
+    resetWaterField(water);
     frost = frostInk = blurScratch = blurInk = null;
     panes = [];
     tone = null;

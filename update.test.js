@@ -7,6 +7,10 @@ import { whaleSpecies } from './species.js';
 
 const close = (a, b, epsilon = 1e-9) => assert.ok(Math.abs(a - b) <= epsilon, `${a} differs from ${b}`);
 const baseline = () => normalizeConfig(DEFAULTS);
+// Reefs and ripples share the canvas with the school but use their own fixed
+// alphabet. Body assertions look at the school only.
+const SCENERY_GLYPHS = new Set(['@', '%', '#', '*', '+', ':', '.', '·', '˙', '~', ',', "'"]);
+const school = points => points.filter(point => !SCENERY_GLYPHS.has(point.glyph));
 
 // A different value for every field: used to prove that each option lands in
 // exactly one rebuild group and that the value fingerprint follows it.
@@ -14,7 +18,7 @@ const ALTERNATIVES = Object.freeze({
   enabled: false, count: 5, species: 'blue', renderStyle: 'cells', fillMode: 'ascii',
   text: '深海蓝鲸', speed: 1.1, opacity: 0.7, glyphSize: 13, whaleSize: 1.2,
   color: 'azure', quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
-  composerGlass: true, composerAvoid: true,
+  composerGlass: true, composerAvoid: true, reefs: false, ripples: false,
 });
 
 const GROUP_OF = Object.freeze({
@@ -23,7 +27,7 @@ const GROUP_OF = Object.freeze({
   palette: ['color'],
   glass: ['glass', 'glassStrength'],
   composer: ['composerGlass', 'composerAvoid'],
-  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset'],
+  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'reefs', 'ripples'],
 });
 const GROUPS = Object.keys(GROUP_OF);
 
@@ -341,7 +345,7 @@ test('an unchanged settings snapshot is a complete no-op and a real edit updates
   assert.equal(raf.queue.size, 1, 'a rebuild keeps the existing animation loop');
   assert.deepEqual(drawn.map(point => ({ x: point.x, y: point.y })), kept,
     'the swimming state was carried over instead of resetting to the start layout');
-  assert.ok(drawn.every(point => ['深', '海', '蓝', '鲸'].includes(point.glyph)), 'the new body text is used');
+  assert.ok(school(drawn).every(point => ['深', '海', '蓝', '鲸'].includes(point.glyph)), 'the new body text is used');
   assert.ok(stats.draws > drawCount, 'the change is painted immediately');
 
   // The loop continues after the rebuild instead of restarting or freezing.
@@ -420,7 +424,7 @@ test('reduced motion stays on a static pose but an update still repaints one fra
   assert.ok(stats.draws > draws, 'the update repaints immediately');
   assert.equal(raf.queue.size, 0, 'the update must not start the animation loop either');
   assert.deepEqual(drawn.map(point => ({ x: point.x, y: point.y })), pose);
-  assert.ok(drawn.every(point => ['深', '海', '蓝', '鲸'].includes(point.glyph)));
+  assert.ok(school(drawn).every(point => ['深', '海', '蓝', '鲸'].includes(point.glyph)));
   layer.dispose();
 });
 
@@ -515,6 +519,6 @@ test('avoidance keeps whale ink off the input card, and the card stops hiding it
   // (the third whale starts inside it), so the assertion above is meaningful.
   const plain = createWhaleLayer(canvas(), { ...config, composerAvoid: false });
   for (let frame = 0; frame < 90; frame++) raf.step();
-  assert.ok(drawn.some(point => insideCard(point)), 'without avoidance the card region can hold whale ink again');
+  assert.ok(school(drawn).some(point => insideCard(point)), 'without avoidance the card region can hold whale ink again');
   plain.dispose();
 });
