@@ -1,6 +1,6 @@
 # 文字蓝鲸
 
-> 感谢 [ascii-sharks](https://github.com/stackedlol/ascii-sharks)——最初的画面灵感来自这个项目。本插件是独立实现，未复制它的源码或素材。
+> 感谢 [ascii-sharks](https://github.com/stackedlol/ascii-sharks)——最初的画面灵感来自这个项目。
 
 [![DSH plugin](https://img.shields.io/badge/DSH%20plugin-0.10.0-2e6f9e)](https://github.com/jryang1997/dsh-ascii-whales/releases/latest)
 
