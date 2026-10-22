@@ -1,54 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { glassPanel, glassPanes, glassRoundedPath, glassTone, glassFrostSize, glassDistance, glassContains, glassEdgeFade } from './glass.js';
+import { glassRoundedPath, glassRoundedSubpath, glassTone, glassDistance, glassContains, glassEdgeFade } from './glass.js';
 import { normalizeConfig, FIELDS, DEFAULTS } from './model.js';
 
-const canvas = { left: 280, top: 40, width: 1000, height: 800 };
-
-test('one sheet of glass spans the text column and reaches the bottom of the viewport', () => {
-  const panes = glassPanes({
-    canvas,
-    viewport: { left: 280, top: 40, width: 1000, height: 800 },
-    column: { left: 490, top: 40, width: 748, height: 800 },
-  });
-  assert.equal(panes.length, 1);
-  const [panel] = panes;
-  assert.equal(panel.width, 748 + 40);
-  assert.equal(panel.x + panel.width / 2, 490 + 748 / 2 - 280, 'pane stays centred on the column');
-  assert.equal(panel.y, 8);
-  assert.equal(panel.y + panel.height, 800 - 12, 'the sheet covers the composer too, not just the transcript');
-  assert.equal(panel.radius, 24);
-});
-
-test('narrow viewports opt out, and a missing hook still paints a centred pane', () => {
-  const narrow = glassPanel({ canvas, viewport: { left: 280, top: 40, width: 300, height: 600 } });
-  assert.equal(narrow, null, 'a viewport too narrow for the pane paints no glass');
-  const canvasOnly = glassPanel({ canvas: { left: 0, top: 0, width: 1200, height: 800 } });
-  assert.ok(canvasOnly, 'missing hooks still paint a centred pane');
-  assert.equal(canvasOnly.width, Math.min(748 + 40, 1200 - 24));
-  assert.equal(canvasOnly.x + canvasOnly.width / 2, 600);
-  const shortWait = glassPanel({ canvas, viewport: { left: 280, top: 40, width: 1000, height: 200 } });
-  assert.equal(shortWait, null, 'a viewport too short for the pane paints no glass');
-  assert.equal(glassPanel({}), null);
-  assert.equal(glassPanel({ canvas: { left: 0, top: 0, width: 0, height: 0 } }), null);
-});
-
-test('the pane is clipped to the sea and stays inside the visible viewport', () => {
-  const offset = glassPanel({ canvas, viewport: { left: 140, top: 40, width: 1140, height: 800 },
-    column: { left: 140, top: 40, width: 748, height: 800 } });
-  assert.ok(offset);
-  assert.ok(offset.x >= 12, 'a column left of the canvas is pulled in');
-  assert.ok(offset.x + offset.width <= 988);
-  const right = glassPanel({ canvas, viewport: { left: 0, top: 0, width: 1000, height: 800 },
-    column: { left: 900, top: 0, width: 748, height: 800 } });
-  assert.ok(right.x + right.width <= 1000 - 12);
-  const scrolled = glassPanel({ canvas, viewport: { left: 280, top: -120, width: 1000, height: 800 },
-    column: { left: 490, top: 40, width: 748, height: 800 } });
-  assert.ok(scrolled);
-  assert.ok(scrolled.y >= 8, 'a viewport above the canvas cannot push the pane off it');
-});
-
-test('frost strength grows the downsample and the fog together, monotonically', () => {
+test('frost strength grows the blur and the fog together, monotonically', () => {
   const soft = glassTone(0.1), thick = glassTone(0.9);
   assert.equal(soft.mode, 'frost');
   assert.ok(thick.scale > soft.scale);
@@ -72,8 +27,9 @@ test('frost strength grows the downsample and the fog together, monotonically', 
  * contrast cost for the words underneath. Compose the worst case — text at full
  * black or white, then the pane tint, then the brightest silhouette the pane can
  * show — and require the result to stay above the WCAG AAA body threshold.
+ * (The content-box material has its own, stricter budget in content-glass.test.js.)
  */
-test('the pane keeps body text above the AAA contrast threshold in both themes', () => {
+test('the base material keeps body text above the AAA contrast threshold in both themes', () => {
   const over = (under, layer, alpha) => under.map((channel, i) => channel * (1 - alpha) + layer[i] * alpha);
   const luminance = rgb => {
     const [r, g, b] = rgb.map(value => {
@@ -95,8 +51,7 @@ test('the pane keeps body text above the AAA contrast threshold in both themes',
       const tint = parse(tone.tint), whale = parse(tone.silhouette);
       // The same pane over a glyph and over the bare page, then compared.
       const overPane = base => over(over(base, tint, tone.veil), whale, tone.mist);
-      const onText = overPane(text), onPage = overPane(page);
-      const worst = ratio(onText, onPage);
+      const worst = ratio(overPane(text), overPane(page));
       assert.ok(worst >= 7, `${dark ? 'dark' : 'light'} at ${strength}: text contrast ${worst.toFixed(2)}:1`);
     }
   }
@@ -108,17 +63,6 @@ test('reduced transparency and a disabled pane clear the water under the text', 
   const dark = glassTone(0.55, { dark: true }), light = glassTone(0.55);
   assert.notEqual(dark.tint, light.tint);
   assert.equal(dark.mode, 'frost');
-});
-
-test('frost buffer stays small enough for an inexpensive per-frame resize', () => {
-  for (const scale of [3, 4, 5, 6]) {
-    const size = glassFrostSize(2400, 1600, scale);
-    assert.equal(size.factor, scale);
-    assert.ok(size.width <= 800 && size.height <= 534, 'frost pass is a fraction of the sea');
-  }
-  assert.equal(glassFrostSize(100, 100, 0).factor, 2);
-  assert.equal(glassFrostSize(100, 100, 99).factor, 8);
-  assert.equal(glassFrostSize(100, 100, NaN).factor, 4);
 });
 
 test('rounded path issues one closed contour with four corner arcs', () => {
@@ -136,6 +80,25 @@ test('rounded path issues one closed contour with four corner arcs', () => {
   glassRoundedPath({ ...ctx, arcTo: (...args) => radii.push(args.at(-1)) },
     { x: 0, y: 0, width: 40, height: 20, radius: 99 });
   assert.deepEqual(radii, [10, 10, 10, 10], 'a radius taller than the pane is reduced to half the short side');
+});
+
+test('rounded subpaths append to one path, so panes can share a single union clip', () => {
+  const log = [];
+  const ctx = {
+    beginPath: () => log.push('begin'), closePath: () => log.push('close'),
+    moveTo: () => log.push('move'), lineTo: () => log.push('line'),
+    arcTo: () => log.push('arc'),
+  };
+  // The caller owns beginPath once; each pane only appends its rectangle. The
+  // resulting nonzero-winding path is the union of the boxes, which is what lets
+  // one drawImage serve every pane without painting the gaps between them.
+  ctx.beginPath();
+  glassRoundedSubpath(ctx, { x: 0, y: 0, width: 100, height: 60, radius: 12 });
+  glassRoundedSubpath(ctx, { x: 200, y: 10, width: 80, height: 40, radius: 8 });
+  assert.equal(log.filter(entry => entry === 'begin').length, 1, 'subpaths never restart the path');
+  assert.equal(log.filter(entry => entry === 'move').length, 2, 'one subpath start per pane');
+  assert.equal(log.filter(entry => entry === 'arc').length, 8, 'four corner arcs per pane');
+  assert.equal(log.filter(entry => entry === 'close').length, 2);
 });
 
 test('rounded shape tests agree at the corners, so no glyph falls between layers', () => {
@@ -168,7 +131,7 @@ test('glass settings keep saved values compatible and stay inside their ranges',
   assert.ok(Object.keys(FIELDS).includes('glass'));
   const legacy = { count: 3, text: '探索未至之境', opacity: 0.7, color: 'indigo' };
   const normalized = normalizeConfig(legacy);
-  assert.equal(normalized.glass, true, 'a saved config without glass gets the new default');
+  assert.equal(normalized.glass, true, 'a saved config without glass gets the content-glass default');
   assert.equal(normalized.glassStrength, 0.55);
   assert.equal(normalized.opacity, 0.7);
   assert.equal(normalizeConfig({ glass: false }).glass, false);
@@ -176,8 +139,3 @@ test('glass settings keep saved values compatible and stay inside their ranges',
   assert.equal(normalizeConfig({ glassStrength: 9 }).glassStrength, 1);
   assert.equal(normalizeConfig({ glassStrength: 0.548 }).glassStrength, 0.548, 'fractional steps clamp but never round, like speed and opacity');
 });
-
-
-
-
-

@@ -14,7 +14,7 @@ const ALTERNATIVES = Object.freeze({
   enabled: false, count: 5, species: 'blue', renderStyle: 'cells', fillMode: 'ascii',
   text: '深海蓝鲸', speed: 1.1, opacity: 0.7, glyphSize: 13, whaleSize: 1.2,
   color: 'azure', quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
-  composerGlass: true, composerAvoid: true,
+  composerGlass: true, composerAvoid: true, spout: true, reefs: false, ripples: false,
 });
 
 const GROUP_OF = Object.freeze({
@@ -23,9 +23,18 @@ const GROUP_OF = Object.freeze({
   palette: ['color'],
   glass: ['glass', 'glassStrength'],
   composer: ['composerGlass', 'composerAvoid'],
-  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset'],
+  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'reefs', 'ripples'],
 });
 const GROUPS = Object.keys(GROUP_OF);
+
+// `composerAvoid` is mutually exclusive with the content glass (glass wins), so
+// its single-field variant has to start from glass: false; otherwise the value
+// would be normalized back to false and the field would look inert.
+const variantOf = key => normalizeConfig({ ...DEFAULTS,
+  glass: key === 'composerAvoid' ? false : DEFAULTS.glass,
+  [key]: ALTERNATIVES[key] });
+const baseOf = key => normalizeConfig({ ...DEFAULTS,
+  glass: key === 'composerAvoid' ? false : DEFAULTS.glass });
 
 test('config signature follows values, not object identity', () => {
   const base = baseline();
@@ -38,7 +47,7 @@ test('config signature follows values, not object identity', () => {
   assert.equal(configSignature(base), configSignature(shuffled));
   // Every field participates, so a write that changes anything is never a no-op.
   for (const key of Object.keys(FIELDS)) {
-    assert.notEqual(configSignature({ ...base, [key]: ALTERNATIVES[key] }), configSignature(base), key);
+    assert.notEqual(configSignature(variantOf(key)), configSignature(baseOf(key)), key);
   }
 });
 
@@ -48,7 +57,7 @@ test('every field is classified into exactly one rebuild group, and equal values
   assert.deepEqual(unchanged, { scene: false, metrics: false, palette: false, glass: false, composer: false, live: false });
   for (const group of GROUPS) {
     for (const key of GROUP_OF[group]) {
-      const changes = diffWhaleConfig(base, normalizeConfig({ ...DEFAULTS, [key]: ALTERNATIVES[key] }));
+      const changes = diffWhaleConfig(baseOf(key), variantOf(key));
       for (const name of GROUPS) {
         assert.equal(changes[name], name === group, `${key} changed ${name}: expected ${name === group}`);
       }
@@ -210,7 +219,9 @@ test('switching a mixed group to one species rescales cruise and turn rate by th
  * a browser.
  */
 function harness(options = {}) {
-  const stats = { getContext: 0, measureText: 0, draws: 0, frames: 0, createCanvas: 0 };
+  const stats = { getContext: 0, measureText: 0, draws: 0, frames: 0, createCanvas: 0,
+    mainGlyphs: 0, seaGlyphs: 0, seaTiles: 0, blurCopies: 0,
+    paneClips: 0, paneStrokes: 0, panePaths: 0, paneMoves: 0, paneImages: 0, paneGradients: 0 };
   const drawn = [];
   const viewport = { width: options.width ?? 800, height: options.height ?? 600 };
   const context = {
@@ -221,9 +232,11 @@ function harness(options = {}) {
       const width = Math.min(16, 7 + glyph.length * 2);
       return { width, actualBoundingBoxLeft: 0, actualBoundingBoxRight: width, actualBoundingBoxAscent: 10, actualBoundingBoxDescent: 2 };
     },
-    fillText(glyph, x, y) { drawn.push({ glyph, x, y, alpha: this.globalAlpha }); },
-    save() {}, restore() {}, clip() {}, stroke() {}, beginPath() {}, moveTo() {}, lineTo() {}, arcTo() {}, closePath() {},
-    drawImage() {}, createLinearGradient() { return { addColorStop() {} }; },
+    fillText(glyph, x, y) { stats.mainGlyphs++; drawn.push({ glyph, x, y, alpha: this.globalAlpha }); },
+    save() {}, restore() {}, clip() { stats.paneClips++; }, stroke() { stats.paneStrokes++; },
+    beginPath() { stats.panePaths++; }, moveTo() { stats.paneMoves++; }, lineTo() {}, arcTo() {}, closePath() {},
+    drawImage() { stats.paneImages++; },
+    createLinearGradient() { stats.paneGradients++; return { addColorStop() {} }; },
   };
   const canvases = [];
   const canvas = () => {
@@ -235,7 +248,28 @@ function harness(options = {}) {
     return element;
   };
   const observers = [];
-  const composerElement = options.composerRect ? { getBoundingClientRect: () => options.composerRect } : null;
+  const defaultStyle = { backgroundColor: 'rgba(0, 0, 0, 0)', borderRadius: '0px',
+    borderTopLeftRadius: '0px', borderTopRightRadius: '0px', borderBottomRightRadius: '0px',
+    borderBottomLeftRadius: '0px', position: 'static', visibility: 'visible', display: 'block',
+    getPropertyValue: () => '' };
+  const contentElements = (options.contentBoxes || []).map(box => ({
+    __style: { ...defaultStyle, backgroundColor: box.transparent ? 'rgba(0, 0, 0, 0)' : 'rgb(255, 255, 255)',
+      borderTopLeftRadius: `${box.radius ?? 18}px`, borderTopRightRadius: `${box.radius ?? 18}px`,
+      borderBottomRightRadius: `${box.radius ?? 18}px`, borderBottomLeftRadius: `${box.radius ?? 18}px`,
+      position: box.fixed ? 'fixed' : 'static', display: box.hidden ? 'none' : 'block' },
+    children: box.children || [],
+    getBoundingClientRect: () => ({ left: box.left, top: box.top, width: box.width, height: box.height }),
+  }));
+  const scrollerElement = {
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: viewport.width, height: viewport.height }),
+    children: contentElements,
+  };
+  const composerElement = options.composerRect ? {
+    __style: { ...defaultStyle, backgroundColor: 'rgb(255, 255, 255)',
+      borderTopLeftRadius: `${options.composerRadius ?? 18}px` },
+    children: [],
+    getBoundingClientRect: () => options.composerRect,
+  } : null;
   const raf = { next: 1, queue: new Map(), now: 1000,
     request(callback) { const id = this.next++; this.queue.set(id, callback); return id; },
     cancel(id) { this.queue.delete(id); },
@@ -261,13 +295,22 @@ function harness(options = {}) {
     globalThis.window = { devicePixelRatio: 1, matchMedia: media, addEventListener() {}, removeEventListener() {} };
     globalThis.document = {
       hidden: false, body: { hasAttribute: () => false },
-      querySelectorAll: selector => composerElement && selector === '[data-composer-card]' ? [composerElement] : [],
+      querySelectorAll: selector => {
+        if (selector === '[data-composer-card]') return composerElement ? [composerElement] : [];
+        if (selector === '[data-conversation-scroll]') return [scrollerElement];
+        return [];
+      },
       createElement: () => {
         stats.createCanvas++;
-        // A private offscreen context: the frost pass must not touch the main one.
+        // A private offscreen context: the shared sea/blur pass must not touch the
+        // main canvas, and it needs the glyph API because the sea is a glyph pass.
         const offscreen = {
-          font: '', fillStyle: '', globalAlpha: 1, filter: 'none',
-          setTransform() {}, clearRect() {}, fillRect() {}, drawImage() {}, save() {}, restore() {}, clip() {},
+          font: '', fillStyle: '', globalAlpha: 1, filter: 'none', textAlign: '', textBaseline: '',
+          lineWidth: 1, strokeStyle: '', imageSmoothingEnabled: false, imageSmoothingQuality: 'low',
+          setTransform() {}, clearRect() {}, fillRect() { stats.seaTiles++; },
+          drawImage() { stats.blurCopies++; },
+          fillText() { stats.seaGlyphs++; },
+          save() {}, restore() {}, clip() {}, stroke() {}, beginPath() {}, moveTo() {}, lineTo() {}, arcTo() {}, closePath() {},
           createLinearGradient: () => ({ addColorStop() {} }), measureText: () => ({ width: 0 }),
         };
         return { width: 0, height: 0, getContext: () => offscreen };
@@ -282,8 +325,7 @@ function harness(options = {}) {
       disconnect() { this.active = false; }
     };
     globalThis.MutationObserver = class { observe() {} disconnect() {} };
-    globalThis.getComputedStyle = () => ({ getPropertyValue: () => '',
-      borderTopLeftRadius: options.composerRadius ?? '18px' });
+    globalThis.getComputedStyle = element => element && element.__style ? element.__style : defaultStyle;
   }
   function restore() {
     for (const [key, value] of Object.entries(saved)) {
@@ -299,15 +341,59 @@ function harness(options = {}) {
   return { stats, drawn, canvas, canvases, raf, viewport, setViewport, install, restore };
 }
 
+test('reef layout stays fixed across settings and scene edits and toggles without remounting', t => {
+  const { stats, drawn, canvas, raf, install, restore } = harness();
+  install();
+  const config = { ...DEFAULTS, glass: false, quietCenter: false,
+    reefs: true, ripples: false, text: '鲸', speed: 0 };
+  const layer = createWhaleLayer(canvas(), config);
+  t.after(() => { layer.dispose(); restore(); });
+  const rocks = () => drawn.filter(point => point.glyph !== '鲸' && point.glyph !== '海')
+    .map(({ glyph, x, y }) => ({ glyph, x, y }));
+  const original = rocks();
+  assert.ok(original.length > 10, 'rocks are actually painted by the running layer');
+  const measurements = stats.measureText;
+  layer.update({ ...config, reefs: false });
+  assert.equal(rocks().length, 0);
+  assert.equal(stats.measureText, measurements, 'scenery toggles do not rebuild the font');
+  layer.update(config);
+  assert.deepEqual(rocks(), original, 'turning rocks back on keeps their positions');
+  layer.update({ ...config, text: '海', count: 4 });
+  assert.deepEqual(rocks(), original, 'a rebuilt school does not reroll the scenery');
+  assert.equal(stats.getContext, 1);
+  assert.equal(raf.queue.size, 1);
+});
+
+test('the running layer generates tail ripples only after swimming and clears them live', t => {
+  const { drawn, canvas, raf, install, restore } = harness();
+  install();
+  const config = { ...DEFAULTS, glass: false, quietCenter: false,
+    reefs: false, ripples: true, text: '鲸', speed: 0 };
+  const layer = createWhaleLayer(canvas(), config);
+  t.after(() => { layer.dispose(); restore(); });
+  const hasWater = () => drawn.some(point => point.glyph !== '鲸');
+  for (let frame = 0; frame < 90; frame++) raf.step();
+  assert.equal(hasWater(), false, 'a paused school does not splash');
+  layer.update({ ...config, speed: 1 });
+  let sawWater = false;
+  for (let frame = 0; frame < 360; frame++) {
+    raf.step();
+    sawWater ||= hasWater();
+  }
+  assert.ok(sawWater, 'tail beats reach the actual draw loop');
+  layer.update({ ...config, speed: 1, ripples: false });
+  assert.equal(hasWater(), false, 'turning ripples off clears existing water immediately');
+});
+
 test('an unchanged settings snapshot is a complete no-op and a real edit updates in place', t => {
   const { stats, drawn, canvas, canvases, raf, install, restore } = harness();
   install();
   t.after(restore);
   // Glass is off here: the frosted pane needs a second canvas and a text column,
   // which is out of scope for the update mechanics and already covered by
-  // glass.test.js and the browser pass. Everything else is the shipped default.
-  const config = normalizeConfig({ ...DEFAULTS, glass: false });
-  const same = () => normalizeConfig({ ...DEFAULTS, glass: false });
+  // glass.test.js. Scenery is off so every recorded glyph belongs to the whale.
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
+  const same = () => normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
   const layer = createWhaleLayer(canvas(), config);
   assert.equal(stats.getContext, 1, 'one 2D context for the whole lifetime');
   assert.equal(raf.queue.size, 1, 'the animation loop starts once');
@@ -383,7 +469,7 @@ test('speed 0 is a preview-only pause sentinel and never leaks into the settings
   const { stats, drawn, canvas, raf, install, restore } = harness();
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false });
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
   // The settings document cannot express 0, and normalization keeps clamping it:
   // the sentinel exists only inside the engine's own config copy.
   assert.equal(normalizeConfig({ ...DEFAULTS, speed: 0 }).speed, FIELDS.speed.min);
@@ -409,7 +495,7 @@ test('reduced motion stays on a static pose but an update still repaints one fra
   const { stats, drawn, canvas, raf, install, restore } = harness({ reduceMotion: true });
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false });
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
   const layer = createWhaleLayer(canvas(), config);
   assert.equal(raf.queue.size, 0, 'reduced motion must not start an animation loop');
   assert.ok(drawn.length > 100, 'the static pose is painted once');
@@ -428,7 +514,7 @@ test('a scene rebuilt before the canvas is laid out still lands where the school
   const { drawn, canvas, canvases, raf, setViewport, install, restore } = harness({ width: 0, height: 0 });
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false });
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
   const layer = createWhaleLayer(canvas(), config);
   assert.equal(raf.queue.size, 0, 'nothing to animate while the canvas has no size');
   // The settings document can be written before the overlay gets its layout.
@@ -443,55 +529,94 @@ test('a scene rebuilt before the canvas is laid out still lands where the school
   layer.dispose();
 });
 
-test('the input-box glass works on its own and fades glyphs only inside the card', t => {
-  // A bottom-centre card, in the same coordinate space as the 800x600 canvas.
-  const card = { left: 100, top: 400, width: 600, height: 120 };
-  const { stats, drawn, canvas, raf, install, restore } = harness({ composerRect: card });
+test('content glass gives every card a pane and fades the sharp glyphs inside it', t => {
+  // Two message cards plus the input card, in the 800x600 canvas coordinate space.
+  const cards = [
+    { left: 100, top: 300, width: 600, height: 120, radius: 20 },
+    { left: 140, top: 100, width: 520, height: 90, radius: 16 },
+  ];
+  const composer = { left: 100, top: 460, width: 600, height: 120 };
+  const { stats, drawn, canvas, raf, install, restore } = harness({ contentBoxes: cards, composerRect: composer });
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false, composerGlass: true });
+  const config = normalizeConfig({ ...DEFAULTS, composerAvoid: false });
   const layer = createWhaleLayer(canvas(), config);
-  // The reading pane is off, yet the composer material needs its frost buffer.
-  assert.ok(stats.createCanvas >= 1, 'the frost buffer is allocated for the composer pane');
+  // One shared sea buffer plus its blurred copy: two offscreen canvases, no more.
+  assert.equal(stats.createCanvas, 2, 'the shared sea and its blur buffer are allocated once');
   assert.ok(stats.draws > 0);
   assert.equal(stats.getContext, 1);
-  assert.ok(drawn.length > 100);
-  const insideCard = point => point.x > card.left && point.x < card.left + card.width
-    && point.y > card.top && point.y < card.top + card.height;
-  assert.ok(drawn.every(point => !insideCard(point)), 'sharp glyphs must not show under the input glass');
-  assert.ok(drawn.some(point => point.y < card.top), 'glyphs remain outside the pane');
+  // The panes hide part of the sea, so fewer glyphs than the bare scene — but the
+  // school still paints everywhere outside the boxes.
+  assert.ok(drawn.length > 50);
+  const insideCard = point => cards.concat([composer]).some(card => point.x > card.left
+    && point.x < card.left + card.width && point.y > card.top && point.y < card.top + card.height);
+  assert.ok(drawn.every(point => !insideCard(point)), 'sharp glyphs must not show under any content glass');
+  assert.ok(drawn.some(point => !insideCard(point)), 'glyphs remain outside the panes');
 
-  // Switching options re-measures the same canvas instead of remounting it.
-  const before = { getContext: stats.getContext, canvases: stats.createCanvas };
-  layer.update({ ...config, composerGlass: false, composerAvoid: true });
+  // The glass must contain the blurred sea, not an empty copy: the sea pass
+  // painted the glyph field on its own offscreen canvas (including the glyphs the
+  // panes just faded out of the main canvas), and that canvas was blurred once.
+  assert.ok(stats.seaGlyphs > 0, 'the shared sea was painted from the glyph field');
+  assert.ok(stats.seaGlyphs >= stats.mainGlyphs,
+    `the sea keeps every glyph the panes hide (${stats.seaGlyphs} vs ${stats.mainGlyphs})`);
+  // Glyph mode also paints a body silhouette under the letters, so the blur has a
+  // whale shape to show and not just faint text haze.
+  assert.ok(stats.seaTiles > 0, 'the sea carries a body silhouette in glyph mode');
+  assert.ok(stats.blurCopies > 0, 'the shared sea was blurred');
+  // Glass passes per frame: ONE union clip for the shared sea image, plus one
+  // surface clip per pane for tint + crest + shade. The upscaled drawImage runs
+  // once no matter how many boxes there are, and no outline is ever drawn.
+  const paneCount = stats.paneGradients / 2; // crest + shade per pane
+  assert.ok(paneCount >= 3, `expected one pane per box, got ${paneCount}`);
+  assert.equal(stats.paneStrokes, 0, 'the pane never draws an outline (the DOM frame owns it)');
+  assert.equal(stats.paneImages, 1, 'one shared blurred-sea draw for all panes');
+  assert.equal(stats.paneClips, paneCount + 1, 'one union clip plus one surface clip per pane');
+  assert.equal(stats.panePaths, stats.paneClips, 'one rounded path per clip, no stray path');
+  // The union path must really contain one subpath per pane (N moveTo for the
+  // union + N for the per-pane surfaces), which is what keeps the gaps between
+  // cards uncovered.
+  assert.equal(stats.paneMoves, paneCount * 2, 'union path appends every pane subpath');
+  assert.equal(stats.paneGradients, paneCount * 2, 'crest and shade gradients per pane');
+
+  // Turning the content glass off brings the sharp glyphs back over the cards,
+  // on the same canvas and with no remount.
+  const before = { getContext: stats.getContext, canvases: stats.createCanvas, clips: stats.paneClips, images: stats.paneImages };
+  layer.update({ ...config, glass: false });
+  for (let frame = 0; frame < 30; frame++) raf.step();
   assert.equal(stats.getContext, before.getContext);
-  raf.step();
-  layer.update({ ...config, composerGlass: false, composerAvoid: false, glass: true });
-  assert.equal(stats.getContext, before.getContext, 'the reading pane comes back without a new canvas');
-  raf.step();
-  // Both panes at once: they overlap, so this exercises the double fade and the
-  // reading-then-card paint order.
-  layer.update({ ...config, glass: true, composerGlass: true });
-  assert.equal(stats.getContext, before.getContext);
-  raf.step();
+  assert.equal(stats.paneClips, before.clips, 'no pane is drawn while the content glass is off');
+  assert.equal(stats.paneImages, before.images, 'no sea image is drawn while the content glass is off');
+  assert.ok(drawn.some(point => insideCard(point)), 'glyphs return inside the card area when the glass is off');
+  layer.update({ ...config, glass: true });
+  for (let frame = 0; frame < 30; frame++) raf.step();
+  assert.equal(stats.getContext, before.getContext, 'the glass comes back without a new canvas');
+  assert.ok(stats.paneClips > before.clips, 'panes are painted again');
+  const clipsAdded = stats.paneClips - before.clips;
+  const framesWithGlass = clipsAdded / (paneCount + 1);
+  assert.equal(clipsAdded % (paneCount + 1), 0, 'each glass frame uses the same clip count');
+  assert.equal(stats.paneImages - before.images, framesWithGlass, 'one shared sea image per glass frame');
+  assert.ok(drawn.every(point => !insideCard(point)));
   layer.dispose();
 });
 
-test('reduced transparency clears the composer glass material but still holds glyphs out', t => {
-  const card = { left: 100, top: 400, width: 600, height: 120 };
-  const { stats, drawn, canvas, install, restore } = harness({ composerRect: card, reduceTransparency: true });
+test('reduced transparency clears the content material but still holds glyphs out', t => {
+  const card = { left: 100, top: 350, width: 600, height: 140, radius: 20 };
+  const { stats, drawn, canvas, install, restore } = harness({ contentBoxes: [card], reduceTransparency: true });
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false, composerGlass: true });
+  const config = normalizeConfig(DEFAULTS);
   const layer = createWhaleLayer(canvas(), config);
-  assert.equal(stats.createCanvas, 0, 'no frost buffer is allocated when the material is cleared');
+  assert.equal(stats.createCanvas, 0, 'no sea buffer is allocated when the material is cleared');
+  assert.equal(stats.seaGlyphs, 0, 'no sea glyph pass runs when the material is cleared');
+  assert.equal(stats.paneClips, 0, 'no pane is drawn when the material is cleared');
+  assert.equal(stats.paneImages, 0);
   const insideCard = point => point.x > card.left && point.x < card.left + card.width
     && point.y > card.top && point.y < card.top + card.height;
   assert.ok(drawn.length > 100);
-  // The material is gone, but the text area stays clear of the sea: sharp glyphs
-  // are still held out of the card exactly as the reading pane does in 0.9.0.
-  assert.ok(drawn.every(point => !insideCard(point)), 'clear mode still holds glyphs out of the pane');
-  assert.ok(drawn.some(point => point.y < card.top), 'glyphs remain outside the pane');
+  // The material is gone, but the card area stays clear of the sea: sharp glyphs
+  // are still held out of every pane, exactly like 0.10.0's clear mode.
+  assert.ok(drawn.every(point => !insideCard(point)), 'clear mode still holds glyphs out of the panes');
+  assert.ok(drawn.some(point => !insideCard(point)), 'glyphs remain outside the pane');
   layer.dispose();
 });
 

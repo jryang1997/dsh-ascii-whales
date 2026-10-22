@@ -1,9 +1,9 @@
 {
   "name": "@local/dsh-ascii-ocean",
-  "version": "0.11.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
-  "description": "Five whale species with shaded cells or ASCII fill; every content card and the input box is frosted glass with whales blurred behind it, plus optional input-box avoidance, a whale-size slider, and in-place config updates that never restart the school.",
+  "description": "Five whale species with shaded cells or ASCII fill; every content card and the input box is frosted glass with whales blurred behind it, plus independent random dives, sparse fixed reef rocks with avoidance, tail-stroke ripples, optional input-box avoidance, optional click-to-spout, a whale-size slider, and in-place config updates that never restart the school.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -21,6 +21,7 @@
     "surface.test.js",
     "ASCII-RENDER-NOTES.md",
     "glass.js",
+    "spout.js",
     "engine.js",
     "settings.js",
     "cordis.patch.yml",
@@ -37,21 +38,32 @@
     "shading.test.js",
     "overhead.test.js",
     "glass.test.js",
+    "content-glass.test.js",
     "update.test.js",
+    "spout.test.js",
     "composer.test.js",
     "species.js",
     "species.test.js",
     "WHALE-REFERENCES.md",
     "preview.mjs",
-    "whale-preview.html"
+    "whale-preview.html",
+    "dive.test.js",
+    "random-dive.test.js",
+    "reef.js",
+    "reef.test.js",
+    "water.js",
+    "water.test.js",
+    "motion-circle.test.js",
+    "dive-water.test.js",
+    "dive-geometry.test.js"
   ],
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.5"
   },
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test model.test.js motion.test.js regression.test.js rig.test.js shading.test.js overhead.test.js glass.test.js species.test.js surface.test.js update.test.js composer.test.js",
-    "check": "node --check index.js && node --check rig.js && node --check shading.js && node --check motion.js && node --check model.js && node --check glass.js && node --check engine.js && node --check settings.js && node --check client.js && node --check build.mjs && node --check model.test.js && node --check motion.test.js && node --check regression.test.js && node --check rig.test.js && node --check shading.test.js && node --check overhead.test.js && node --check glass.test.js && node --check species.js && node --check species.test.js && node --check preview.mjs && node --check surface.js && node --check surface.test.js && node --check update.test.js && node --check composer.test.js"
+    "test": "node --test model.test.js motion.test.js regression.test.js rig.test.js shading.test.js overhead.test.js glass.test.js species.test.js surface.test.js update.test.js content-glass.test.js composer.test.js spout.test.js dive.test.js random-dive.test.js reef.test.js water.test.js motion-circle.test.js dive-water.test.js dive-geometry.test.js",
+    "check": "node --check index.js && node --check rig.js && node --check shading.js && node --check motion.js && node --check model.js && node --check glass.js && node --check engine.js && node --check settings.js && node --check client.js && node --check build.mjs && node --check model.test.js && node --check motion.test.js && node --check regression.test.js && node --check rig.test.js && node --check shading.test.js && node --check overhead.test.js && node --check glass.test.js && node --check species.js && node --check species.test.js && node --check preview.mjs && node --check surface.js && node --check surface.test.js && node --check update.test.js && node --check content-glass.test.js && node --check composer.test.js && node --check spout.js && node --check spout.test.js && node --check dive.test.js && node --check random-dive.test.js && node --check reef.js && node --check water.js && node --check reef.test.js && node --check water.test.js && node --check motion-circle.test.js && node --check dive-water.test.js && node --check dive-geometry.test.js"
   },
   "dsh": {
     "bundle": {
@@ -68,4 +80,3 @@
     }
   }
 }
-

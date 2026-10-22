@@ -20,7 +20,23 @@ test('configuration preserves saved text and sizes, with readable new defaults a
   assert.equal(DEFAULTS.whaleSize, 1);
   assert.equal(DEFAULTS.composerGlass, false);
   assert.equal(DEFAULTS.composerAvoid, false);
-  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'quietCenter', 'leftInset', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid']);
+  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'quietCenter', 'leftInset', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'spout', 'reefs', 'ripples']);
+  // `glass` is now the frosted-content-box option and is on by default; the old
+  // separate input-box switch survives only as a hidden compatibility field.
+  assert.equal(DEFAULTS.glass, true);
+  assert.equal(FIELDS.composerGlass.hidden, true);
+  assert.deepEqual(Object.entries(FIELDS).filter(([, field]) => field.hidden).map(([key]) => key), ['composerGlass']);
+  // A 0.10.0 profile that only switched the input-box glass on must keep an
+  // effect after upgrading: normalization folds it into the content glass.
+  const legacy = normalizeConfig({ composerGlass: true });
+  assert.equal(legacy.glass, true);
+  assert.equal(legacy.composerGlass, false);
+  assert.equal(normalizeConfig({ glass: true, composerGlass: false }).composerGlass, false);
+  // The content glass and the input-box avoidance are alternatives; glass wins.
+  assert.equal(normalizeConfig({ glass: true, composerAvoid: true }).composerAvoid, false);
+  const avoidOnly = normalizeConfig({ glass: false, composerAvoid: true });
+  assert.equal(avoidOnly.glass, false);
+  assert.equal(avoidOnly.composerAvoid, true);
   for (let glyphSize = 7; glyphSize <= 16; glyphSize++) {
     const saved = { ...DEFAULTS, glyphSize, opacity: 0.18, text: '原有文字 Whale 🐋', leftInset: 320 };
     assert.deepEqual(normalizeConfig(saved), saved);
@@ -213,7 +229,7 @@ test('manifest ships the glyph-whale runtime and matching configuration locales 
   const root = new URL('./', import.meta.url), read = name => readFile(new URL(name, root), 'utf8');
   const manifest = JSON.parse(await read('package.json'));
   assert.equal(manifest.name, '@local/dsh-ascii-ocean');
-  assert.equal(manifest.version, '0.10.0');
+  assert.equal(manifest.version, '0.13.0');
   assert.equal(manifest.dependencies['@deepseek-ai/schemastery'], '3.18.5');
   assert.equal(manifest.dsh.client.platform, 'web');
   assert.deepEqual(Object.keys(manifest.scripts).sort(), ['build', 'check', 'test']);
@@ -239,7 +255,11 @@ test('manifest ships the glyph-whale runtime and matching configuration locales 
   assert.equal(zh.ui.text, '鱼身文字');
   for (const locale of [en, zh]) assert.ok(locale.meta.description);
   const icon = await read('icon.svg');
-  assert.match(icon, /<svg[^>]+viewBox="0 0 64 64"/);
+  // The artwork has been redrawn at different square sizes; the contract is a
+  // self-contained square SVG icon, not one fixed viewBox number.
+  const viewBox = /<svg[^>]+viewBox="0 0 (\d+) \1"/.exec(icon);
+  assert.ok(viewBox, 'icon.svg must declare a square viewBox');
+  assert.ok(Number(viewBox[1]) >= 16 && Number(viewBox[1]) <= 512, 'icon viewBox size out of range');
   assert.ok(Buffer.byteLength(icon) < 256 * 1024);
   assert.doesNotMatch(icon, /(?:<script|<image|href=)/);
   const client = await read('client.js');

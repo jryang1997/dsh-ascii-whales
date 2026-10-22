@@ -1,118 +1,115 @@
-// A rounded water-glass pane behind the reading column. Everything here is pure
-// geometry and tone so the tests can drive it without a DOM or a Canvas;
-// engine.js supplies the measured rectangles and paints the result.
+// Frosted glass over every opaque content box in the conversation, plus the
+// input card. Everything here is pure geometry, tone and buffer arithmetic so
+// the tests can drive it without a DOM or a Canvas; engine.js measures the
+// boxes and paints the result.
 //
 // build.mjs concatenates the renderer modules into one factory, so no top-level
 // name may collide with model.js (which owns `clamp`, `mix`, `smooth`, `noise`
 // and the other short helpers). Every helper here is prefixed with `glass`.
 
-const GLASS_PAD = 20;
-const GLASS_RADIUS = 24;
-const GLASS_GUTTER = 12;
-const GLASS_TOP_GAP = 8;
-const GLASS_MIN_WIDTH = 340;
-const GLASS_MIN_HEIGHT = 240;
-const GLASS_FALLBACK_CLEARANCE = 172;
-const GLASS_DEFAULT_COLUMN = 748;
-// The composer card is a much smaller target than the reading column: a pane
-// narrower than this would read as a stripe, so those cards opt out.
-const GLASS_COMPOSER_MIN_WIDTH = 60;
-const GLASS_COMPOSER_MIN_HEIGHT = 36;
-const GLASS_COMPOSER_RADIUS = 18;
-// Glyphs dissolve earlier around the input box than around the reading column:
-// the card edge is close to the words, so a wide feather would erase the body
-// before it even reaches the glass.
-const GLASS_COMPOSER_FEATHER = 14;
-// The reading-pane crest is a wide, bright band meant for a large pane. Over a
-// 120px input card it would sit right on the first line of text, so the composer
-// material keeps under a quarter of that highlight (and a short band). The value
-// is set as low as the AA contrast assertion in composer.test.js permits: with a
-// full crest the worst case (light theme, strength 1) drops to 2.7:1, and 0.22
-// keeps every layer — body, crest and bottom shade — at or above 4.5:1.
-const GLASS_COMPOSER_CREST_SCALE = 0.22;
+// A pane equal to its box: only boxes too small to hold readable text are
+// dropped, so the glass can never sit inside the box it covers.
+const GLASS_CONTENT_MIN_WIDTH = 40;
+const GLASS_CONTENT_MIN_HEIGHT = 24;
+// A 10px ramp keeps the sharp glyphs dissolving into the glass right at the box
+// edge without leaving a visible straight cut.
+const GLASS_CONTENT_FEATHER = 10;
+const GLASS_CONTENT_MAX = 16;
+// Two boxes with every edge within 2px are the same surface seen twice (e.g. a
+// wrapper and the card inside it); the first one wins.
+const GLASS_CONTENT_EDGE_TOLERANCE = 2;
+// An inner box inset by this much on every side is real nesting (a code block
+// inside a card) and gets its own glass; anything tighter is the same frame.
+const GLASS_CONTENT_NEST_INSET = 6;
+// The reading-pane crest was a 22–32px bright band, far too heavy for a 100px
+// card: every content box uses the input card's quarter-strength highlight.
+const GLASS_CONTENT_CREST_SCALE = 0.22;
+// The bottom shade is the darkest layer in the contrast budget; softening it for
+// a card keeps the last line of text above the AA floor.
+const GLASS_CONTENT_SHADE_SCALE = 0.45;
+// How much of the blurred sea shows through. 30–36% keeps the whale legible as a
+// frosted shape while the contrast test holds body text at ≥4.5:1 even over the
+// darkest cell tile.
+const GLASS_CONTENT_MIST_BASE = 0.30;
+const GLASS_CONTENT_MIST_RANGE = 0.06;
 
 const glassClamp = (value, low, high) => value < low ? low : value > high ? high : value;
 
 /**
- * Rounded pane around the text column, in canvas coordinates.
+ * One pane per opaque content box, in canvas coordinates.
  *
- * `canvas` is the whale canvas, `viewport` the conversation scroller, `column`
- * the chat flow and `footer` the composer seat. A missing viewport falls back to
- * the whole canvas and a missing column to a centred default width, so an
- * unknown DSH layout still yields a sane pane instead of none.
+ * `boxes` are page rectangles from `getBoundingClientRect` plus each box's own
+ * computed corner radius. A pane is *exactly* the box clipped to the canvas —
+ * never inset, never padded — so its corner radius and edges line up with the
+ * DOM box and there is no second, smaller rounded frame to notice.
  *
- * @returns {{x:number,y:number,width:number,height:number,radius:number}|null}
+ * Near-identical boxes collapse to the first one; a genuinely nested box (a card
+ * inside a card) keeps its own pane, marked `nested`; more boxes than `max` are
+ * cut down to the largest ones while keeping document order for painting.
+ *
+ * @returns {Array<{x:number,y:number,width:number,height:number,radius:number,feather:number,nested:boolean}>}
  */
-export function glassPanel({ canvas, viewport = null, column = null,
-  pad = GLASS_PAD, radius = GLASS_RADIUS, gutter = GLASS_GUTTER } = {}) {
-  if (!canvas || !(canvas.width > 0) || !(canvas.height > 0)) return null;
-  const area = viewport && viewport.width > 0 && viewport.height > 0 ? viewport : canvas;
-  // Only the part of the scroller the sea actually covers may hold the pane.
-  const left = Math.max(area.left, canvas.left) - canvas.left + gutter;
-  const right = Math.min(area.left + area.width, canvas.left + canvas.width) - canvas.left - gutter;
-  const top = Math.max(area.top, canvas.top) - canvas.top + GLASS_TOP_GAP;
-  const bottom = Math.min(area.top + area.height, canvas.top + canvas.height) - canvas.top - gutter;
-  const room = right - left;
-  if (!(room >= GLASS_MIN_WIDTH) || !(bottom - top >= GLASS_MIN_HEIGHT)) return null;
-  const columnWidth = column && column.width > 0 ? Math.min(column.width, room) : Math.min(GLASS_DEFAULT_COLUMN, room * 0.64);
-  const centre = column && column.width > 0 ? column.left + column.width / 2 - canvas.left : (left + right) / 2;
-  const width = Math.min(columnWidth + pad * 2, room);
-  if (width < GLASS_MIN_WIDTH) return null;
-  const x = glassClamp(centre - width / 2, left, right - width);
-  const height = bottom - top;
-  if (!(height >= GLASS_MIN_HEIGHT)) return null;
-  return { x, y: top, width, height, radius: Math.min(radius, width / 2, height / 2) };
+export function glassContentPanes({ canvas, boxes, max = GLASS_CONTENT_MAX } = {}) {
+  if (!canvas || !(canvas.width > 0) || !(canvas.height > 0) || !Array.isArray(boxes)) return [];
+  const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : GLASS_CONTENT_MAX;
+  const clipped = [];
+  for (const box of boxes) {
+    if (!box) continue;
+    const left = Number(box.left), top = Number(box.top);
+    const boxWidth = Number(box.width), boxHeight = Number(box.height);
+    if (![left, top, boxWidth, boxHeight].every(Number.isFinite)) continue;
+    if (!(boxWidth >= GLASS_CONTENT_MIN_WIDTH) || !(boxHeight >= GLASS_CONTENT_MIN_HEIGHT)) continue;
+    const x = Math.max(0, left - canvas.left);
+    const y = Math.max(0, top - canvas.top);
+    const right = Math.min(canvas.width, left - canvas.left + boxWidth);
+    const bottom = Math.min(canvas.height, top - canvas.top + boxHeight);
+    const width = right - x, height = bottom - y;
+    if (!(width >= 1) || !(height >= 1)) continue;
+    clipped.push({ x, y, width, height,
+      radius: glassClamp(Number.isFinite(Number(box.radius)) ? Number(box.radius) : 0, 0, Math.min(width, height) / 2),
+      feather: GLASS_CONTENT_FEATHER });
+  }
+  // Same surface measured twice: every edge within the tolerance.
+  const unique = [];
+  for (const pane of clipped) {
+    const duplicate = unique.some(other => Math.abs(pane.x - other.x) <= GLASS_CONTENT_EDGE_TOLERANCE
+      && Math.abs(pane.y - other.y) <= GLASS_CONTENT_EDGE_TOLERANCE
+      && Math.abs((pane.x + pane.width) - (other.x + other.width)) <= GLASS_CONTENT_EDGE_TOLERANCE
+      && Math.abs((pane.y + pane.height) - (other.y + other.height)) <= GLASS_CONTENT_EDGE_TOLERANCE);
+    if (!duplicate) unique.push(pane);
+  }
+  // Over the budget, keep the largest boxes but draw in document order so an
+  // outer card is always painted before the card nested inside it.
+  let kept = unique;
+  if (unique.length > limit) {
+    kept = unique
+      .map((pane, index) => ({ pane, index }))
+      .sort((a, b) => b.pane.width * b.pane.height - a.pane.width * a.pane.height || a.index - b.index)
+      .slice(0, limit)
+      .sort((a, b) => a.index - b.index)
+      .map(entry => entry.pane);
+  }
+  for (const pane of kept) {
+    pane.nested = kept.some(other => other !== pane
+      && pane.x >= other.x + GLASS_CONTENT_NEST_INSET
+      && pane.y >= other.y + GLASS_CONTENT_NEST_INSET
+      && pane.x + pane.width <= other.x + other.width - GLASS_CONTENT_NEST_INSET
+      && pane.y + pane.height <= other.y + other.height - GLASS_CONTENT_NEST_INSET);
+  }
+  return kept;
 }
 
 /**
- * One sheet of glass over the whole reading column, composer included.
+ * Append one rounded rectangle to the current path (no beginPath).
  *
- * The composer is as much a place for words as the transcript is, and its card
- * has its own opaque fill, so a single pane running to the bottom of the viewport
- * covers both. Splitting them would leave a stripe of bare sea between the two
- * and make the material read as two bands instead of one surface.
- *
- * @returns {Array<{x:number,y:number,width:number,height:number,radius:number}>}
+ * Several boxes can be appended to one path and clipped together: the clip is
+ * then the union of the rounded rectangles, so a single shared image can be
+ * drawn for all panes while the gaps *between* boxes stay outside the union and
+ * remain uncovered.
  */
-export function glassPanes({ canvas, viewport = null, column = null,
-  pad = GLASS_PAD, radius = GLASS_RADIUS, gutter = GLASS_GUTTER } = {}) {
-  const pane = glassPanel({ canvas, viewport, column, pad, radius, gutter });
-  return pane ? [pane] : [];
-}
-
-/**
- * Rounded pane over the input card, in canvas coordinates.
- *
- * `card` and `canvas` are both page rectangles (`getBoundingClientRect` results):
- * the card is translated into the canvas and then clipped to it, so the pane can
- * never paint outside the sea even when the composer is half scrolled away. The
- * card is the whole target here: no padding, because the card's own rounded
- * background is exactly the shape whose text the glass sits above.
- *
- * Cards too small to hold readable text (or entirely off the canvas) opt out.
- *
- * @returns {{x:number,y:number,width:number,height:number,radius:number,feather:number}|null}
- */
-export function glassComposerPane({ canvas, card, radius = GLASS_COMPOSER_RADIUS } = {}) {
-  if (!canvas || !card || !(canvas.width > 0) || !(canvas.height > 0)) return null;
-  if (!(card.width >= GLASS_COMPOSER_MIN_WIDTH) || !(card.height >= GLASS_COMPOSER_MIN_HEIGHT)) return null;
-  const left = card.left - canvas.left, top = card.top - canvas.top;
-  const x = Math.max(0, left), y = Math.max(0, top);
-  const right = Math.min(canvas.width, left + card.width);
-  const bottom = Math.min(canvas.height, top + card.height);
-  const width = right - x, height = bottom - y;
-  // Entirely outside the sea: nothing to frost and no geometry to report.
-  if (!(width >= 1) || !(height >= 1)) return null;
-  return { x, y, width, height,
-    radius: glassClamp(Number.isFinite(radius) ? radius : GLASS_COMPOSER_RADIUS, 0, Math.min(width / 2, height / 2)),
-    feather: GLASS_COMPOSER_FEATHER };
-}
-
-/** Trace a rounded rectangle; callers decide whether to fill, stroke or clip. */
-export function glassRoundedPath(ctx, rect) {
+export function glassRoundedSubpath(ctx, rect) {
   const { x, y, width, height } = rect;
   const radius = Math.max(0, Math.min(rect.radius, width / 2, height / 2));
-  ctx.beginPath();
   ctx.moveTo(x + radius, y);
   ctx.lineTo(x + width - radius, y);
   ctx.arcTo(x + width, y, x + width, y + radius, radius);
@@ -125,19 +122,21 @@ export function glassRoundedPath(ctx, rect) {
   ctx.closePath();
 }
 
+/** Trace a rounded rectangle; callers decide whether to fill, stroke or clip. */
+export function glassRoundedPath(ctx, rect) {
+  ctx.beginPath();
+  glassRoundedSubpath(ctx, rect);
+}
+
 /**
  * Material for one strength setting.
  *
  * The pane is composited *above* the DOM text — the whale canvas lives in DSH's
  * overlay layer — so every layer here is also a contrast cost for the words
- * underneath, and the budget is tight: a 0.5 alpha fill over body text collapses
- * black-on-white from 21:1 to about 3:1 no matter which colour it uses.
- *
- * So the pane is built the other way round. `mist` is hard-capped low and only
- * tints the surface; the material reads from what sits at the edges instead —
- * the rim stroke, the light band along the top, the shade along the bottom, and
- * the fact that everything behind the pane is blurred. The whale still shows as a
- * pale shape, because that is what a real pane leaves of what lies beneath it.
+ * underneath. `mist` (the blurred sea) and `veil` (a flat tint) are the two
+ * layers that carry visible colour; the top crest and bottom shade shape the
+ * glass edge. There is deliberately no rim colour here: the outline belongs to
+ * the DOM card, never to this canvas (see paintContentPane).
  *
  * test 'the pane keeps body text above the AAA contrast threshold' computes the
  * worst case for both themes and fails if any strength drops below 7:1.
@@ -145,7 +144,7 @@ export function glassRoundedPath(ctx, rect) {
 export function glassTone(strength = 0.55, { dark = false, reducedTransparency = false, enabled = true,
   crestScale = 1, compact = false } = {}) {
   const s = glassClamp(Number.isFinite(strength) ? strength : 0.55, 0, 1);
-  if (!enabled || reducedTransparency) return { mode: 'clear', strength: s, feather: compact ? GLASS_COMPOSER_FEATHER : 26 };
+  if (!enabled || reducedTransparency) return { mode: 'clear', strength: s, feather: compact ? 12 : 26 };
   return {
     mode: 'frost',
     strength: s,
@@ -154,12 +153,7 @@ export function glassTone(strength = 0.55, { dark = false, reducedTransparency =
     mist: 0.24 + 0.06 * s,
     veil: dark ? 0.045 + 0.005 * s : 0.033 + 0.002 * s,
     tint: dark ? '20, 21, 24' : '255, 255, 255',
-    // A thicker pane hides what is behind it a little more, but the visible range
-    // is narrow: the whale tint is the largest layer in the pane and the one that
-    // sets the text-contrast floor. It is set at the top of that budget, so more
-    // strength buys blur and rim definition rather than a deeper silhouette.
     silhouette: dark ? '120, 135, 158' : '160, 178, 200',
-    stroke: dark ? `rgba(255, 255, 255, ${0.14 + 0.10 * s})` : `rgba(24, 34, 48, ${0.11 + 0.07 * s})`,
     crest: `rgba(255, 255, 255, ${(dark ? 0.06 + 0.05 * s : 0.52 + 0.34 * s) * crestScale})`,
     shade: dark ? `rgba(0, 0, 0, ${0.14 + 0.16 * s})` : `rgba(30, 43, 58, ${0.045 + 0.05 * s})`,
     crestHeight: compact ? Math.min(18, 8 + 4 * s) : 22 + 10 * s,
@@ -169,34 +163,62 @@ export function glassTone(strength = 0.55, { dark = false, reducedTransparency =
 }
 
 /**
- * Material for the input card.
+ * Material for a content box.
  *
- * Same contrast budget as the reading pane (identical tint, veil, mist and
- * silhouette), because both sit above words. The only differences are the ones
- * the card demands: a short pane needs a short top highlight — a 22–32px bright
- * band would land on the first line of the message — so the crest is cut to a
- * quarter and capped, and glyphs dissolve over the composer's own short feather.
- * The WCAG worst case including that crest is asserted in composer.test.js.
+ * Same contrast budget as the reading pane (identical tint and silhouette), with
+ * the changes a card demands: the blurred sea carries real colour (mist), so it
+ * is capped below the level that would push body text under 4.5:1; the top
+ * highlight is cut to a quarter and capped, so it cannot land on the first line
+ * of text as a bright bar; and the bottom shade is softened.
+ *
+ * No outline is produced: the frame is DSH's own, and painting a second rim here
+ * made the corners read as two different radii (T3). The material only ever
+ * fills inside the card's own rounded clip.
+ * The whole budget is asserted in content-glass.test.js, band by band.
  */
-export function glassComposerTone(strength = 0.55, options = {}) {
-  return glassTone(strength, { ...options, crestScale: GLASS_COMPOSER_CREST_SCALE, compact: true });
+export function glassContentTone(strength = 0.55, options = {}) {
+  const tone = glassTone(strength, { ...options, crestScale: GLASS_CONTENT_CREST_SCALE, compact: true });
+  if (tone.mode !== 'frost') return tone;
+  const s = tone.strength;
+  const dark = Boolean(options.dark);
+  return {
+    ...tone,
+    mist: GLASS_CONTENT_MIST_BASE + GLASS_CONTENT_MIST_RANGE * s,
+    blur: 9 + 12 * s,
+    shade: dark
+      ? `rgba(0, 0, 0, ${(0.14 + 0.16 * s) * GLASS_CONTENT_SHADE_SCALE})`
+      : `rgba(30, 43, 58, ${(0.045 + 0.05 * s) * GLASS_CONTENT_SHADE_SCALE})`,
+  };
 }
 
 /**
- * Crop of the pane region used for the frost pass, in CSS pixels.
+ * Downsampling factor for the shared blurred sea, 4–6 depending on strength.
  *
- * Only this rectangle is copied into the small buffer, so the per-frame cost is
- * a fraction of the sea instead of a full-canvas resample. The clip keeps the
- * copy inside the canvas even when the pane is partly scrolled off.
+ * One buffer is built per frame for all panes: the number of panes changes the
+ * number of draw calls, never the blur cost.
  */
-export function glassFrostRegion(panel, width, height) {
-  if (!panel || !(width > 0) || !(height > 0)) return null;
-  const x = glassClamp(panel.x, 0, width);
-  const y = glassClamp(panel.y, 0, height);
-  const right = glassClamp(panel.x + panel.width, 0, width);
-  const bottom = glassClamp(panel.y + panel.height, 0, height);
-  if (!(right - x >= 1) || !(bottom - y >= 1)) return null;
-  return { x, y, width: right - x, height: bottom - y };
+export function glassSeaFactor(strength = 0.55) {
+  const s = glassClamp(Number.isFinite(strength) ? strength : 0.55, 0, 1);
+  return glassClamp(Math.round(4 + 2 * s), 4, 6);
+}
+
+/**
+ * Size of the shared blurred-sea buffer, in low-resolution pixels.
+ *
+ * The buffer covers the whole canvas (so every pane slices the same image) with
+ * a padding band wide enough that the Gaussian blur has real pixels to pull in
+ * from outside the pane, which keeps pane edges from darkening.
+ */
+export function glassSeaBuffer(width, height, { factor = 4, blur = 12 } = {}) {
+  const sourceWidth = Math.max(1, Math.floor(Number.isFinite(width) ? width : 1));
+  const sourceHeight = Math.max(1, Math.floor(Number.isFinite(height) ? height : 1));
+  const f = glassClamp(Number.isFinite(factor) ? Math.round(factor) : 4, 2, 8);
+  const blurPx = Math.max(0, Number.isFinite(blur) ? blur : 0);
+  const blurRadius = blurPx / f;
+  const pad = Math.max(2, Math.ceil(blurRadius * 3) + 2);
+  return { factor: f, pad, blurRadius,
+    width: Math.ceil(sourceWidth / f) + pad * 2,
+    height: Math.ceil(sourceHeight / f) + pad * 2 };
 }
 
 /**
@@ -221,9 +243,9 @@ export function glassContains(rect, x, y) {
 /**
  * How much of a sharp glyph survives at this point.
  *
- * 0 inside the pane (the frost owns it), ramping to 1 across `feather` pixels
- * outside it. Without the ramp a whale crossing the pane edge would be cut off
- * in a straight line; with it the body dissolves into the glass.
+ * 0 inside the pane (the frosted sea owns it), ramping to 1 across `feather`
+ * pixels outside it. Without the ramp a whale crossing the pane edge would be
+ * cut off in a straight line; with it the body dissolves into the glass.
  */
 export function glassEdgeFade(rect, x, y, feather = 26) {
   const inside = -glassDistance(rect, x, y);
@@ -231,18 +253,3 @@ export function glassEdgeFade(rect, x, y, feather = 26) {
   const t = glassClamp(-inside / Math.max(1, feather), 0, 1);
   return t * t * (3 - 2 * t);
 }
-
-/**
- * Downsampled frost buffer size for one source canvas and tone.
- *
- * This is the fallback used when the canvas cannot blur for us: copy the pane a
- * few times smaller and let the upscale do the smearing. The factor is kept low
- * enough that the shape survives, high enough that no glyph edges show.
- */
-export function glassFrostSize(width, height, scale) {
-  const wanted = Number.isFinite(scale) ? Math.round(scale) : 4;
-  const factor = glassClamp(wanted, 2, 8);
-  return { factor, width: Math.max(2, Math.ceil(width / factor)), height: Math.max(2, Math.ceil(height / factor)) };
-}
-
-

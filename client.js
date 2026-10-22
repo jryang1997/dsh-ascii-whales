@@ -115,14 +115,31 @@ function writeWhaleRigPose(whale, pose) {
   pose.spine = spine;
   pose.anatomy = whaleSpecies(whale.species);
   pose.stroke = whale._motion?.stroke ?? 1;
+  pose.diveEngagement = rigDiveEngagement(pose);
+  const dive = Number.isFinite(pose.divePitch) ? pose.divePitch : 0;
+  pose.diveSin = Math.sin(dive);
+  pose.diveCos = Math.cos(dive);
   return pose;
+}
+
+function rigDiveEngagement(pose) {
+  const sub = Number.isFinite(pose.submergence) ? pose.submergence : 0;
+  const depth = Number.isFinite(pose.diveDepth) ? pose.diveDepth : 0;
+  const pitch = Number.isFinite(pose.divePitch) ? pose.divePitch : 0;
+  const kick = Number.isFinite(pose.diveKick) ? pose.diveKick : 0;
+  return rigSmooth(Math.max(sub * 8, Math.abs(depth) * 4, Math.abs(pitch) * 3, Math.abs(kick) * 2));
 }
 
 function deformWhaleParticle(p, pose, out) {
   const anatomy = pose.anatomy || WHALE_SPECIES.blue;
   let x = p.x, y = p.y, z = p.z, nx = p.nx, ny = p.ny, nz = p.nz;
   const bank = rigLimit((pose.turn || 0) * 0.28, -0.09, 0.09);
-  const wave = pose.wave || 0, stroke = pose.stroke ?? 1;
+  const wave = pose.wave || 0;
+  let stroke = pose.stroke ?? 1;
+  const engagement = Number.isFinite(pose.diveEngagement) ? pose.diveEngagement : rigDiveEngagement(pose);
+  if (engagement > 0) stroke *= 1 - engagement;
+  const kick = Number.isFinite(pose.diveKick) ? pose.diveKick : 0;
+  const arch = Number.isFinite(pose.diveArch) ? pose.diveArch : 0;
   let bind = x;
   if (p.part === 'fin') {
     const root = anatomy.flipper.root;
@@ -138,7 +155,8 @@ function deformWhaleParticle(p, pose, out) {
     const normalX = cs * nx + ss * nz; nz = -ss * nx + cs * nz; nx = normalX;
   } else if (p.part === 'fluke') {
     bind = -0.96;
-    const pitch = Math.cos(wave - 1.2) * 0.24 * stroke;
+    let pitch = Math.cos(wave - 1.2) * 0.24 * stroke;
+    if (kick !== 0) pitch -= kick * 0.65;
     const c = Math.cos(pitch), s = Math.sin(pitch), dx = x - bind, dy = y - 0.01;
     x = bind + c * dx - s * dy; y = 0.01 + s * dx + c * dy;
     const normalX = c * nx - s * ny; ny = s * nx + c * ny; nx = normalX;
@@ -171,10 +189,19 @@ function deformWhaleParticle(p, pose, out) {
   // x/z steering curve. Preserve surface normals through both rotations.
   const u = rigLimit((0.5 - bind) / 1.46, 0, 1), ramp = rigSmooth(u);
   const phase = wave - u * 1.2;
-  const heave = anatomy.amplitude * ramp * ramp * Math.sin(phase) * stroke;
+  let heave = anatomy.amplitude * ramp * ramp * Math.sin(phase) * stroke;
   const rampDerivative = u > 0 && u < 1 ? -6 * u * (1 - u) / 1.46 : 0;
-  const slope = anatomy.amplitude * stroke * (2 * ramp * rampDerivative * Math.sin(phase)
+  let slope = anatomy.amplitude * stroke * (2 * ramp * rampDerivative * Math.sin(phase)
     + ramp * ramp * Math.cos(phase) * (u > 0 && u < 1 ? 1.2 / 1.46 : 0));
+  if (kick !== 0) {
+    heave += kick * ramp * ramp;
+    slope += kick * 2 * ramp * rampDerivative;
+  }
+  if (arch !== 0) {
+    const a = rigLimit((bind + 1.05) / 1.9, 0, 1), b = 1 - a;
+    heave -= arch * 16 * a * a * b * b;
+    slope -= arch * 32 * a * b * (1 - 2 * a) / 1.9;
+  }
   const pitch = Math.atan(slope), cv = Math.cos(pitch), sv = Math.sin(pitch);
   const along = x - bind, localX = cv * along - sv * y;
   const vertical = heave + sv * along + cv * y;
@@ -188,6 +215,18 @@ function deformWhaleParticle(p, pose, out) {
   out.nx = tx * localNX + ty * lateralNormal;
   out.ny = verticalNormal;
   out.nz = -ty * localNX + tx * lateralNormal;
+  const dive = pose.divePitch;
+  if (Number.isFinite(dive) && dive !== 0) {
+    const cd = Number.isFinite(pose.diveCos) ? pose.diveCos : Math.cos(dive);
+    const sd = Number.isFinite(pose.diveSin) ? pose.diveSin : Math.sin(dive);
+    const ox = out.x, oy = out.y;
+    out.x = cd * ox - sd * oy;
+    out.y = sd * ox + cd * oy;
+    const nx = out.nx, ny = out.ny;
+    out.nx = cd * nx - sd * ny;
+    out.ny = sd * nx + cd * ny;
+  }
+  if (Number.isFinite(pose.diveDepth) && pose.diveDepth !== 0) out.y += pose.diveDepth;
   return out;
 }
 
@@ -266,10 +305,737 @@ function surfaceInkTone(elevation, upness, sideFacing, material = 'skin', seed =
   return Math.max(0.14, Math.min(0.9, tone));
 }
 
+// Reef islands for the sea surface. The layout is seeded once per page load and
+// then never re-rolled: a resize only rescales the same rocks, so the background
+// does not pop when the window changes.
+//
+// build.mjs concatenates the renderer modules into one factory, so no top-level
+// name may collide with model.js (which owns `clamp`, `smooth`, `noise` and the
+// other short helpers). Every helper here carries a `reef` prefix.
+
+
+// Ordered densest to sparsest. The banded pressure ridges of a rock read as
+// dark lines, so the shadow side gets the dense glyph and the lit side the
+// sparse one; the ink palette supplies the matching tone.
+const REEF_GLYPHS = '@%#*+:.';
+const REEF_SPECKLE = '·';
+// The reading column owns the middle of the sea and the glass pane leaves only
+// narrow margins on a normal desktop, so the rocks live in the far margins
+// instead of behind the words. They still steer the school.
+const REEF_LEFT_BAND = Object.freeze([0.02, 0.10]);
+const REEF_RIGHT_BAND = Object.freeze([0.90, 0.98]);
+const REEF_VERTICAL_BAND = Object.freeze([0.16, 0.78]);
+const REEF_RADIUS_MIN_FRACTION = 0.05;
+const REEF_RADIUS_MAX_FRACTION = 0.07;
+const REEF_RADIUS_MIN = 26;
+const REEF_RADIUS_MAX = 72;
+const REEF_MIN_GAP = 14;
+const REEF_ATTEMPTS = 220;
+const REEF_FALLBACK_ATTEMPTS = 120;
+const REEF_DEFAULT_WIDTH = 1280;
+const REEF_DEFAULT_HEIGHT = 800;
+const REEF_DEFAULT_COUNT = 3;
+const REEF_MAX_COUNT = 8;
+const REEF_DEFAULT_OPACITY = 0.6;
+const REEF_DEFAULT_CELL_WIDTH = 11;
+const REEF_DEFAULT_CELL_HEIGHT = 13;
+
+// The renderer fades glyphs near the reading pane; the reef must obey the same
+// per-point fade so it dissolves with the rest of the sea.
+const reefClamp = (value, low, high) => value < low ? low : value > high ? high : value;
+const reefFinite = (value, fallback) => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const reefPositive = (value, fallback) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+const reefSmooth = t => { t = reefClamp(t, 0, 1); return t * t * (3 - 2 * t); };
+
+/** Small deterministic PRNG (mulberry32); one instance per field creation. */
+const reefRandom = seed => {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+/** Stable 0..1 fraction of an integer seed, used instead of another RNG. */
+const reefFraction = seed => ((seed >>> 0) % 1000) / 1000;
+
+/**
+ * Fixed per-cell noise. Drawing must not allocate or advance a clock, so the
+ * grain is a pure hash of the rock seed and the character cell.
+ */
+const reefCellNoise = (seed, column, row) => {
+  let hash = (seed | 0) ^ Math.imul(column + 1, 0x9e3779b1) ^ Math.imul(row + 1, 0x85ebca6b);
+  hash = Math.imul(hash ^ (hash >>> 15), 0x2545f491);
+  hash ^= hash >>> 13;
+  return (hash >>> 0) / 4294967296;
+};
+
+/**
+ * One main stone plus one or two smaller stones leaning against it, expressed
+ * relative to the reef centre and normalised so the outer radius is exact.
+ */
+function reefBuildLobes(radius, rand) {
+  const count = rand() < 0.5 ? 2 : 3;
+  // The main stone sits on the field anchor; only the satellites are offset, so
+  // `radius` really is the circumcircle of the whole group. The satellites are
+  // deliberately chunky and close, so the cluster reads as one island at an
+  // 11px cell resolution instead of a few isolated pebbles.
+  const lobes = [{ dx: 0, dy: 0, r: radius * (0.48 + 0.08 * rand()) }];
+  const base = rand() * Math.PI * 2;
+  for (let i = 1; i < count; i++) {
+    const angle = base + (i - 1) * Math.PI * 0.85 + (rand() - 0.5) * 0.6;
+    const distance = radius * (0.42 + 0.16 * rand());
+    const small = radius * (0.34 + 0.08 * rand());
+    lobes.push({
+      dx: lobes[0].dx + Math.cos(angle) * distance,
+      dy: lobes[0].dy + Math.sin(angle) * distance,
+      r: small,
+    });
+  }
+  let bound = 0;
+  for (const lobe of lobes) bound = Math.max(bound, Math.hypot(lobe.dx, lobe.dy) + lobe.r);
+  const scale = bound > 0 ? radius / bound : 1;
+  for (const lobe of lobes) {
+    lobe.dx *= scale; lobe.dy *= scale; lobe.r *= scale;
+  }
+  return lobes;
+}
+
+/** True when the candidate circumcircle keeps the required gap to every rock. */
+function reefSeparated(reefs, x, y, radius) {
+  for (const reef of reefs) {
+    const dx = reef.x - x, dy = reef.y - y;
+    if (Math.sqrt(dx * dx + dy * dy) < reef.radius + radius + REEF_MIN_GAP) return false;
+  }
+  return true;
+}
+
+/**
+ * One rejection-sampling attempt. Returns null when the position collides.
+ *
+ * The bands already leave a wide margin on normal viewports; the clamp only
+ * matters for windows narrower than the reading column and keeps a whole rock
+ * on the canvas instead of half of one.
+ */
+function reefCandidate(width, height, left, radius, existing, rand) {
+  const band = left ? REEF_LEFT_BAND : REEF_RIGHT_BAND;
+  const nx = band[0] + (band[1] - band[0]) * rand();
+  const ny = REEF_VERTICAL_BAND[0] + (REEF_VERTICAL_BAND[1] - REEF_VERTICAL_BAND[0]) * rand();
+  let x = nx * width, y = ny * height;
+  if (width > radius * 2 + 4) x = reefClamp(x, radius + 2, width - radius - 2);
+  else x = width / 2;
+  if (height > radius * 2 + 4) y = reefClamp(y, radius + 2, height - radius - 2);
+  else y = height / 2;
+  if (!reefSeparated(existing, x, y, radius)) return null;
+  const seed = (Math.floor(rand() * 0x100000000) >>> 0);
+  return { x, y, radius, seed, lobes: reefBuildLobes(radius, rand) };
+}
+
+/**
+ * Build the fixed reef field.
+ *
+ * `seed` is the one thing the caller draws at page load; with the same seed and
+ * the same size this returns an identical field, which is what lets a settings
+ * change repaint without moving the rocks.
+ */
+function createReefField({ width, height, seed, count = REEF_DEFAULT_COUNT } = {}) {
+  const safeWidth = reefPositive(width, REEF_DEFAULT_WIDTH);
+  const safeHeight = reefPositive(height, REEF_DEFAULT_HEIGHT);
+  const rootSeed = typeof seed === 'number' && Number.isFinite(seed)
+    ? (seed >>> 0) : (Math.floor(Math.random() * 0x100000000) >>> 0);
+  const wanted = reefClamp(Math.round(reefFinite(count, REEF_DEFAULT_COUNT)), 1, REEF_MAX_COUNT);
+  const minSide = Math.min(safeWidth, safeHeight);
+  const span = REEF_RADIUS_MAX_FRACTION - REEF_RADIUS_MIN_FRACTION;
+  const rand = reefRandom(rootSeed);
+  const reefs = [];
+  for (let index = 0; index < wanted; index++) {
+    // Left, right, left, ... so the pair never crowds one margin.
+    const left = index % 2 === 0;
+    let reef = null;
+    for (let attempt = 0; attempt < REEF_ATTEMPTS && !reef; attempt++) {
+      const radius = reefClamp(minSide * (REEF_RADIUS_MIN_FRACTION + span * rand()),
+        REEF_RADIUS_MIN, REEF_RADIUS_MAX);
+      reef = reefCandidate(safeWidth, safeHeight, left, radius, reefs, rand);
+    }
+    if (!reef) {
+      // Tiny windows or very large counts: shrink to the floor radius and try a
+      // little harder, but never draw an overlapping pair.
+      const radius = reefClamp(minSide * REEF_RADIUS_MIN_FRACTION, REEF_RADIUS_MIN, REEF_RADIUS_MAX);
+      for (let attempt = 0; attempt < REEF_FALLBACK_ATTEMPTS && !reef; attempt++) {
+        reef = reefCandidate(safeWidth, safeHeight, left, radius, reefs, rand);
+      }
+    }
+    if (reef) reefs.push(reef);
+  }
+  return { width: safeWidth, height: safeHeight, seed: rootSeed, reefs };
+}
+
+/**
+ * Rescale the field in place. Positions keep their normalized coordinates, so
+ * the reef belongs to the same page layout after a window resize and no new
+ * random values are drawn.
+ *
+ * Rocks scale by the smaller of the two axis factors. Anisotropic resizing can
+ * pull two neighbours closer together; keeping the radius below that factor is
+ * what stops the groups from fusing when a window changes aspect ratio.
+ */
+function resizeReefField(field, width, height) {
+  if (!field || !Array.isArray(field.reefs)) return field;
+  const oldWidth = reefFinite(field.width, 0);
+  const oldHeight = reefFinite(field.height, 0);
+  if (!(oldWidth > 0) || !(oldHeight > 0)) return field;
+  const nextWidth = reefPositive(width, oldWidth);
+  const nextHeight = reefPositive(height, oldHeight);
+  const xScale = nextWidth / oldWidth, yScale = nextHeight / oldHeight;
+  const rockScale = Math.min(xScale, yScale);
+  for (const reef of field.reefs) {
+    if (!reef) continue;
+    if (Number.isFinite(reef.x)) reef.x *= xScale;
+    if (Number.isFinite(reef.y)) reef.y *= yScale;
+    if (reef.radius > 0) reef.radius *= rockScale;
+    if (!Array.isArray(reef.lobes)) continue;
+    for (const lobe of reef.lobes) {
+      lobe.dx *= rockScale; lobe.dy *= rockScale; lobe.r *= rockScale;
+    }
+  }
+  field.width = nextWidth; field.height = nextHeight;
+  return field;
+}
+
+/**
+ * One circle per rock for the motion layer. The circumcircle is deliberately a
+ * little generous: a whale should start steering before its body clips a stone.
+ */
+function reefObstacles(field) {
+  const obstacles = [];
+  if (!field || !Array.isArray(field.reefs)) return obstacles;
+  for (const reef of field.reefs) {
+    if (!reef) continue;
+    const radius = reefFinite(reef.radius, 0);
+    if (!(radius > 0)) continue;
+    const x = reefFinite(reef.x, NaN), y = reefFinite(reef.y, NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    obstacles.push({ x, y, radius });
+  }
+  return obstacles;
+}
+
+/**
+ * Paint the reefs as ASCII cells.
+ *
+ * Only `fillText` and the basic text state are used, so this can drive the real
+ * canvas or a test double. Every cell is sampled at its centre: inside a stone
+ * the palette tone and glyph density follow a fixed upper-left light, and the
+ * band just outside gets sparse `·` as broken water over the shallows.
+ *
+ * @returns {number} glyphs drawn, which is also what the zero-fade test checks.
+ */
+function drawReefs(target, field, options = {}) {
+  if (!target || typeof target.fillText !== 'function' || !field
+    || !Array.isArray(field.reefs) || !field.reefs.length) return 0;
+  const settings = options && typeof options === 'object' ? options : {};
+  const width = reefPositive(settings.width, reefPositive(field.width, REEF_DEFAULT_WIDTH));
+  const height = reefPositive(settings.height, reefPositive(field.height, REEF_DEFAULT_HEIGHT));
+  const cellWidth = reefPositive(settings.cellWidth, REEF_DEFAULT_CELL_WIDTH);
+  const cellHeight = reefPositive(settings.cellHeight, REEF_DEFAULT_CELL_HEIGHT);
+  const ratio = reefPositive(settings.ratio, 1);
+  const opacity = reefClamp(reefFinite(settings.opacity, REEF_DEFAULT_OPACITY), 0, 1);
+  const palette = settings.palette && typeof settings.palette.length === 'number' && settings.palette.length > 0
+    ? settings.palette : createInkPalette('ocean');
+  const fade = typeof settings.fade === 'function' ? settings.fade : null;
+  if (!(opacity > 0)) return 0;
+
+  if (typeof settings.font === 'string' && settings.font) target.font = settings.font;
+  target.textAlign = 'center';
+  target.textBaseline = 'middle';
+  const columns = Math.max(1, Math.ceil(width / cellWidth));
+  const rows = Math.max(1, Math.ceil(height / cellHeight));
+  const maxWidth = Math.max(1, cellWidth - 1);
+  const paletteSize = palette.length;
+  let currentInk = null;
+  let drawn = 0;
+
+  for (const reef of field.reefs) {
+    if (!reef || !Array.isArray(reef.lobes) || !reef.lobes.length) continue;
+    const originX = reefFinite(reef.x, NaN), originY = reefFinite(reef.y, NaN);
+    const radius = reefFinite(reef.radius, 0);
+    if (!Number.isFinite(originX) || !Number.isFinite(originY) || !(radius > 0)) continue;
+    const lobes = reef.lobes, lobeCount = lobes.length;
+    const seed = reefFinite(reef.seed, 0) >>> 0;
+    // Rock colour varies a little per island so the group does not look stamped.
+    const depth = 0.30 + reefFraction(seed) * 0.18;
+    const halo = Math.max(cellWidth * 0.45, Math.min(radius * 0.32, 14));
+    const left = Math.max(0, Math.floor((originX - radius - halo) / cellWidth));
+    const right = Math.min(columns - 1, Math.floor((originX + radius + halo) / cellWidth));
+    const top = Math.max(0, Math.floor((originY - radius - halo) / cellHeight));
+    const bottom = Math.min(rows - 1, Math.floor((originY + radius + halo) / cellHeight));
+    for (let row = top; row <= bottom; row++) {
+      const cy = (row + 0.5) * cellHeight;
+      for (let column = left; column <= right; column++) {
+        const cx = (column + 0.5) * cellWidth;
+        let best = -Infinity, normalX = 0, normalY = 0, hits = 0;
+        for (let index = 0; index < lobeCount; index++) {
+          const lobe = lobes[index];
+          if (!(lobe.r > 0)) continue;
+          const dx = cx - (originX + lobe.dx), dy = cy - (originY + lobe.dy);
+          const inside = lobe.r - Math.sqrt(dx * dx + dy * dy);
+          if (inside > 0) hits++;
+          if (inside > best) {
+            best = inside; normalX = dx / lobe.r; normalY = dy / lobe.r;
+          }
+        }
+        if (best === -Infinity) continue;
+        // A zero or invalid fade means the glass owns this point: no glyph at all.
+        const fadeValue = fade ? fade(cx, cy) : 1;
+        if (!(fadeValue > 0)) continue;
+        const fadeScale = fadeValue < 1 ? fadeValue : 1;
+
+        if (best > 0) {
+          const cover = reefSmooth(best / Math.max(1, cellWidth * 0.9));
+          const rim = 1 - cover;
+          const facing = -0.62 * normalX - 0.78 * normalY;
+          const grain = reefCellNoise(seed, column, row);
+          // The rim carries the densest glyphs: that outline is what makes a few
+          // dozen cells read as a rock instead of scattered marks. Inside, the
+          // stone is a sparser texture, and the upper-left light thins it further.
+          // Creases where two stones meet sit in their own shadow.
+          let density = 3.4 + facing * 0.9 - rim * 2.2 + (grain - 0.5) * 1.4;
+          if (hits > 1) density -= 0.6;
+          const glyph = REEF_GLYPHS[reefClamp(Math.round(density), 0, REEF_GLYPHS.length - 1)];
+          // Keep the whole stone inside the dark half of the ink ramp: the pale
+          // end all but disappears on a light page, so relief comes from the
+          // glyph density while the ink stays legible on both themes.
+          const light = reefClamp(0.20 + 0.16 * (1 - rim) + 0.08 * facing + (grain - 0.5) * 0.06, 0.08, 0.55);
+          const shade = glyphInkIndex(light, depth);
+          const ink = palette[shade < paletteSize ? shade : paletteSize - 1];
+          const alpha = Math.min(opacity * 0.85, opacity * (0.26 + 0.62 * cover)) * fadeScale;
+          if (!(alpha > 0.004)) continue;
+          if (ink !== currentInk) { target.fillStyle = ink; currentInk = ink; }
+          target.globalAlpha = alpha;
+          target.fillText(glyph, Math.round(cx * ratio) / ratio, Math.round(cy * ratio) / ratio, maxWidth);
+          drawn++;
+        } else if (-best <= halo) {
+          const facing = reefClamp(-0.62 * normalX - 0.78 * normalY, -1, 1);
+          const noise = reefCellNoise(seed ^ 0x51ed270b, column, row);
+          const density = 0.10 + 0.10 * reefClamp(facing, 0, 1) + 0.06 * reefCellNoise(seed ^ 0x2c1b3d, row, column);
+          if (!(noise < density)) continue;
+          // Mid-tone rather than a white glint: the page is usually light, and a
+          // pale dot at low alpha would disappear completely.
+          const light = 0.58 + 0.18 * reefCellNoise(seed ^ 0x7f4a7c15, column + 7, row + 3);
+          const shade = glyphInkIndex(light, depth + 0.10);
+          const ink = palette[shade < paletteSize ? shade : paletteSize - 1];
+          const alpha = Math.min(opacity * 0.85, opacity * 0.26) * fadeScale;
+          if (!(alpha > 0.004)) continue;
+          if (ink !== currentInk) { target.fillStyle = ink; currentInk = ink; }
+          target.globalAlpha = alpha;
+          target.fillText(REEF_SPECKLE, Math.round(cx * ratio) / ratio, Math.round(cy * ratio) / ratio, maxWidth);
+          drawn++;
+        }
+      }
+    }
+  }
+  target.globalAlpha = 1;
+  return drawn;
+}
+
+
+// Ripples are a top-down read of the surface: one fluke slap sends out a calm
+// ring that swells quickly and then settles. Everything here is pure geometry
+// and deterministic hashes, so tests can drive it without a canvas or a clock.
+//
+// build.mjs concatenates the renderer modules into one factory, so every
+// top-level name carries a `water`/`WATER_` prefix to stay clear of model.js,
+// motion.js and glass.js.
+
+const WATER_BEAT = Math.PI * 2;
+// Below this the fluke is gliding on momentum instead of pushing water, so a
+// coasting whale must not splash a ring just because its phase wraps.
+const WATER_ACTIVE_STROKE = 0.42;
+const WATER_MAX_RIPPLES = 16;
+const WATER_MIN_LIFE = 2.8;
+const WATER_LIFE_RANGE = 1.0;
+const WATER_TAIL_FACTOR = 0.54;
+const WATER_MIN_END_RADIUS = 34;
+const WATER_MAX_END_RADIUS = 120;
+const WATER_MIN_START_RADIUS = 3;
+const WATER_MIN_RING_POINTS = 12;
+const WATER_MAX_RING_POINTS = 180;
+const WATER_SPLASH_SECONDS = 0.3;
+// The surface is the shallowest row of the ink LUT: ripples stay a bright
+// sheen instead of growing into a second, whale-coloured body.
+const WATER_RIPPLE_DEPTH = 0.16;
+const WATER_SPLASH_GLYPHS = ["'", '·', ','];
+// A solid ring would read as a bubble outline on the glyph grid; broken dashes
+// keep the same quiet character as the rest of the sea.
+const WATER_DASH_PERIOD = 7;
+const WATER_DASH_GAP = 3;
+
+const waterFinite = (value, fallback) => Number.isFinite(value) ? value : fallback;
+const waterClamp = (value, low, high) => value < low ? low : value > high ? high : value;
+
+/** Integer hash in [0, 1): deterministic per whale, beat and sample. */
+function waterHash(a, b, salt = 0) {
+  let hash = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263)
+    ^ Math.imul(salt | 0, 1442695041);
+  hash = Math.imul(hash ^ (hash >>> 13), 1274126177);
+  return ((hash ^ (hash >>> 16)) >>> 0) / 4294967296;
+}
+
+function waterKeySeed(index, beat) {
+  return waterHash(index + 1, beat);
+}
+
+/** Stable per-whale key: numeric ids win, then names, then a negative slot. */
+function waterWhaleKey(whale, index) {
+  const id = whale.id;
+  if (typeof id === 'number' && Number.isFinite(id)) return id;
+  if (typeof id === 'string' && id) return id;
+  // Negative fallbacks cannot collide with the non-negative ids createScene uses.
+  return -1 - index;
+}
+
+function waterTailPoint(whale) {
+  const nodes = whale.rig && whale.rig.nodes;
+  if (nodes && nodes.length >= 4) {
+    const x = nodes[nodes.length - 2], y = nodes[nodes.length - 1];
+    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+  }
+  const length = Math.max(0, waterFinite(whale.length, 0));
+  const heading = waterFinite(whale.heading, 0);
+  return {
+    x: waterFinite(whale.x, 0) - Math.cos(heading) * length * WATER_TAIL_FACTOR,
+    y: waterFinite(whale.y, 0) - Math.sin(heading) * length * WATER_TAIL_FACTOR,
+  };
+}
+
+function waterHeadPoint(whale) {
+  const nodes = whale.rig && whale.rig.nodes;
+  if (nodes && nodes.length >= 2 && Number.isFinite(nodes[0]) && Number.isFinite(nodes[1])) {
+    return { x: nodes[0], y: nodes[1] };
+  }
+  const reach = Math.max(0, waterFinite(whale.length, 0)) * (1.04 / 2.24);
+  const heading = waterFinite(whale.heading, 0);
+  return { x: waterFinite(whale.x, 0) + Math.cos(heading) * reach,
+    y: waterFinite(whale.y, 0) + Math.sin(heading) * reach };
+}
+
+function waterSpawnRipple(ripples, whale, stroke, index, beat, impact = null) {
+  const bodyRadius = Math.max(1, waterFinite(whale.bodyRadius, 10));
+  const tail = impact === 'surface' ? waterHeadPoint(whale) : waterTailPoint(whale);
+  // One seed decides the life, splash pattern and ring dashes together, so a
+  // ring keeps its shape while it expands.
+  const seed = waterKeySeed(index, beat);
+  const strength = waterClamp(stroke, 0, 1);
+  const endRadius = waterClamp(bodyRadius * (1.9 + 0.9 * strength),
+    WATER_MIN_END_RADIUS, WATER_MAX_END_RADIUS);
+  ripples.push({
+    x: tail.x,
+    y: tail.y,
+    age: 0,
+    life: WATER_MIN_LIFE + WATER_LIFE_RANGE * seed,
+    startRadius: Math.min(Math.max(WATER_MIN_START_RADIUS, bodyRadius * 0.22), endRadius * 0.5),
+    endRadius,
+    strength,
+    seed,
+  });
+  if (impact) {
+    const ripple = ripples[ripples.length - 1];
+    ripple.kind = impact;
+    ripple.heading = waterFinite(whale.heading, 0);
+    ripple.aspect = impact === 'surface' ? 0.68 : 0.76;
+    ripple.endRadius = waterClamp(bodyRadius * (impact === 'surface' ? 3.8 : 3.0), 42, 160);
+    ripple.startRadius = Math.max(4, bodyRadius * (impact === 'surface' ? 0.45 : 0.3));
+    ripple.life = (impact === 'surface' ? 4.1 : 3.3) + seed * 0.5;
+  }
+}
+
+/** Current ring radius: fast at the slap, slow as the ring spends its energy. */
+function waterRippleRadius(ripple) {
+  const life = Math.max(0.001, waterFinite(ripple && ripple.life, WATER_MIN_LIFE));
+  const age = waterClamp(waterFinite(ripple && ripple.age, 0), 0, life);
+  const start = Math.max(0, waterFinite(ripple && ripple.startRadius, WATER_MIN_START_RADIUS));
+  const end = Math.max(start, waterFinite(ripple && ripple.endRadius, start));
+  const progress = age / life;
+  return start + (end - start) * (1 - (1 - progress) ** 1.8);
+}
+
+/** A new, empty surface: live rings plus each whale's last observed beat. */
+function createWaterField() {
+  return { ripples: [], beats: new Map() };
+}
+
+/** Clear both the rings and the beat memory; the next beat starts afresh. */
+function resetWaterField(field) {
+  if (!field || typeof field !== 'object') return field;
+  if (Array.isArray(field.ripples)) field.ripples.length = 0;
+  else field.ripples = [];
+  if (field.beats instanceof Map) field.beats.clear();
+  else field.beats = new Map();
+  return field;
+}
+
+/**
+ * Advance the surface by `delta` simulated seconds.
+ *
+ * Each whale's `_motion.wave` grows continuously; a 2π wrap is one fluke beat.
+ * A ring is born only when the beat is crossed *and* the fluke is actively
+ * pushing water (stroke above the glide threshold). A multi-beat jump still
+ * leaves a single ring, because one slap is what the eye can see.
+ */
+function stepWater(field, scene, delta, options = {}) {
+  if (!field || typeof field !== 'object') return field;
+  if (!Array.isArray(field.ripples)) field.ripples = [];
+  if (!(field.beats instanceof Map)) field.beats = new Map();
+  const ripples = field.ripples, beats = field.beats;
+  const step = waterFinite(delta, 0);
+  const settings = options && typeof options === 'object' ? options : {};
+  const maxRipples = Math.max(0, Math.floor(waterFinite(settings.maxRipples, WATER_MAX_RIPPLES)));
+
+  // Age first, then drop the spent rings: a single step long enough to outlive
+  // a ring must remove it in this same call.
+  if (step > 0) {
+    for (let i = 0; i < ripples.length; i++) {
+      const ripple = ripples[i];
+      if (ripple && typeof ripple === 'object') ripple.age = waterFinite(ripple.age, 0) + step;
+    }
+  }
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const ripple = ripples[i];
+    const age = waterFinite(ripple && ripple.age, 0);
+    const life = waterFinite(ripple && ripple.life, WATER_MIN_LIFE);
+    // Rings without a usable centre are worse than no ring at all: drop them
+    // rather than let a NaN position reach the glyph grid.
+    const centred = Boolean(ripple) && typeof ripple === 'object'
+      && Number.isFinite(waterFinite(ripple.x, NaN)) && Number.isFinite(waterFinite(ripple.y, NaN));
+    if (!centred || !(age < life)) ripples.splice(i, 1);
+  }
+  if (!(step > 0)) return field;
+
+  const whales = scene && Array.isArray(scene.whales) ? scene.whales : [];
+  for (let i = 0; i < whales.length; i++) {
+    const whale = whales[i];
+    if (!whale || typeof whale !== 'object') continue;
+    const key = waterWhaleKey(whale, i);
+    const motion = whale._motion;
+    // Without a motion state there is no phase to read: forget the whale so a
+    // later respawn counts as a first sighting instead of a crossing.
+    if (!motion || typeof motion !== 'object' || !Number.isFinite(motion.wave)) {
+      beats.delete(key);
+      continue;
+    }
+    const beat = Math.floor(motion.wave / WATER_BEAT);
+    const dive = motion.dive;
+    const splashSerial = Math.max(0, Math.floor(waterFinite(dive && dive.splashSerial, 0)));
+    const previous = beats.get(key);
+    if (!previous) {
+      // An already-completed contact must not replay when water is enabled.
+      beats.set(key, { beat, age: 0, splashSerial });
+      continue;
+    }
+    previous.age = waterFinite(previous.age, 0) + step;
+    const previousSplash = waterFinite(previous.splashSerial, splashSerial);
+    previous.splashSerial = splashSerial;
+    if (splashSerial > previousSplash && dive
+      && (dive.splashKind === 'dive' || dive.splashKind === 'surface') && maxRipples > 0) {
+      while (ripples.length >= maxRipples) {
+        const ordinary = ripples.findIndex(ripple => !ripple.kind);
+        ripples.splice(ordinary < 0 ? 0 : ordinary, 1);
+      }
+      waterSpawnRipple(ripples, whale,
+        waterClamp(waterFinite(dive.splashStrength, 1), 0, 1), i, splashSerial, dive.splashKind);
+    }
+    const previousBeat = waterFinite(previous.beat, beat);
+    if (beat === previousBeat) continue;
+    if (beat < previousBeat) {
+      // Phase was reset (new school, restored scene): resync silently.
+      previous.beat = beat;
+      previous.age = 0;
+      continue;
+    }
+    previous.beat = beat;
+    previous.age = 0;
+    const stroke = waterClamp(waterFinite(motion.stroke, 0), 0, 1);
+    const submergence = waterClamp(waterFinite(motion.submergence, 0), 0, 1);
+    const deliberate = dive && dive.startedAt !== null && Number.isFinite(dive.startedAt);
+    if (deliberate || submergence > 0.12 || stroke < WATER_ACTIVE_STROKE || ripples.length >= maxRipples) continue;
+    waterSpawnRipple(ripples, whale, stroke, i, beat);
+  }
+  // Prune beat memory for whales that have left the scene. Only build a set
+  // when the map is clearly larger than the school, keeping the per-frame path
+  // allocation-free in the common case.
+  if (beats.size > whales.length + 8) {
+    const live = new Set();
+    for (let i = 0; i < whales.length; i++) {
+      const whale = whales[i];
+      if (whale && typeof whale === 'object') live.add(waterWhaleKey(whale, i));
+    }
+    for (const key of beats.keys()) if (!live.has(key)) beats.delete(key);
+  }
+  return field;
+}
+
+/**
+ * Paint every live ring into an ASCII cell grid.
+ *
+ * The target is only a pseudo 2D context: `font`, `fillStyle`, `globalAlpha`,
+ * `textAlign`, `textBaseline` and `fillText` are the whole contract, because
+ * the engine hands in a glyph painter rather than a real canvas context.
+ *
+ * @returns {number} glyphs drawn, which is also what the zero-fade test checks.
+ */
+function drawWater(target, field, options = {}) {
+  if (!target || typeof target.fillText !== 'function') return 0;
+  const ripples = field && Array.isArray(field.ripples) ? field.ripples : null;
+  if (!ripples || !ripples.length) return 0;
+  const settings = options && typeof options === 'object' ? options : {};
+  const width = waterFinite(settings.width, 0);
+  const height = waterFinite(settings.height, 0);
+  const cellWidth = Math.max(1, waterFinite(settings.cellWidth, 11));
+  const cellHeight = Math.max(1, waterFinite(settings.cellHeight, 13));
+  const ratio = Math.max(0.01, waterFinite(settings.ratio, 1));
+  const opacity = waterClamp(waterFinite(settings.opacity, 0.5), 0, 1);
+  if (!(width > 0) || !(height > 0) || !(opacity > 0)) return 0;
+  // Like the reef, a missing palette falls back to the shared ocean ink table,
+  // so an unfinished caller still gets real ink instead of one flat colour.
+  const palette = settings.palette && typeof settings.palette.length === 'number'
+    && settings.palette.length > 0 ? settings.palette : createInkPalette('ocean');
+  const fade = typeof settings.fade === 'function' ? settings.fade : null;
+  const columns = Math.max(1, Math.ceil(width / cellWidth));
+  const rows = Math.max(1, Math.ceil(height / cellHeight));
+  const snap = value => Math.round(value * ratio) / ratio;
+
+  // Leave the font alone unless the caller supplies one: the engine has already
+  // set the configured glyph size on the shared context.
+  if (typeof settings.font === 'string' && settings.font) target.font = settings.font;
+  target.textAlign = 'center';
+  target.textBaseline = 'middle';
+  let currentFill = null;
+  let drawn = 0;
+
+  // Snap one sample to its cell centre, dedupe within this ripple, then write
+  // it. Every alpha is clamped under the caller's opacity.
+  const paintPoint = (x, y, glyph, alpha, light, seen) => {
+    if (!(alpha > 0)) return;
+    const col = Math.floor(x / cellWidth), row = Math.floor(y / cellHeight);
+    if (col < 0 || col >= columns || row < 0 || row >= rows) return;
+    const key = row * columns + col;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const centreX = snap((col + 0.5) * cellWidth);
+    const centreY = snap((row + 0.5) * cellHeight);
+    let visibility = 1;
+    if (fade) {
+      visibility = waterClamp(waterFinite(fade(centreX, centreY), 0), 0, 1);
+      if (!(visibility > 0)) return;
+    }
+    const value = Math.min(opacity, alpha * visibility);
+    if (!(value > 0.01)) return;
+    const shade = glyphInkIndex(light, WATER_RIPPLE_DEPTH);
+    const fill = palette[shade < palette.length ? shade : palette.length - 1];
+    if (fill !== currentFill) {
+      target.fillStyle = fill;
+      currentFill = fill;
+    }
+    target.globalAlpha = value;
+    target.fillText(glyph, centreX, centreY, Math.max(1, cellWidth * 1.1));
+    drawn++;
+  };
+
+  for (let r = 0; r < ripples.length; r++) {
+    const ripple = ripples[r];
+    if (!ripple || typeof ripple !== 'object') continue;
+    const x = waterFinite(ripple.x, NaN), y = waterFinite(ripple.y, NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const life = Math.max(0.001, waterFinite(ripple.life, WATER_MIN_LIFE));
+    const age = waterClamp(waterFinite(ripple.age, 0), 0, life);
+    const progress = age / life;
+    const strength = waterClamp(waterFinite(ripple.strength, 0.5), 0, 1);
+    const seed = waterClamp(waterFinite(ripple.seed, 0.5), 0, 1);
+    const radius = waterRippleRadius(ripple);
+    const impact = ripple.kind === 'surface' || ripple.kind === 'dive';
+    const bow = ripple.kind === 'surface';
+    const axis = impact ? waterFinite(ripple.heading, 0) + Math.PI / 2 : 0;
+    const aspect = impact ? waterClamp(waterFinite(ripple.aspect, 1), 0.4, 1) : 1;
+    const axisCos = Math.cos(axis), axisSin = Math.sin(axis);
+    // The ring is brightest at birth and thins while it expands, so it
+    // dissolves into the sea instead of popping out at its widest.
+    const ageFade = (1 - progress) ** 1.5;
+    if (!(ageFade > 0)) continue;
+    // Mid-dark ink, not the pale end of the ramp: the page under the canvas is
+    // usually light, and a highlight-coloured ring would simply vanish there.
+    const light = waterClamp(0.40 + 0.10 * strength, 0, 1);
+    const outerAlpha = opacity * (0.70 + 0.25 * strength) * ageFade;
+    const seen = new Set();
+    const spacing = Math.max(4, (cellWidth + cellHeight) * 0.45);
+
+    for (let ring = 0; ring < 2; ring++) {
+      const ringRadius = ring === 0 ? radius : radius * 0.7;
+      // The inner echo is weak and disappears first; below a cell or two it
+      // would collapse into the same glyphs as the main ring.
+      if (ring === 1 && (ringRadius < 6 || ageFade < 0.3)) continue;
+      const count = Math.max(WATER_MIN_RING_POINTS, Math.min(WATER_MAX_RING_POINTS,
+        Math.ceil(Math.PI * 2 * ringRadius / spacing)));
+      const dashOffset = Math.floor(seed * 97) + ring * 31;
+      for (let i = 0; i < count; i++) {
+        if ((i + dashOffset) % WATER_DASH_PERIOD < WATER_DASH_GAP) continue;
+        const angle = (i + 0.5) / count * Math.PI * 2
+          + (waterHash(i, ring + 7, dashOffset) - 0.5) * 0.14;
+        const wobble = (waterHash(i, ring + 11, dashOffset) - 0.5) * cellWidth * 0.5;
+        const pointRadius = ringRadius + wobble;
+        const pointLight = waterClamp(light + (waterHash(i, ring + 17, dashOffset) - 0.5) * 0.1
+          + (ring === 0 ? 0.05 : -0.05), 0, 1);
+        const pick = waterHash(i, ring + 23, dashOffset);
+        // On the top and bottom of the circle the wave front runs horizontally,
+        // so a tilde belongs there; everywhere else the quiet dots keep it calm.
+        const angleCos = Math.cos(angle), angleSin = Math.sin(angle);
+        if (bow && angleSin > 0.65) continue;
+        const tangentX = -angleSin * axisCos - angleCos * aspect * axisSin;
+        const tangentY = -angleSin * axisSin + angleCos * aspect * axisCos;
+        const horizontal = Math.abs(tangentX) / Math.hypot(tangentX, tangentY) > 0.82;
+        const glyph = ring === 0
+          ? (horizontal ? (pick < 0.75 ? '~' : '·') : (pick < 0.72 ? '·' : pick < 0.9 ? '˙' : "'"))
+          : (pick < 0.7 ? '·' : '˙');
+        const localX = angleCos * pointRadius;
+        const localY = angleSin * pointRadius * aspect;
+        paintPoint(x + localX * axisCos - localY * axisSin, y + localX * axisSin + localY * axisCos,
+          glyph, ring === 0 ? outerAlpha : outerAlpha * 0.5, pointLight, seen);
+      }
+    }
+
+    // The first third of a second is the splash: a few drops thrown outward
+    // from the tail, then gone. This is what keeps the slap from looking like a
+    // ring that merely faded in.
+    const splashLife = impact ? 0.5 : WATER_SPLASH_SECONDS;
+    if (age < splashLife) {
+      const splashFade = 1 - age / splashLife;
+      const drops = (impact ? 7 : 3) + Math.floor(seed * 2);
+      const startRadius = Math.max(WATER_MIN_START_RADIUS,
+        waterFinite(ripple.startRadius, WATER_MIN_START_RADIUS));
+      for (let s = 0; s < drops; s++) {
+        const angle = bow
+          ? waterFinite(ripple.heading, 0) + (s / Math.max(1, drops - 1) - 0.5) * Math.PI * 1.2
+          : seed * Math.PI * 2 + s / drops * Math.PI * 2
+            + (waterHash(s, 5, Math.round(seed * 1024)) - 0.5) * 0.8;
+        const spread = startRadius + (cellWidth + 3) * (0.4 + (1 - splashFade) * 1.1);
+        paintPoint(x + Math.cos(angle) * spread, y + Math.sin(angle) * spread,
+          WATER_SPLASH_GLYPHS[s % WATER_SPLASH_GLYPHS.length],
+          opacity * 0.85 * splashFade, waterClamp(light + 0.08, 0, 1), seen);
+      }
+    }
+  }
+  target.globalAlpha = 1;
+  return drawn;
+}
+
 
 // Stateful screen-space swimming. All helpers are prefixed because the release
 // build concatenates this module with the renderer and geometry modules.
 const motionTick = 1 / 60;
+// Model y points down into the water; the fog band begins at this plane.
+const DIVE_WATERLINE = 0.10;
 // Mirrors FIELDS.whaleSize; motion.js cannot import model.js because model.js
 // already imports this module (a cycle would leave FIELDS uninitialized).
 const motionWhaleSizeFloor = 0.55, motionWhaleSizeCeiling = 1.55;
@@ -395,14 +1161,21 @@ function motionHullReach(whale) {
 
 /** Soft boundary of one obstacle for one point, grown by that point's allowance. */
 function motionObstacleBounds(obstacle, allowance) {
+  if (obstacle.circle) {
+    const reach = obstacle.radius + allowance;
+    return { left: obstacle.x - reach, right: obstacle.x + reach,
+      top: obstacle.y - reach, bottom: obstacle.y + reach };
+  }
   return { left: obstacle.x - allowance, right: obstacle.x + obstacle.width + allowance,
     top: obstacle.y - allowance, bottom: obstacle.y + obstacle.height + allowance };
 }
 
 /**
- * Obstacles are canvas-space rectangles the school must swim around. Accept
- * anything rectangular and finite; unusable entries are dropped so a broken
- * measurement can never push a whale to NaN.
+ * Obstacles are canvas-space shapes the school must swim around. The reading
+ * column and the input card are rectangles; reefs are circles, because a
+ * bounding box would make the school dodge the empty corners of a round rock.
+ * Anything unusable is dropped so a broken measurement can never push a whale
+ * to NaN.
  */
 function motionObstacleNormalize(obstacles) {
   if (!Array.isArray(obstacles)) return [];
@@ -411,9 +1184,17 @@ function motionObstacleNormalize(obstacles) {
     if (!obstacle) continue;
     const x = Number(obstacle.x), y = Number(obstacle.y);
     const width = Number(obstacle.width), height = Number(obstacle.height);
+    const radius = Number(obstacle.radius);
+    // No extent plus a positive radius means a circle (see reef.js). A rect may
+    // also carry a corner radius, so the extent check decides the shape.
+    if (!(width > 0) && !(height > 0)) {
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(radius) || !(radius > 0)) continue;
+      normalized.push({ x, y, radius, circle: true });
+      continue;
+    }
     if (![x, y, width, height].every(Number.isFinite) || !(width > 0) || !(height > 0)) continue;
     normalized.push({ x, y, width, height,
-      radius: motionLimit(motionFinite(Number(obstacle.radius), 0), 0, Math.min(width, height) / 2) });
+      radius: motionLimit(motionFinite(radius, 0), 0, Math.min(width, height) / 2) });
   }
   return normalized;
 }
@@ -426,6 +1207,17 @@ function motionObstacleNormalize(obstacles) {
  * glass, so the steering has to anticipate rather than react *inside* it.
  */
 function motionObstacleApproach(obstacle, allowance, x, y, band) {
+  if (obstacle.circle) {
+    // Radial signed distance: positive inside the rock plus the hull's own
+    // clearance, negative outside and still inside the turning band.
+    const dx = x - obstacle.x, dy = y - obstacle.y;
+    const distance = Math.hypot(dx, dy);
+    const clearance = obstacle.radius + allowance;
+    const gap = distance - clearance;
+    if (!(gap < band)) return null;
+    if (distance > 1e-6) return { depth: -gap, nx: dx / distance, ny: dy / distance };
+    return { depth: -gap, nx: 1, ny: 0 };
+  }
   const { left, right, top, bottom } = motionObstacleBounds(obstacle, allowance);
   const insideX = x > left && x < right, insideY = y > top && y < bottom;
   if (insideX && insideY) {
@@ -462,6 +1254,7 @@ function motionObstacleApproachBody(whale, obstacle, band) {
 
 /** True when this station's silhouette disc reaches into the obstacle bounds. */
 function motionHullInside(obstacle, x, y, radius) {
+  if (obstacle.circle) return Math.hypot(x - obstacle.x, y - obstacle.y) < obstacle.radius + radius;
   const { left, right, top, bottom } = motionObstacleBounds(obstacle, radius);
   return x > left && x < right && y > top && y < bottom;
 }
@@ -488,6 +1281,31 @@ function motionPushOut(whale, obstacles, width, height) {
     let changed = false;
     for (const obstacle of obstacles) {
       const hull = motionBodyHull(whale);
+      if (obstacle.circle) {
+        // A round rock has no sides to slide along, so the rigid move is radial:
+        // away from the rock centre, far enough for the last-reaching station.
+        const centreX = motionFinite(whale.x, 0), centreY = motionFinite(whale.y, 0);
+        let dx = centreX - obstacle.x, dy = centreY - obstacle.y;
+        let length = Math.hypot(dx, dy);
+        if (!(length > 0.001)) {
+          dx = Math.cos(motionFinite(whale.heading, 0));
+          dy = Math.sin(motionFinite(whale.heading, 0));
+          length = 1;
+        }
+        const nx = dx / length, ny = dy / length;
+        let shift = 0;
+        for (let i = 0; i < hull.length; i += 3) {
+          const clearance = obstacle.radius + hull[i + 2];
+          if (!(Math.hypot(hull[i] - obstacle.x, hull[i + 1] - obstacle.y) < clearance)) continue;
+          shift = Math.max(shift, clearance - ((hull[i] - obstacle.x) * nx + (hull[i + 1] - obstacle.y) * ny));
+        }
+        if (shift > 0) {
+          whale.x = motionLimit(centreX + nx * shift, 0, width);
+          whale.y = motionLimit(centreY + ny * shift, 0, height);
+          moved = changed = true;
+        }
+        continue;
+      }
       let leftShift = 0, rightShift = 0, upShift = 0, downShift = 0, inside = false;
       for (let i = 0; i < hull.length; i += 3) {
         const x = hull[i], y = hull[i + 1], radius = hull[i + 2];
@@ -529,6 +1347,16 @@ function motionAvoidTarget(whale, x, y, obstacles, width, height) {
   if (!obstacles || !obstacles.length) return { x, y };
   const allowance = motionHullReach(whale) + Math.max(8, motionFinite(whale.length, 0) * 0.08);
   for (const obstacle of obstacles) {
+    if (obstacle.circle) {
+      const clearance = obstacle.radius + allowance;
+      const dx = x - obstacle.x, dy = y - obstacle.y;
+      const distance = Math.hypot(dx, dy);
+      if (!(distance < clearance)) continue;
+      const nx = distance > 0.001 ? dx / distance : 1, ny = distance > 0.001 ? dy / distance : 0;
+      x = motionLimit(obstacle.x + nx * clearance, 0, width);
+      y = motionLimit(obstacle.y + ny * clearance, 0, height);
+      continue;
+    }
     const { left, right, top, bottom } = motionObstacleBounds(obstacle, allowance);
     if (!(x > left && x < right && y > top && y < bottom)) continue;
     if (top >= 0) { x = motionLimit(x, 0, width); y = top; continue; }
@@ -579,6 +1407,10 @@ function resizeScene(scene, width, height) {
     const scaleX = width / oldWidth, scaleY = height / oldHeight;
     for (const obstacle of scene.obstacles) {
       obstacle.x *= scaleX; obstacle.y *= scaleY;
+      if (obstacle.circle) {
+        obstacle.radius *= Math.min(scaleX, scaleY);
+        continue;
+      }
       obstacle.width *= scaleX; obstacle.height *= scaleY;
     }
   }
@@ -597,7 +1429,8 @@ function resizeScene(scene, width, height) {
     } else {
       const state = whale._motion = { seed: motionSeed(whale, i), age: 0,
         routeDirection: i % 2 ? -1 : 1, targetIndex: 0, wander: 0,
-        wanderGoal: 0, wanderDue: 0, wave: motionFinite(whale.phase, 0) };
+        wanderGoal: 0, wanderDue: 0, wave: motionFinite(whale.phase, 0),
+        submergence: 0, pitch: 0, noseFirst: false, depth: 0, tailKick: 0, arch: 0 };
       const anatomy = whaleSpecies(whale.species);
       state.cruise = anatomy.cruise * (0.94 + motionRandom(state) * 0.12);
       state.agility = anatomy.turnRate * (0.96 + motionRandom(state) * 0.08);
@@ -653,7 +1486,12 @@ function adoptSceneState(previous, next) {
     for (const key of ['x', 'y', 'heading', 'turn', 'speed', 'vx', 'vy']) {
       if (Number.isFinite(source[key])) whale[key] = source[key];
     }
-    if (source._motion) whale._motion = { ...source._motion };
+    if (source._motion) {
+      whale._motion = { ...source._motion };
+      // Dive scheduling owns a separate random stream and duration snapshot.
+      // A rebuilt scene must continue it without mutating the discarded scene.
+      if (source._motion.dive) whale._motion.dive = { ...source._motion.dive };
+    }
     // `_motion` carries the species base cruise/turn values with the individual
     // jitter already baked in. On a species switch (mixed group <-> one species)
     // the rebuilt whale must swim with the new anatomy straight away, so rescale
@@ -856,8 +1694,145 @@ function motionIntegrate(scene, speed) {
     state.stroke += (envelope - state.stroke) * (1 - Math.exp(-travelTick * 2.2));
     state.wave += travelTick * anatomy.beat * (0.7 + 0.3 * Math.min(1.4, Math.sqrt(effort)))
       * (0.08 + 0.92 * state.stroke);
+    motionStepDive(whale, i, scene.diveSeed, anatomy, travelTick);
   }
   scene.time += motionTick;
+}
+
+function diveSmoothstep(amount) {
+  const u = amount < 0 ? 0 : amount > 1 ? 1 : amount;
+  return u * u * (3 - 2 * u);
+}
+
+// Hash a separate stream from identity, never from the mutable cruise seed.
+// Optional scene.diveSeed (or whale.diveSeed) is read only at the first tick,
+// allowing the engine to supply session entropy after createScene's resize.
+function motionDiveSeed(whale, index, sceneSeed) {
+  const supplied = motionFinite(whale.diveSeed, motionFinite(sceneSeed, 0)) >>> 0;
+  let seed = (motionSeed(whale, index) ^ supplied ^ 0x91e10da5) >>> 0;
+  seed = Math.imul(seed ^ (seed >>> 16), 0x85ebca6b);
+  seed = Math.imul(seed ^ (seed >>> 13), 0xc2b2ae35);
+  return (seed ^ (seed >>> 16)) >>> 0;
+}
+
+function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
+  const state = whale._motion;
+  if (!state.dive) {
+    const dive = state.dive = { seed: motionDiveSeed(whale, index, sceneSeed),
+      activity: 0, nextDecision: 0, startedAt: null, entry: 0, under: 0, exit: 0,
+      decisions: 0, skipped: 0, dives: 0, completed: 0,
+      splashSerial: 0, splashKind: 'dive', splashStrength: 0, contactStage: 0 };
+    dive.activity = 0.32 + motionRandom(dive) * 0.36;
+    dive.nextDecision = Math.max(6, state.age - dt) + 2 + motionRandom(dive) * 16;
+  }
+  const dive = state.dive;
+  const surfacePace = motionLimit(22 / anatomy.cruise, 0.75, 1.3);
+  if (dive.startedAt !== null && state.age >= dive.startedAt + dive.entry + dive.under + dive.exit) {
+    const endedAt = dive.startedAt + dive.entry + dive.under + dive.exit;
+    dive.startedAt = null;
+    dive.completed++;
+    dive.nextDecision = endedAt + (10 + motionRandom(dive) * 16) * surfacePace;
+  }
+  if (dive.startedAt === null && state.age >= dive.nextDecision) {
+    dive.decisions++;
+    if (motionRandom(dive) < dive.activity) {
+      dive.startedAt = dive.nextDecision;
+      dive.dives++;
+      dive.contactStage = 0;
+      // Snapshot the whole action. Later species/size changes do not truncate it.
+      dive.entry = 2 + motionRandom(dive) * 2;
+      dive.under = (3 + motionRandom(dive) * 4) * motionLimit(anatomy.glide / 0.32, 0.8, 1.5);
+      dive.exit = 2.4 + motionRandom(dive) * 1.6;
+    } else {
+      dive.skipped++;
+      dive.nextDecision += (5 + motionRandom(dive) * 10) * surfacePace;
+    }
+  }
+  const pose = dive.startedAt === null ? diveLevel() : divePose(state.age - dive.startedAt, dive);
+  state.submergence = pose.submergence;
+  state.pitch = pose.pitch;
+  state.noseFirst = pose.noseFirst;
+  state.depth = pose.depth;
+  state.tailKick = pose.tailKick;
+  state.arch = pose.arch;
+  if (dive.startedAt !== null && dive.contactStage < 2) {
+    const elapsed = state.age - dive.startedAt;
+    const isTail = dive.contactStage === 0;
+    // Tail: wait until after the lift. Nose: wait until the ascent starts.
+    // The height then comes from the very same rig, gait and curve as the mesh.
+    if (elapsed >= (isTail ? dive.entry * 0.46 : dive.entry + dive.under)) {
+      const contactPose = writeWhaleRigPose(whale, { wave: state.wave, turn: whale.turn,
+        submergence: state.submergence, divePitch: state.pitch, diveDepth: state.depth,
+        diveKick: state.tailKick, diveArch: state.arch });
+      const point = isTail ? motionDiveTailContact : motionDiveNoseContact;
+      const height = deformWhaleParticle(point, contactPose, motionDiveContactOut).y;
+      if (isTail ? height >= DIVE_WATERLINE : height <= DIVE_WATERLINE) {
+        dive.splashSerial++;
+        dive.splashKind = isTail ? 'dive' : 'surface';
+        dive.splashStrength = isTail ? 0.95 : 0.9;
+        dive.contactStage++;
+      }
+    }
+  }
+}
+
+// Reused probes and output avoid allocating a particle per tick. Contact state
+// stays primitive so adopting a scene can keep its existing independent clone.
+const motionDiveTailContact = Object.freeze({ x: -1.05, y: 0.01, z: 0,
+  nx: 0, ny: -1, nz: 0, part: 'fluke' });
+const motionDiveNoseContact = Object.freeze({ x: 1.04, y: -0.08, z: 0,
+  nx: 0, ny: -1, nz: 0, part: 'body' });
+const motionDiveContactOut = {};
+
+function motionEnsureDive(state) {
+  if (!Number.isFinite(state.submergence)) state.submergence = 0;
+  if (!Number.isFinite(state.pitch)) state.pitch = 0;
+  if (!Number.isFinite(state.depth)) state.depth = 0;
+  if (!Number.isFinite(state.tailKick)) state.tailKick = 0;
+  if (!Number.isFinite(state.arch)) state.arch = 0;
+  if (state.noseFirst !== true && state.noseFirst !== false) state.noseFirst = false;
+}
+
+function diveLevel() {
+  return { submergence: 0, pitch: 0, noseFirst: false, depth: 0, tailKick: 0, arch: 0 };
+}
+
+/** Pure pose for one sampled action; elapsed starts at entry, never repeats. */
+function divePose(elapsed, timing) {
+  if (!Number.isFinite(elapsed) || !timing) return diveLevel();
+  const { entry, under, exit } = timing;
+  if (![entry, under, exit].every(value => Number.isFinite(value) && value > 0)
+    || elapsed <= 0 || elapsed >= entry + under + exit) return diveLevel();
+  let t = elapsed;
+  if (t < entry) {
+    const u = t / entry;
+    const submergence = diveSmoothstep(u);
+    const pitch = u < 0.38 ? 0.5 * diveSmoothstep(u / 0.38)
+      : 0.5 + 0.22 * diveSmoothstep((u - 0.38) / 0.62);
+    const depth = 0.12 * diveSmoothstep((u - 0.2) / 0.35)
+      + 1.08 * diveSmoothstep((u - 0.55) / 0.45);
+    const tailKick = u < 0.46 ? -0.55 * diveSmoothstep((u - 0.18) / 0.28)
+      : u < 0.68 ? -0.55 + 1.05 * diveSmoothstep((u - 0.46) / 0.22)
+        : 0.5 * (1 - diveSmoothstep((u - 0.68) / 0.24));
+    const arch = 0.13 * diveSmoothstep(u / 0.35) * (1 - diveSmoothstep((u - 0.65) / 0.35));
+    return { submergence, pitch, noseFirst: false, depth, tailKick, arch };
+  }
+  t -= entry;
+  if (t < under) {
+    return { submergence: 1, pitch: 0.72 * (1 - diveSmoothstep(t / under)),
+      noseFirst: false, depth: 1.2, tailKick: 0, arch: 0 };
+  }
+  t -= under;
+  const u = t / exit;
+  // A faster push through the surface, then a longer, monotonic settle.
+  const pitch = u < 0.32 ? -0.5 * diveSmoothstep(u / 0.32)
+    : -0.5 * (1 - diveSmoothstep((u - 0.32) / 0.68));
+  const depth = u < 0.58 ? 1.2 - 1.3 * diveSmoothstep(u / 0.58)
+    : -0.1 * (1 - diveSmoothstep((u - 0.58) / 0.42));
+  const arch = 0.08 * diveSmoothstep(u / 0.3) * (1 - diveSmoothstep((u - 0.4) / 0.6));
+  const submergence = u < 0.65 ? 1 - 0.8 * diveSmoothstep(u / 0.65)
+    : 0.2 * (1 - diveSmoothstep((u - 0.65) / 0.35));
+  return { submergence, pitch, noseFirst: submergence > 0, depth, tailKick: 0, arch };
 }
 
 /** Integrate a capped frame in fixed ticks; no DOM or wall-clock dependency. */
@@ -882,6 +1857,7 @@ function whalePose(whale, elapsed, width, height, speed, out = {}) {
   width = Math.max(1, motionFinite(width, 1));
   height = Math.max(1, motionFinite(height, 1));
   const phase = motionFinite(whale.phase, 0), state = whale._motion;
+  if (state) motionEnsureDive(state);
   const age = state ? state.age : motionFinite(elapsed, 0) * motionFinite(speed, 1);
   const heading = motionFinite(whale.heading, 0), turn = motionFinite(whale.turn, 0);
   const depth = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5)
@@ -897,6 +1873,12 @@ function whalePose(whale, elapsed, width, height, speed, out = {}) {
     scale, focal, cameraZ: focal * depth, near: focal * 0.12,
     yaw, pitch, roll, heading, length, turn,
     wave: state ? state.wave : age * 1.8 + phase,
+    submergence: state ? state.submergence : 0,
+    divePitch: state ? state.pitch : 0,
+    diveDepth: state ? state.depth : 0,
+    diveKick: state ? state.tailKick : 0,
+    diveArch: state ? state.arch : 0,
+    noseFirst: state ? state.noseFirst : false,
     cy, sy, cp, sp, cr: Math.cos(roll), sr: Math.sin(roll) });
   return writeWhaleRigPose(whale, out);
 }
@@ -918,8 +1900,15 @@ const FIELDS = Object.freeze({
   leftInset: { kind: 'number', min: 0, max: 500, step: 1, default: 280 },
   glass: { kind: 'boolean', default: true },
   glassStrength: { kind: 'number', min: 0, max: 1, step: 0.05, default: 0.55 },
-  composerGlass: { kind: 'boolean', default: false },
+  // Folded into `glass` in 0.11.0: every content box, the composer included, is
+  // frosted by the same option. Kept as a hidden field so old profile entries
+  // still validate, and so a 0.10.0 config that only enabled the composer is
+  // migrated below instead of silently losing its effect.
+  composerGlass: { kind: 'boolean', default: false, hidden: true },
   composerAvoid: { kind: 'boolean', default: false },
+  spout: { kind: 'boolean', default: false },
+  reefs: { kind: 'boolean', default: true },
+  ripples: { kind: 'boolean', default: true },
 });
 const DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -939,10 +1928,17 @@ function normalizeConfig(value = {}) {
     else v = typeof v === 'string' ? v.slice(0, f.max).replace(/[\uD800-\uDBFF]$/u, '') : f.default;
     return [key, v];
   }));
-  // The input-box glass and the input-box avoidance are alternatives: glass
-  // already hides the whales behind the card, so avoiding it as well would only
-  // squeeze the school for no visual gain. Glass wins if both arrive enabled.
-  if (config.composerGlass && config.composerAvoid) config.composerAvoid = false;
+  // 0.10.0 had a separate composer-only glass. When a stored config never
+  // mentioned `glass` at all but had that switch on, fold it into the content
+  // glass so the upgrade keeps the effect instead of silently dropping it.
+  if (config.composerGlass === true && value && !('glass' in value)) {
+    config.glass = true;
+    config.composerGlass = false;
+  }
+  // The content glass and the input-box avoidance are alternatives: glass
+  // already hides the whales behind every box, so avoiding them as well would
+  // only squeeze the school for no visual gain. Glass wins if both arrive on.
+  if (config.glass && config.composerAvoid) config.composerAvoid = false;
   return config;
 }
 
@@ -1139,6 +2135,26 @@ function projectParticle(p, pose, out = {}) {
   out.perspective = perspective;
   out.light = tone;
   out.visibility = cameraDistance <= pose.near ? 0 : smooth((facing + 0.04) / 0.26);
+  const sub = Number.isFinite(pose.submergence) ? pose.submergence : 0;
+  if (Number.isFinite(pose.diveDepth)) {
+    // elevation was recorded immediately after rig deformation, before camera
+    // projection. An exposed fluke remains visible even when the nose is deep.
+    const wet = smooth((-out.elevation - DIVE_WATERLINE) / 0.18);
+    const engagement = Number.isFinite(pose.diveEngagement) ? pose.diveEngagement
+      : smooth(Math.max(sub * 8, Math.abs(pose.diveDepth) * 4,
+        Math.abs(Number.isFinite(pose.divePitch) ? pose.divePitch : 0) * 3,
+        Math.abs(Number.isFinite(pose.diveKick) ? pose.diveKick : 0) * 2));
+    // Blend the physical waterline in/out with flat endpoints, so returning to
+    // the unmasked resting pose cannot suddenly reveal a partially wet flank.
+    if (engagement > 0) out.visibility *= 1 - engagement * wet;
+  } else {
+    const lead = Math.min(1, Math.max(0, (p.x + 1.2) / 2.24));
+    const noseFirst = pose.noseFirst === true;
+    const gate = 0.35 + 0.65 * (noseFirst ? lead : 1 - lead);
+    let u = sub > 0 ? (gate - sub) / gate : 1;
+    u = u < 0 ? 0 : u > 1 ? 1 : u;
+    out.visibility *= u * u * (3 - 2 * u);
+  }
   return out;
 }
 
@@ -1394,121 +2410,118 @@ function drawWhaleSample(canvas, config, options = {}) {
   painter.paint(target, grid, [pose], width, height, pixels.ratio, null, !!options.dark);
 }
 
-// A rounded water-glass pane behind the reading column. Everything here is pure
-// geometry and tone so the tests can drive it without a DOM or a Canvas;
-// engine.js supplies the measured rectangles and paints the result.
+// Frosted glass over every opaque content box in the conversation, plus the
+// input card. Everything here is pure geometry, tone and buffer arithmetic so
+// the tests can drive it without a DOM or a Canvas; engine.js measures the
+// boxes and paints the result.
 //
 // build.mjs concatenates the renderer modules into one factory, so no top-level
 // name may collide with model.js (which owns `clamp`, `mix`, `smooth`, `noise`
 // and the other short helpers). Every helper here is prefixed with `glass`.
 
-const GLASS_PAD = 20;
-const GLASS_RADIUS = 24;
-const GLASS_GUTTER = 12;
-const GLASS_TOP_GAP = 8;
-const GLASS_MIN_WIDTH = 340;
-const GLASS_MIN_HEIGHT = 240;
-const GLASS_FALLBACK_CLEARANCE = 172;
-const GLASS_DEFAULT_COLUMN = 748;
-// The composer card is a much smaller target than the reading column: a pane
-// narrower than this would read as a stripe, so those cards opt out.
-const GLASS_COMPOSER_MIN_WIDTH = 60;
-const GLASS_COMPOSER_MIN_HEIGHT = 36;
-const GLASS_COMPOSER_RADIUS = 18;
-// Glyphs dissolve earlier around the input box than around the reading column:
-// the card edge is close to the words, so a wide feather would erase the body
-// before it even reaches the glass.
-const GLASS_COMPOSER_FEATHER = 14;
-// The reading-pane crest is a wide, bright band meant for a large pane. Over a
-// 120px input card it would sit right on the first line of text, so the composer
-// material keeps under a quarter of that highlight (and a short band). The value
-// is set as low as the AA contrast assertion in composer.test.js permits: with a
-// full crest the worst case (light theme, strength 1) drops to 2.7:1, and 0.22
-// keeps every layer — body, crest and bottom shade — at or above 4.5:1.
-const GLASS_COMPOSER_CREST_SCALE = 0.22;
+// A pane equal to its box: only boxes too small to hold readable text are
+// dropped, so the glass can never sit inside the box it covers.
+const GLASS_CONTENT_MIN_WIDTH = 40;
+const GLASS_CONTENT_MIN_HEIGHT = 24;
+// A 10px ramp keeps the sharp glyphs dissolving into the glass right at the box
+// edge without leaving a visible straight cut.
+const GLASS_CONTENT_FEATHER = 10;
+const GLASS_CONTENT_MAX = 16;
+// Two boxes with every edge within 2px are the same surface seen twice (e.g. a
+// wrapper and the card inside it); the first one wins.
+const GLASS_CONTENT_EDGE_TOLERANCE = 2;
+// An inner box inset by this much on every side is real nesting (a code block
+// inside a card) and gets its own glass; anything tighter is the same frame.
+const GLASS_CONTENT_NEST_INSET = 6;
+// The reading-pane crest was a 22–32px bright band, far too heavy for a 100px
+// card: every content box uses the input card's quarter-strength highlight.
+const GLASS_CONTENT_CREST_SCALE = 0.22;
+// The bottom shade is the darkest layer in the contrast budget; softening it for
+// a card keeps the last line of text above the AA floor.
+const GLASS_CONTENT_SHADE_SCALE = 0.45;
+// How much of the blurred sea shows through. 30–36% keeps the whale legible as a
+// frosted shape while the contrast test holds body text at ≥4.5:1 even over the
+// darkest cell tile.
+const GLASS_CONTENT_MIST_BASE = 0.30;
+const GLASS_CONTENT_MIST_RANGE = 0.06;
 
 const glassClamp = (value, low, high) => value < low ? low : value > high ? high : value;
 
 /**
- * Rounded pane around the text column, in canvas coordinates.
+ * One pane per opaque content box, in canvas coordinates.
  *
- * `canvas` is the whale canvas, `viewport` the conversation scroller, `column`
- * the chat flow and `footer` the composer seat. A missing viewport falls back to
- * the whole canvas and a missing column to a centred default width, so an
- * unknown DSH layout still yields a sane pane instead of none.
+ * `boxes` are page rectangles from `getBoundingClientRect` plus each box's own
+ * computed corner radius. A pane is *exactly* the box clipped to the canvas —
+ * never inset, never padded — so its corner radius and edges line up with the
+ * DOM box and there is no second, smaller rounded frame to notice.
  *
- * @returns {{x:number,y:number,width:number,height:number,radius:number}|null}
+ * Near-identical boxes collapse to the first one; a genuinely nested box (a card
+ * inside a card) keeps its own pane, marked `nested`; more boxes than `max` are
+ * cut down to the largest ones while keeping document order for painting.
+ *
+ * @returns {Array<{x:number,y:number,width:number,height:number,radius:number,feather:number,nested:boolean}>}
  */
-function glassPanel({ canvas, viewport = null, column = null,
-  pad = GLASS_PAD, radius = GLASS_RADIUS, gutter = GLASS_GUTTER } = {}) {
-  if (!canvas || !(canvas.width > 0) || !(canvas.height > 0)) return null;
-  const area = viewport && viewport.width > 0 && viewport.height > 0 ? viewport : canvas;
-  // Only the part of the scroller the sea actually covers may hold the pane.
-  const left = Math.max(area.left, canvas.left) - canvas.left + gutter;
-  const right = Math.min(area.left + area.width, canvas.left + canvas.width) - canvas.left - gutter;
-  const top = Math.max(area.top, canvas.top) - canvas.top + GLASS_TOP_GAP;
-  const bottom = Math.min(area.top + area.height, canvas.top + canvas.height) - canvas.top - gutter;
-  const room = right - left;
-  if (!(room >= GLASS_MIN_WIDTH) || !(bottom - top >= GLASS_MIN_HEIGHT)) return null;
-  const columnWidth = column && column.width > 0 ? Math.min(column.width, room) : Math.min(GLASS_DEFAULT_COLUMN, room * 0.64);
-  const centre = column && column.width > 0 ? column.left + column.width / 2 - canvas.left : (left + right) / 2;
-  const width = Math.min(columnWidth + pad * 2, room);
-  if (width < GLASS_MIN_WIDTH) return null;
-  const x = glassClamp(centre - width / 2, left, right - width);
-  const height = bottom - top;
-  if (!(height >= GLASS_MIN_HEIGHT)) return null;
-  return { x, y: top, width, height, radius: Math.min(radius, width / 2, height / 2) };
+function glassContentPanes({ canvas, boxes, max = GLASS_CONTENT_MAX } = {}) {
+  if (!canvas || !(canvas.width > 0) || !(canvas.height > 0) || !Array.isArray(boxes)) return [];
+  const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : GLASS_CONTENT_MAX;
+  const clipped = [];
+  for (const box of boxes) {
+    if (!box) continue;
+    const left = Number(box.left), top = Number(box.top);
+    const boxWidth = Number(box.width), boxHeight = Number(box.height);
+    if (![left, top, boxWidth, boxHeight].every(Number.isFinite)) continue;
+    if (!(boxWidth >= GLASS_CONTENT_MIN_WIDTH) || !(boxHeight >= GLASS_CONTENT_MIN_HEIGHT)) continue;
+    const x = Math.max(0, left - canvas.left);
+    const y = Math.max(0, top - canvas.top);
+    const right = Math.min(canvas.width, left - canvas.left + boxWidth);
+    const bottom = Math.min(canvas.height, top - canvas.top + boxHeight);
+    const width = right - x, height = bottom - y;
+    if (!(width >= 1) || !(height >= 1)) continue;
+    clipped.push({ x, y, width, height,
+      radius: glassClamp(Number.isFinite(Number(box.radius)) ? Number(box.radius) : 0, 0, Math.min(width, height) / 2),
+      feather: GLASS_CONTENT_FEATHER });
+  }
+  // Same surface measured twice: every edge within the tolerance.
+  const unique = [];
+  for (const pane of clipped) {
+    const duplicate = unique.some(other => Math.abs(pane.x - other.x) <= GLASS_CONTENT_EDGE_TOLERANCE
+      && Math.abs(pane.y - other.y) <= GLASS_CONTENT_EDGE_TOLERANCE
+      && Math.abs((pane.x + pane.width) - (other.x + other.width)) <= GLASS_CONTENT_EDGE_TOLERANCE
+      && Math.abs((pane.y + pane.height) - (other.y + other.height)) <= GLASS_CONTENT_EDGE_TOLERANCE);
+    if (!duplicate) unique.push(pane);
+  }
+  // Over the budget, keep the largest boxes but draw in document order so an
+  // outer card is always painted before the card nested inside it.
+  let kept = unique;
+  if (unique.length > limit) {
+    kept = unique
+      .map((pane, index) => ({ pane, index }))
+      .sort((a, b) => b.pane.width * b.pane.height - a.pane.width * a.pane.height || a.index - b.index)
+      .slice(0, limit)
+      .sort((a, b) => a.index - b.index)
+      .map(entry => entry.pane);
+  }
+  for (const pane of kept) {
+    pane.nested = kept.some(other => other !== pane
+      && pane.x >= other.x + GLASS_CONTENT_NEST_INSET
+      && pane.y >= other.y + GLASS_CONTENT_NEST_INSET
+      && pane.x + pane.width <= other.x + other.width - GLASS_CONTENT_NEST_INSET
+      && pane.y + pane.height <= other.y + other.height - GLASS_CONTENT_NEST_INSET);
+  }
+  return kept;
 }
 
 /**
- * One sheet of glass over the whole reading column, composer included.
+ * Append one rounded rectangle to the current path (no beginPath).
  *
- * The composer is as much a place for words as the transcript is, and its card
- * has its own opaque fill, so a single pane running to the bottom of the viewport
- * covers both. Splitting them would leave a stripe of bare sea between the two
- * and make the material read as two bands instead of one surface.
- *
- * @returns {Array<{x:number,y:number,width:number,height:number,radius:number}>}
+ * Several boxes can be appended to one path and clipped together: the clip is
+ * then the union of the rounded rectangles, so a single shared image can be
+ * drawn for all panes while the gaps *between* boxes stay outside the union and
+ * remain uncovered.
  */
-function glassPanes({ canvas, viewport = null, column = null,
-  pad = GLASS_PAD, radius = GLASS_RADIUS, gutter = GLASS_GUTTER } = {}) {
-  const pane = glassPanel({ canvas, viewport, column, pad, radius, gutter });
-  return pane ? [pane] : [];
-}
-
-/**
- * Rounded pane over the input card, in canvas coordinates.
- *
- * `card` and `canvas` are both page rectangles (`getBoundingClientRect` results):
- * the card is translated into the canvas and then clipped to it, so the pane can
- * never paint outside the sea even when the composer is half scrolled away. The
- * card is the whole target here: no padding, because the card's own rounded
- * background is exactly the shape whose text the glass sits above.
- *
- * Cards too small to hold readable text (or entirely off the canvas) opt out.
- *
- * @returns {{x:number,y:number,width:number,height:number,radius:number,feather:number}|null}
- */
-function glassComposerPane({ canvas, card, radius = GLASS_COMPOSER_RADIUS } = {}) {
-  if (!canvas || !card || !(canvas.width > 0) || !(canvas.height > 0)) return null;
-  if (!(card.width >= GLASS_COMPOSER_MIN_WIDTH) || !(card.height >= GLASS_COMPOSER_MIN_HEIGHT)) return null;
-  const left = card.left - canvas.left, top = card.top - canvas.top;
-  const x = Math.max(0, left), y = Math.max(0, top);
-  const right = Math.min(canvas.width, left + card.width);
-  const bottom = Math.min(canvas.height, top + card.height);
-  const width = right - x, height = bottom - y;
-  // Entirely outside the sea: nothing to frost and no geometry to report.
-  if (!(width >= 1) || !(height >= 1)) return null;
-  return { x, y, width, height,
-    radius: glassClamp(Number.isFinite(radius) ? radius : GLASS_COMPOSER_RADIUS, 0, Math.min(width / 2, height / 2)),
-    feather: GLASS_COMPOSER_FEATHER };
-}
-
-/** Trace a rounded rectangle; callers decide whether to fill, stroke or clip. */
-function glassRoundedPath(ctx, rect) {
+function glassRoundedSubpath(ctx, rect) {
   const { x, y, width, height } = rect;
   const radius = Math.max(0, Math.min(rect.radius, width / 2, height / 2));
-  ctx.beginPath();
   ctx.moveTo(x + radius, y);
   ctx.lineTo(x + width - radius, y);
   ctx.arcTo(x + width, y, x + width, y + radius, radius);
@@ -1521,19 +2534,21 @@ function glassRoundedPath(ctx, rect) {
   ctx.closePath();
 }
 
+/** Trace a rounded rectangle; callers decide whether to fill, stroke or clip. */
+function glassRoundedPath(ctx, rect) {
+  ctx.beginPath();
+  glassRoundedSubpath(ctx, rect);
+}
+
 /**
  * Material for one strength setting.
  *
  * The pane is composited *above* the DOM text — the whale canvas lives in DSH's
  * overlay layer — so every layer here is also a contrast cost for the words
- * underneath, and the budget is tight: a 0.5 alpha fill over body text collapses
- * black-on-white from 21:1 to about 3:1 no matter which colour it uses.
- *
- * So the pane is built the other way round. `mist` is hard-capped low and only
- * tints the surface; the material reads from what sits at the edges instead —
- * the rim stroke, the light band along the top, the shade along the bottom, and
- * the fact that everything behind the pane is blurred. The whale still shows as a
- * pale shape, because that is what a real pane leaves of what lies beneath it.
+ * underneath. `mist` (the blurred sea) and `veil` (a flat tint) are the two
+ * layers that carry visible colour; the top crest and bottom shade shape the
+ * glass edge. There is deliberately no rim colour here: the outline belongs to
+ * the DOM card, never to this canvas (see paintContentPane).
  *
  * test 'the pane keeps body text above the AAA contrast threshold' computes the
  * worst case for both themes and fails if any strength drops below 7:1.
@@ -1541,7 +2556,7 @@ function glassRoundedPath(ctx, rect) {
 function glassTone(strength = 0.55, { dark = false, reducedTransparency = false, enabled = true,
   crestScale = 1, compact = false } = {}) {
   const s = glassClamp(Number.isFinite(strength) ? strength : 0.55, 0, 1);
-  if (!enabled || reducedTransparency) return { mode: 'clear', strength: s, feather: compact ? GLASS_COMPOSER_FEATHER : 26 };
+  if (!enabled || reducedTransparency) return { mode: 'clear', strength: s, feather: compact ? 12 : 26 };
   return {
     mode: 'frost',
     strength: s,
@@ -1550,12 +2565,7 @@ function glassTone(strength = 0.55, { dark = false, reducedTransparency = false,
     mist: 0.24 + 0.06 * s,
     veil: dark ? 0.045 + 0.005 * s : 0.033 + 0.002 * s,
     tint: dark ? '20, 21, 24' : '255, 255, 255',
-    // A thicker pane hides what is behind it a little more, but the visible range
-    // is narrow: the whale tint is the largest layer in the pane and the one that
-    // sets the text-contrast floor. It is set at the top of that budget, so more
-    // strength buys blur and rim definition rather than a deeper silhouette.
     silhouette: dark ? '120, 135, 158' : '160, 178, 200',
-    stroke: dark ? `rgba(255, 255, 255, ${0.14 + 0.10 * s})` : `rgba(24, 34, 48, ${0.11 + 0.07 * s})`,
     crest: `rgba(255, 255, 255, ${(dark ? 0.06 + 0.05 * s : 0.52 + 0.34 * s) * crestScale})`,
     shade: dark ? `rgba(0, 0, 0, ${0.14 + 0.16 * s})` : `rgba(30, 43, 58, ${0.045 + 0.05 * s})`,
     crestHeight: compact ? Math.min(18, 8 + 4 * s) : 22 + 10 * s,
@@ -1565,34 +2575,62 @@ function glassTone(strength = 0.55, { dark = false, reducedTransparency = false,
 }
 
 /**
- * Material for the input card.
+ * Material for a content box.
  *
- * Same contrast budget as the reading pane (identical tint, veil, mist and
- * silhouette), because both sit above words. The only differences are the ones
- * the card demands: a short pane needs a short top highlight — a 22–32px bright
- * band would land on the first line of the message — so the crest is cut to a
- * quarter and capped, and glyphs dissolve over the composer's own short feather.
- * The WCAG worst case including that crest is asserted in composer.test.js.
+ * Same contrast budget as the reading pane (identical tint and silhouette), with
+ * the changes a card demands: the blurred sea carries real colour (mist), so it
+ * is capped below the level that would push body text under 4.5:1; the top
+ * highlight is cut to a quarter and capped, so it cannot land on the first line
+ * of text as a bright bar; and the bottom shade is softened.
+ *
+ * No outline is produced: the frame is DSH's own, and painting a second rim here
+ * made the corners read as two different radii (T3). The material only ever
+ * fills inside the card's own rounded clip.
+ * The whole budget is asserted in content-glass.test.js, band by band.
  */
-function glassComposerTone(strength = 0.55, options = {}) {
-  return glassTone(strength, { ...options, crestScale: GLASS_COMPOSER_CREST_SCALE, compact: true });
+function glassContentTone(strength = 0.55, options = {}) {
+  const tone = glassTone(strength, { ...options, crestScale: GLASS_CONTENT_CREST_SCALE, compact: true });
+  if (tone.mode !== 'frost') return tone;
+  const s = tone.strength;
+  const dark = Boolean(options.dark);
+  return {
+    ...tone,
+    mist: GLASS_CONTENT_MIST_BASE + GLASS_CONTENT_MIST_RANGE * s,
+    blur: 9 + 12 * s,
+    shade: dark
+      ? `rgba(0, 0, 0, ${(0.14 + 0.16 * s) * GLASS_CONTENT_SHADE_SCALE})`
+      : `rgba(30, 43, 58, ${(0.045 + 0.05 * s) * GLASS_CONTENT_SHADE_SCALE})`,
+  };
 }
 
 /**
- * Crop of the pane region used for the frost pass, in CSS pixels.
+ * Downsampling factor for the shared blurred sea, 4–6 depending on strength.
  *
- * Only this rectangle is copied into the small buffer, so the per-frame cost is
- * a fraction of the sea instead of a full-canvas resample. The clip keeps the
- * copy inside the canvas even when the pane is partly scrolled off.
+ * One buffer is built per frame for all panes: the number of panes changes the
+ * number of draw calls, never the blur cost.
  */
-function glassFrostRegion(panel, width, height) {
-  if (!panel || !(width > 0) || !(height > 0)) return null;
-  const x = glassClamp(panel.x, 0, width);
-  const y = glassClamp(panel.y, 0, height);
-  const right = glassClamp(panel.x + panel.width, 0, width);
-  const bottom = glassClamp(panel.y + panel.height, 0, height);
-  if (!(right - x >= 1) || !(bottom - y >= 1)) return null;
-  return { x, y, width: right - x, height: bottom - y };
+function glassSeaFactor(strength = 0.55) {
+  const s = glassClamp(Number.isFinite(strength) ? strength : 0.55, 0, 1);
+  return glassClamp(Math.round(4 + 2 * s), 4, 6);
+}
+
+/**
+ * Size of the shared blurred-sea buffer, in low-resolution pixels.
+ *
+ * The buffer covers the whole canvas (so every pane slices the same image) with
+ * a padding band wide enough that the Gaussian blur has real pixels to pull in
+ * from outside the pane, which keeps pane edges from darkening.
+ */
+function glassSeaBuffer(width, height, { factor = 4, blur = 12 } = {}) {
+  const sourceWidth = Math.max(1, Math.floor(Number.isFinite(width) ? width : 1));
+  const sourceHeight = Math.max(1, Math.floor(Number.isFinite(height) ? height : 1));
+  const f = glassClamp(Number.isFinite(factor) ? Math.round(factor) : 4, 2, 8);
+  const blurPx = Math.max(0, Number.isFinite(blur) ? blur : 0);
+  const blurRadius = blurPx / f;
+  const pad = Math.max(2, Math.ceil(blurRadius * 3) + 2);
+  return { factor: f, pad, blurRadius,
+    width: Math.ceil(sourceWidth / f) + pad * 2,
+    height: Math.ceil(sourceHeight / f) + pad * 2 };
 }
 
 /**
@@ -1617,9 +2655,9 @@ function glassContains(rect, x, y) {
 /**
  * How much of a sharp glyph survives at this point.
  *
- * 0 inside the pane (the frost owns it), ramping to 1 across `feather` pixels
- * outside it. Without the ramp a whale crossing the pane edge would be cut off
- * in a straight line; with it the body dissolves into the glass.
+ * 0 inside the pane (the frosted sea owns it), ramping to 1 across `feather`
+ * pixels outside it. Without the ramp a whale crossing the pane edge would be
+ * cut off in a straight line; with it the body dissolves into the glass.
  */
 function glassEdgeFade(rect, x, y, feather = 26) {
   const inside = -glassDistance(rect, x, y);
@@ -1628,26 +2666,353 @@ function glassEdgeFade(rect, x, y, feather = 26) {
   return t * t * (3 - 2 * t);
 }
 
+
+// Helpers stay `spout`-prefixed: build.mjs strips `export` and concatenates this
+// file into the same scope as model.js, which already owns clamp/mix/smooth/noise.
+const SPOUT_LIMIT = 3;
+const SPOUT_BLOCK_TAGS = new Set(['button', 'input', 'textarea', 'a', 'select', 'label', 'summary']);
+const SPOUT_BLOCK_ROLES = new Set(['button', 'slider', 'textbox']);
+const SPOUT_PHASES = new Set(['jet', 'bush', 'droplets']);
+
+// Blowhole stations are drawing choices, not measurements.
+const SPOUT_MARK = Object.freeze({
+  blue: Object.freeze({ x: 0.62, y: -0.12, z: 0, basis: 'screen' }),
+  humpback: Object.freeze({ x: 0.56, y: -0.14, z: 0, basis: 'screen' }),
+  fin: Object.freeze({ x: 0.60, y: -0.10, z: 0, basis: 'screen' }),
+  bowhead: Object.freeze({ x: 0.50, y: -0.16, z: 0, basis: 'lateral' }),
+  sperm: Object.freeze({ x: 0.88, y: -0.08, z: 0.06, basis: 'body' }),
+});
+
+const SPOUT_STAMPS = Object.freeze({
+  blue: {
+    basis: 'screen',
+    jet: { anchor: { row: 0, col: 1 }, rows: [' * '] },
+    bush: { anchor: { row: 1, col: 1 }, rows: [' o ', 'o*o', ' o '] },
+    droplets: { anchor: { row: 1, col: 1 }, rows: [' . ', '. .', ' . '] },
+  },
+  humpback: {
+    basis: 'screen',
+    jet: { anchor: { row: 0, col: 2 }, rows: [' *** '] },
+    bush: { anchor: { row: 1, col: 3 }, rows: [" 'o o' ", 'o  *  o', " 'o o' "] },
+    droplets: { anchor: { row: 1, col: 3 }, rows: ['.  .  .', ' .   . ', '   .   '] },
+  },
+  bowhead: {
+    basis: 'lateral',
+    jet: { anchor: { row: 1, col: 2 }, rows: ["  '  ", '  *  '] },
+    bush: { anchor: { row: 3, col: 4 }, rows: ['O       O', " '     ' ", "  '   '  ", '    *    '] },
+    droplets: { anchor: { row: 2, col: 4 }, rows: ['.       .', " '     ' ", '    .    '] },
+  },
+  fin: {
+    basis: 'screen',
+    unverified: true,
+    jet: { anchor: { row: 0, col: 1 }, rows: [' * '] },
+    bush: { anchor: { row: 1, col: 1 }, rows: [' . ', ' * ', ' . '] },
+    droplets: { anchor: { row: 0, col: 1 }, rows: [' . '] },
+  },
+  sperm: {
+    basis: 'body',
+    jet: { anchor: { row: 0, col: 0 }, rows: ['*  ', " ' ", '  o'] },
+    bush: { anchor: { row: 0, col: 0 }, rows: ['*   ', " '  ", '  o ', '   ~'] },
+    droplets: { anchor: { row: 0, col: 0 }, rows: ['*  ', ' . ', '  .'] },
+  },
+});
+
 /**
- * Downsampled frost buffer size for one source canvas and tone.
- *
- * This is the fallback used when the canvas cannot blur for us: copy the pane a
- * few times smaller and let the upscale do the smearing. The factor is kept low
- * enough that the shape survives, high enough that no glyph edges show.
+ * Phase window is half-open [0, 760). Alpha is 1 until 160ms, then linear to 0
+ * at 760. The burst keeps the whale until 760 even after the ink falls under
+ * 0.04 — otherwise a click at 759ms would start a second mist. Glyphs skip the
+ * faint ink themselves.
  */
-function glassFrostSize(width, height, scale) {
-  const wanted = Number.isFinite(scale) ? Math.round(scale) : 4;
-  const factor = glassClamp(wanted, 2, 8);
-  return { factor, width: Math.max(2, Math.ceil(width / factor)), height: Math.max(2, Math.ceil(height / factor)) };
+function spoutAge(ageMs) {
+  if (typeof ageMs !== 'number' || !Number.isFinite(ageMs) || ageMs < 0 || ageMs >= 760) return null;
+  const alpha = ageMs < 160 ? 1 : (760 - ageMs) / 600;
+  const phase = ageMs < 160 ? 'jet' : ageMs < 420 ? 'bush' : 'droplets';
+  return { phase, alpha };
 }
 
+function spoutFrame(species, phase) {
+  if (!SPOUT_PHASES.has(phase)) return null;
+  const speciesStamps = SPOUT_STAMPS[species];
+  const stamp = speciesStamps && speciesStamps[phase];
+  if (!stamp) return null;
+  const frame = {
+    rows: stamp.rows.slice(),
+    anchor: { row: stamp.anchor.row, col: stamp.anchor.col },
+    basis: speciesStamps.basis,
+  };
+  if (speciesStamps.unverified) frame.unverified = true;
+  return frame;
+}
 
+/** Whale index under a primary click, or null. Depth is the grid's; not recomputed. */
+function spoutHit(hit, grid, particles) {
+  if (!hit || hit.enabled !== true || hit.button !== 0) return null;
+  const tag = String(hit.tag ?? '').toLowerCase();
+  if (SPOUT_BLOCK_TAGS.has(tag)) return null;
+  if (hit.editable === true || hit.composer === true) return null;
+  const role = String(hit.role ?? '').toLowerCase();
+  if (SPOUT_BLOCK_ROLES.has(role)) return null;
+  if (!grid || !(grid.cellWidth > 0) || !(grid.cellHeight > 0) || !(grid.columns > 0) || !(grid.rows > 0)) return null;
+  const x = hit.x, y = hit.y;
+  if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const spanW = Number.isFinite(grid.width) ? grid.width : grid.columns * grid.cellWidth;
+  const spanH = Number.isFinite(grid.height) ? grid.height : grid.rows * grid.cellHeight;
+  if (x < 0 || y < 0 || x >= spanW || y >= spanH) return null;
+  const col = Math.floor(x / grid.cellWidth);
+  const row = Math.floor(y / grid.cellHeight);
+  if (col < 0 || row < 0 || col >= grid.columns || row >= grid.rows) return null;
+  const cell = row * grid.columns + col;
+  const owners = grid.owners;
+  if (!owners || cell >= owners.length) return null;
+  const owner = owners[cell];
+  if (typeof owner !== 'number' || owner < 0) return null;
+  const particle = particles && particles[owner];
+  if (!particle || !Number.isInteger(particle.whale)) return null;
+  return particle.whale;
+}
+
+function spoutBlit(ink, frame, place) {
+  if (!ink) return;
+  const savedAlpha = ink.globalAlpha;
+  const savedFill = ink.fillStyle;
+  const savedAlign = ink.textAlign;
+  const savedBaseline = ink.textBaseline;
+  const savedFont = ink.font;
+  try {
+    if (!frame || !place || !Array.isArray(frame.rows)) return;
+    const anchor = frame.anchor || { row: 0, col: 0 };
+    const acrossX = Number.isFinite(place.acrossX) ? place.acrossX : 0;
+    const acrossY = Number.isFinite(place.acrossY) ? place.acrossY : 0;
+    const alongX = Number.isFinite(place.alongX) ? place.alongX : 0;
+    const alongY = Number.isFinite(place.alongY) ? place.alongY : 0;
+    const alphaAt = typeof place.alphaAt === 'function' ? place.alphaAt : null;
+    if (!alphaAt && !(place.alpha >= 0.04)) return;
+    if (place.fillStyle != null) ink.fillStyle = place.fillStyle;
+    if (place.font != null) ink.font = place.font;
+    ink.textAlign = 'center';
+    ink.textBaseline = 'middle';
+    for (let row = 0; row < frame.rows.length; row++) {
+      const line = frame.rows[row];
+      if (typeof line !== 'string') continue;
+      for (let col = 0; col < line.length; col++) {
+        const glyph = line[col];
+        if (glyph === ' ') continue;
+        const dx = col - anchor.col;
+        const dy = row - anchor.row;
+        const x = place.anchorX + dx * acrossX + dy * alongX;
+        const y = place.anchorY + dx * acrossY + dy * alongY;
+        const glyphAlpha = alphaAt ? alphaAt(x, y) : place.alpha;
+        if (!(glyphAlpha >= 0.04)) continue;
+        ink.globalAlpha = glyphAlpha;
+        ink.fillText(glyph, x, y);
+      }
+    }
+  } finally {
+    ink.globalAlpha = savedAlpha;
+    ink.fillStyle = savedFill;
+    ink.textAlign = savedAlign;
+    ink.textBaseline = savedBaseline;
+    ink.font = savedFont;
+  }
+}
+
+function spoutParticle(x, y, z) {
+  return { x, y, z, nx: 0, ny: -1, nz: 0, part: 'body', material: 'skin', seed: 0 };
+}
+
+function spoutPoseReady(pose) {
+  return Boolean(pose) && Number.isFinite(pose.scale) && pose.spine != null && Number(pose.spine.length) > 0;
+}
+
+function spoutProjected(particle, pose) {
+  try {
+    const point = projectParticle(particle, pose);
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+    return point;
+  } catch {
+    return null;
+  }
+}
+
+function spoutCellLength(grid) {
+  return Math.hypot(grid.cellWidth, grid.cellHeight) / Math.SQRT2;
+}
+
+function spoutScreenAxes(grid) {
+  return { acrossX: grid.cellWidth, acrossY: 0, alongX: 0, alongY: grid.cellHeight };
+}
+
+function spoutNormalizeCell(dx, dy, cell) {
+  const length = Math.hypot(dx, dy);
+  if (!(length > 0) || !Number.isFinite(length)) return null;
+  return { x: dx / length * cell, y: dy / length * cell };
+}
+
+function spoutAxes(mark, pose, origin, grid) {
+  const screen = spoutScreenAxes(grid);
+  if (mark.basis === 'screen') return screen;
+  const cell = spoutCellLength(grid);
+  if (!(cell > 0)) return screen;
+  if (mark.basis === 'lateral') {
+    const side = spoutProjected(spoutParticle(mark.x, mark.y, mark.z + 0.12), pose);
+    if (!side) return screen;
+    const across = spoutNormalizeCell(side.x - origin.x, side.y - origin.y, cell);
+    if (!across) return screen;
+    return { acrossX: across.x, acrossY: across.y, alongX: -across.y, alongY: across.x };
+  }
+  if (mark.basis === 'body') {
+    const forward = spoutProjected(spoutParticle(mark.x + 0.08, mark.y, mark.z), pose);
+    const side = spoutProjected(spoutParticle(mark.x, mark.y, mark.z + 0.06), pose);
+    if (!forward || !side) return screen;
+    const along = spoutNormalizeCell(forward.x - origin.x, forward.y - origin.y, cell);
+    const across = spoutNormalizeCell(side.x - origin.x, side.y - origin.y, cell);
+    if (!along || !across) return screen;
+    return { acrossX: across.x, acrossY: across.y, alongX: along.x, alongY: along.y };
+  }
+  return screen;
+}
+
+function spoutDescribePointer(target) {
+  let node = target ?? null;
+  if (node && node.nodeType === 3) node = node.parentElement ?? null;
+  let tag = '';
+  let editable = false;
+  let role = '';
+  let composer = false;
+  if (node && typeof node.closest === 'function') composer = Boolean(node.closest('[data-composer-card]'));
+  for (let el = node; el; el = el.parentElement) {
+    const name = typeof el.tagName === 'string' ? el.tagName.toLowerCase() : '';
+    if (!tag && name) tag = name;
+    if (SPOUT_BLOCK_TAGS.has(name)) tag = name;
+    if (el.isContentEditable === true) editable = true;
+    else if (typeof el.getAttribute === 'function') {
+      const flag = el.getAttribute('contenteditable');
+      if (flag != null && String(flag).toLowerCase() !== 'false') editable = true;
+    }
+    const folded = typeof el.getAttribute === 'function' ? String(el.getAttribute('role') || '').toLowerCase() : '';
+    if (!role && SPOUT_BLOCK_ROLES.has(folded)) role = folded;
+  }
+  return { tag, editable, composer, role };
+}
+
+function attachSpout(canvas, read) {
+  let bursts = [];
+  let seenScene;
+  let detached = false;
+
+  function spoutAdoptScene(state) {
+    if (state.scene !== seenScene) {
+      seenScene = state.scene;
+      bursts.length = 0;
+    }
+  }
+
+  function spoutDropExpired(now) {
+    for (let i = bursts.length - 1; i >= 0; i--) {
+      if (!spoutAge(now - bursts[i].born)) bursts.splice(i, 1);
+    }
+  }
+
+  function spoutPushBurst(state, whaleId) {
+    const whale = state.scene && state.scene.whales && state.scene.whales[whaleId];
+    if (!whale) return;
+    const mark = SPOUT_MARK[whale.species];
+    if (!mark) return;
+    const pose = state.poses && state.poses[whaleId];
+    if (!spoutPoseReady(pose)) return;
+    const grid = state.grid;
+    if (!grid || !(grid.cellWidth > 0) || !(grid.cellHeight > 0)) return;
+    if (!Number.isFinite(state.now)) return;
+    const origin = spoutProjected(spoutParticle(mark.x, mark.y, mark.z), pose);
+    if (!origin) return;
+    const axes = spoutAxes(mark, pose, origin, grid);
+    spoutDropExpired(state.now);
+    if (bursts.some(burst => burst.whaleId === whaleId)) return;
+    if (bursts.length >= SPOUT_LIMIT) bursts.shift();
+    bursts.push({
+      whaleId,
+      species: whale.species,
+      born: state.now,
+      anchorX: origin.x,
+      anchorY: origin.y,
+      acrossX: axes.acrossX,
+      acrossY: axes.acrossY,
+      alongX: axes.alongX,
+      alongY: axes.alongY,
+    });
+  }
+
+  function onPointerDown(event) {
+    if (detached || !event) return;
+    let state;
+    try { state = read(); } catch { return; }
+    if (!state || state.reduced || state.hidden || state.enabled !== true || event.button !== 0) return;
+    if (!canvas || typeof canvas.getBoundingClientRect !== 'function') return;
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    if (!(x >= 0 && y >= 0 && x < rect.width && y < rect.height)) return;
+    spoutAdoptScene(state);
+    const described = spoutDescribePointer(event.target);
+    const whaleId = spoutHit({
+      enabled: true, button: 0, x, y,
+      tag: described.tag, editable: described.editable, composer: described.composer, role: described.role,
+    }, state.grid, state.scene && state.scene.particles);
+    if (whaleId == null) return;
+    spoutPushBurst(state, whaleId);
+  }
+
+  function paint(ink, fade) {
+    if (detached) return;
+    let state;
+    try { state = read(); } catch { return; }
+    if (!state || state.enabled !== true || state.reduced) {
+      bursts.length = 0;
+      return;
+    }
+    spoutAdoptScene(state);
+    spoutDropExpired(state.now);
+    if (!ink || !bursts.length) return;
+    const opacity = Number.isFinite(state.opacity) ? state.opacity : 0;
+    const fillStyle = state.dark ? '#d7e8ee' : '#b7d0d6';
+    const font = `600 ${state.glyphSize}px Consolas, "Cascadia Mono", "Courier New", monospace`;
+    for (const burst of bursts) {
+      const aged = spoutAge(state.now - burst.born);
+      if (!aged) continue;
+      const frame = spoutFrame(burst.species, aged.phase);
+      if (!frame) continue;
+      spoutBlit(ink, frame, {
+        anchorX: burst.anchorX, anchorY: burst.anchorY,
+        acrossX: burst.acrossX, acrossY: burst.acrossY,
+        alongX: burst.alongX, alongY: burst.alongY,
+        fillStyle, font,
+        alphaAt(x, y) {
+          const veil = attenuation(x, y, state.width, state.height, state.quietCenter);
+          const edge = typeof fade === 'function' ? fade(x, y) : 1;
+          const whale = state.scene && state.scene.whales && state.scene.whales[burst.whaleId];
+          const submergence = whale && whale._motion ? whale._motion.submergence : undefined;
+          const surfaced = Number.isFinite(submergence) && submergence > 0 ? 1 - submergence : 1;
+          return aged.alpha * opacity * veil * edge * surfaced;
+        },
+      });
+    }
+  }
+
+  function detach() {
+    if (detached) return;
+    detached = true;
+    bursts.length = 0;
+    document.removeEventListener('pointerdown', onPointerDown);
+  }
+
+  document.addEventListener('pointerdown', onPointerDown);
+  return { paint, detach };
+}
 
 
 // DSH publishes these hooks on the conversation subtree. Every one of them is
 // optional: without them the whales simply paint as before, so an unknown
 // layout can never break the background.
-const FLOW_SELECTOR = '[data-chat-flow], [data-slot="conversation.chat.flow"]';
 const SCROLL_SELECTOR = '[data-conversation-scroll]';
 // The composer card is the rounded input itself; the seat is its sticky wrapper
 // and is only used when the card hook is missing from the build.
@@ -1655,6 +3020,16 @@ const COMPOSER_CARD_SELECTOR = '[data-composer-card]';
 const COMPOSER_SEAT_SELECTOR = '[data-composer-seat]';
 const COMPOSER_RADIUS = 18;
 const MEASURE_INTERVAL = 400;
+
+// Which of the conversation's boxes get their own pane of glass. Only opaque,
+// rounded, card-sized boxes are candidates; the input card is always one.
+const CONTENT_MAX_BOXES = 16;
+const CONTENT_MAX_SCAN = 600;
+const CONTENT_MIN_AREA = 2000;
+const CONTENT_MAX_AREA_RATIO = 0.55;
+const CONTENT_MAX_HEIGHT_RATIO = 0.9;
+const CONTENT_MIN_ALPHA = 0.9;
+
 
 // Which option belongs to which kind of work. A group only rebuilds its own
 // part; `live` options are read straight from the config while painting, so
@@ -1664,7 +3039,7 @@ const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset']);
+const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'reefs', 'ripples']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -1711,14 +3086,87 @@ function pick(selector, canvasRect) {
 }
 
 /**
- * The card's own corner radius, so the glass matches the input it covers.
- * A failed parse falls back to the DSH panel radius.
+ * Parse a computed CSS colour into channels plus alpha. Anything unparsable is
+ * treated as fully transparent, which is exactly how a candidate box that is not
+ * an opaque surface should behave.
  */
+function colorAlpha(value) {
+  const match = String(value || '').match(/^rgba?\(([^)]+)\)$/i);
+  if (!match) return null;
+  const parts = match[1].split(/[,/ ]+/).filter(Boolean).map(Number);
+  if (parts.length < 3 || !parts.slice(0, 3).every(Number.isFinite)) return null;
+  return parts.length >= 4 && Number.isFinite(parts[3]) ? parts[3] : 1;
+}
+
+/** Smallest computed corner radius of an element, in CSS pixels (null if none). */
+function cornerRadius(style) {
+  const values = [style.borderTopLeftRadius, style.borderTopRightRadius,
+    style.borderBottomRightRadius, style.borderBottomLeftRadius]
+    .map(value => parseFloat(value))
+    .filter(value => Number.isFinite(value) && value >= 0);
+  if (values.length) return Math.min(...values);
+  const shorthand = parseFloat(style.borderRadius);
+  return Number.isFinite(shorthand) && shorthand >= 0 ? shorthand : null;
+}
+
+/** The card's own corner radius, so the glass matches the input it covers. */
 function composerRadius(element) {
   try {
-    const radius = parseFloat(getComputedStyle(element).borderTopLeftRadius);
-    return Number.isFinite(radius) && radius >= 0 ? radius : COMPOSER_RADIUS;
+    const radius = cornerRadius(getComputedStyle(element));
+    return radius === null ? COMPOSER_RADIUS : radius;
   } catch { return COMPOSER_RADIUS; }
+}
+
+/**
+ * Every box in the conversation that should carry its own glass.
+ *
+ * Walks the scroller subtree breadth-first (parents before children, so an outer
+ * card is always painted before a card nested in it) and stops after
+ * CONTENT_MAX_SCAN elements. Cheap geometry filters run before any style read:
+ * only elements that are visible, intersect the canvas and are card-sized get a
+ * getComputedStyle call. The input card is appended explicitly because its fill
+ * can be a layered background that the generic opacity test would miss.
+ *
+ * This runs inside measure() only — never per frame.
+ */
+function collectContentBoxes(canvasRect, composerHit) {
+  const boxes = [];
+  const canvasArea = canvasRect.width * canvasRect.height;
+  const scroller = pick(SCROLL_SELECTOR, canvasRect);
+  if (scroller) {
+    const queue = [scroller.element];
+    let checked = 0;
+    while (queue.length && checked < CONTENT_MAX_SCAN) {
+      const element = queue.shift();
+      checked++;
+      const children = element.children;
+      if (children) for (const child of children) queue.push(child);
+      let rect;
+      try { rect = element.getBoundingClientRect(); } catch { continue; }
+      if (!(rect.width > 0) || !(rect.height > 0)) continue;
+      if (rect.left + rect.width < canvasRect.left || rect.left > canvasRect.left + canvasRect.width) continue;
+      if (rect.top + rect.height < canvasRect.top || rect.top > canvasRect.top + canvasRect.height) continue;
+      const area = rect.width * rect.height;
+      if (!(area >= CONTENT_MIN_AREA) || area > canvasArea * CONTENT_MAX_AREA_RATIO) continue;
+      if (!(rect.height < canvasRect.height * CONTENT_MAX_HEIGHT_RATIO)) continue;
+      let style;
+      try { style = getComputedStyle(element); } catch { continue; }
+      if (style.position === 'fixed') continue;
+      if (style.visibility === 'hidden' || style.display === 'none') continue;
+      const alpha = colorAlpha(style.backgroundColor);
+      if (alpha === null || alpha < CONTENT_MIN_ALPHA) continue;
+      const radius = cornerRadius(style);
+      if (!(radius > 0)) continue;
+      boxes.push({ left: rect.left, top: rect.top, width: rect.width, height: rect.height, radius });
+    }
+  }
+  // The input card is always a content box, whatever its background shorthand.
+  if (composerHit) {
+    boxes.push({ left: composerHit.rect.left, top: composerHit.rect.top,
+      width: composerHit.rect.width, height: composerHit.rect.height,
+      radius: composerRadius(composerHit.element) });
+  }
+  return boxes;
 }
 
 /**
@@ -1770,19 +3218,39 @@ function createWhaleLayer(canvas, initialConfig) {
   const ink = canvas.getContext('2d');
   if (!ink) return { update() {}, dispose() {} };
   const config = normalizeLayerConfig(initialConfig);
+  const scenerySeed = Math.floor(Math.random() * 0x100000000) >>> 0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
   let scene = createScene(config.count, config.text, config.species, config.whaleSize);
+  scene.diveSeed = scenerySeed;
+  let reef = null;
+  const water = createWaterField();
+  let sceneryPalette = createInkPalette(config.color);
   let poses = scene.whales.map(() => ({}));
   let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
   let painter = createWhalePainter(scene, config);
   ink.font = painter.font;
   let metrics = measureGlyphs();
   let width = 0, height = 0, ratio = 1, grid = null;
-  let frost = null, frostInk = null, blurScratch = null, blurInk = null, blurSupport = false;
-  let panes = [], tone = null, composerPane = null, composerTone = null, composerCard = null;
+  // Shared blurred sea: one downsampled painter pass and one blur per frame; the
+  // number of panes only changes how many times the image is drawn, never the
+  // blur cost.
+  let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
+  let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
+  let panes = [], tone = null, composerCard = null;
   let avoidRect = null;
   let raf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+  const spout = attachSpout(canvas, () => ({
+    enabled: config.spout,
+    reduced: reduced.matches,
+    hidden: document.hidden,
+    opacity: config.opacity,
+    quietCenter: config.quietCenter,
+    glyphSize: config.glyphSize,
+    dark: document.body.hasAttribute('data-ds-dark-theme'),
+    scene, poses, grid, width, height,
+    now: performance.now(),
+  }));
 
   /** The widest/tallest glyph decides the cell size, so measure the whole alphabet. */
   function measureGlyphs() {
@@ -1796,26 +3264,84 @@ function createWhaleLayer(canvas, initialConfig) {
     return measured;
   }
 
-  function frostBuffer() {
-    if (frostInk) return true;
+  /** Allocate or resize the shared low-resolution sea buffers for one tone. */
+  function seaBuffers(material) {
+    const factor = glassSeaFactor(material.strength);
+    const buffer = glassSeaBuffer(width, height, { factor, blur: material.blur });
     try {
-      frost = document.createElement('canvas');
-      frostInk = frost.getContext('2d');
-      // Feature-detect the Gaussian blur once: older engines ignore the filter,
-      // and the downsample alone still frosts, just more coarsely.
-      frostInk.filter = 'blur(2px)';
-      blurSupport = frostInk.filter === 'blur(2px)';
-      frostInk.filter = 'none';
-      if (blurSupport) {
-        blurScratch = document.createElement('canvas');
-        blurInk = blurScratch.getContext('2d');
-        if (!blurInk) blurSupport = false;
+      if (!sea) {
+        sea = document.createElement('canvas');
+        seaInk = sea.getContext('2d');
+        blurredSea = document.createElement('canvas');
+        blurredSeaInk = blurredSea.getContext('2d');
+        if (!seaInk || !blurredSeaInk) { sea = seaInk = blurredSea = blurredSeaInk = null; return false; }
+        // Feature-detect the Gaussian filter once; without it the downsample and
+        // upscale still smear the field, just more coarsely.
+        seaInk.filter = 'blur(1px)';
+        blurSupport = seaInk.filter === 'blur(1px)';
+        seaInk.filter = 'none';
       }
-    } catch { frost = frostInk = null; }
-    return Boolean(frostInk);
+    } catch { sea = seaInk = blurredSea = blurredSeaInk = null; return false; }
+    if (sea.width !== buffer.width || sea.height !== buffer.height) {
+      sea.width = buffer.width;
+      sea.height = buffer.height;
+    }
+    if (blurredSea.width !== buffer.width || blurredSea.height !== buffer.height) {
+      blurredSea.width = buffer.width;
+      blurredSea.height = buffer.height;
+    }
+    seaFactor = buffer.factor;
+    seaPad = buffer.pad;
+    seaBlurRadius = buffer.blurRadius;
+    return true;
   }
 
-  /** The cells and their glyphs share one fade at every reading-pane edge. */
+  /**
+   * Paint the whole sea (glyph field, no pane fade) into the low-resolution
+   * buffer and blur it once.
+   *
+   * This image must not be a copy of the main canvas: by the time a pane is
+   * painted, the sharp glyphs inside it have already been faded out, so a copy
+   * would be empty exactly where the glass has to show whales. This separate
+   * pass is the source of truth for "what lies under the glass".
+   *
+   * The glyph-only mode also gets a body silhouette under the letters. At 1/4–1/6
+   * resolution glyph strokes rasterise to a couple of pixels, and the blur then
+   * spreads their alpha so thin that the pane would look empty again — the pale
+   * silhouette is what makes the blurred whale a shape rather than a faint
+   * texture. Cells mode already fills the body with tiles, so it skips this.
+   */
+  function paintBlurredSea(material) {
+    const dark = document.body.hasAttribute('data-ds-dark-theme');
+    seaInk.setTransform(1, 0, 0, 1, 0, 0);
+    seaInk.clearRect(0, 0, sea.width, sea.height);
+    // The painter works in CSS pixels; the 1/factor transform rasterises it at a
+    // fraction of the resolution and the panes scale the blur back up.
+    seaInk.setTransform(1 / seaFactor, 0, 0, 1 / seaFactor, seaPad, seaPad);
+    if (config.renderStyle !== 'cells') paintSeaSilhouette(seaInk, material);
+    painter.paint(seaInk, grid, poses, width, height, 1, null, dark);
+    blurredSeaInk.setTransform(1, 0, 0, 1, 0, 0);
+    blurredSeaInk.clearRect(0, 0, blurredSea.width, blurredSea.height);
+    blurredSeaInk.filter = blurSupport ? `blur(${Math.max(0.4, seaBlurRadius).toFixed(2)}px)` : 'none';
+    blurredSeaInk.drawImage(sea, 0, 0);
+    blurredSeaInk.filter = 'none';
+  }
+
+  /** Pale body shape under the sea's glyphs; the blur turns it into frosted glass. */
+  function paintSeaSilhouette(target, material) {
+    target.fillStyle = `rgb(${material.silhouette})`;
+    target.globalAlpha = 0.9;
+    const over = grid.cellWidth * 0.22;
+    for (let cell = 0; cell < grid.owners.length; cell++) {
+      if (grid.owners[cell] < 0 || grid.visibility[cell] < 0.05) continue;
+      const x = grid.centersX[cell], y = grid.centersY[cell];
+      target.fillRect(x - grid.cellWidth / 2 - over, y - grid.cellHeight / 2 - over,
+        grid.cellWidth + over * 2, grid.cellHeight + over * 2);
+    }
+    target.globalAlpha = 1;
+  }
+
+  /** The cells and their glyphs share one fade at every pane edge. */
   function paintGlyphs(target, fade = null) {
     painter.paint(target, grid, poses, width, height, ratio, fade, document.body.hasAttribute('data-ds-dark-theme'));
   }
@@ -1825,54 +3351,53 @@ function createWhaleLayer(canvas, initialConfig) {
    * last measure. No DOM read: a scene rebuild only changes the school, so the
    * margin (which depends on the largest body) is refreshed without measuring.
    */
-  function applyComposerObstacle() {
+  function applySceneObstacles() {
     if (!scene) return;
-    if (!config.composerAvoid || !composerCard) { setSceneObstacles(scene, []); return; }
-    let largest = 0;
-    for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
-    const obstacle = composerObstacle(composerCard.canvas, composerCard.card, largest);
-    setSceneObstacles(scene, obstacle ? [obstacle] : []);
+    const obstacles = config.reefs && reef ? reefObstacles(reef) : [];
+    if (config.composerAvoid && composerCard) {
+      let largest = 0;
+      for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
+      const obstacle = composerObstacle(composerCard.canvas, composerCard.card, largest);
+      if (obstacle) obstacles.push(obstacle);
+    }
+    setSceneObstacles(scene, obstacles);
   }
 
   /**
-   * Re-read the conversation geometry: reading column and/or input card.
+   * Re-read the conversation geometry: one box list for the content glass, plus
+   * the input card for avoidance.
    *
    * Cheap and only layout can change it, so it runs on a 400ms budget and on
-   * every invalidation. The reading pane and the composer are measured
-   * independently: either one alone must keep working.
+   * every invalidation. Box collection and style reads happen here only — never
+   * per frame.
    */
   function measure() {
     measuredAt = performance.now();
     panes = [];
     tone = null;
-    composerPane = null;
-    composerTone = null;
     composerCard = null;
     avoidRect = null;
     if (!width || !height || !scene || disposed) return;
-    if (!config.glass && !config.composerGlass && !config.composerAvoid) {
-      setSceneObstacles(scene, []);
+    if (!config.glass && !config.composerAvoid) {
+      applySceneObstacles();
       return;
     }
     const canvasRect = rectOf(canvas);
     if (!canvasRect) return;
     const dark = document.body.hasAttribute('data-ds-dark-theme');
     const material = { dark, reducedTransparency: reducedTransparency.matches };
-    if (config.glass) {
-      const scroll = pick(SCROLL_SELECTOR, canvasRect);
-      const flow = pick(FLOW_SELECTOR, canvasRect);
-      let column = flow ? flow.rect : null;
-      if (!column && scroll) {
-        const declared = parseFloat(getComputedStyle(scroll.element).getPropertyValue('--dsh-chat-content-width'));
-        if (declared > 0) column = { left: scroll.rect.left + (scroll.rect.width - declared) / 2, top: scroll.rect.top, width: declared, height: scroll.rect.height };
-      }
-      panes = glassPanes({ canvas: canvasRect, viewport: scroll?.rect ?? null, column });
-    }
-    // The composer card is needed for both the glass and the avoidance, and the
-    // card hook is preferred over its sticky seat wrapper.
-    const composer = config.composerGlass || config.composerAvoid
-      ? (pick(COMPOSER_CARD_SELECTOR, canvasRect) || pick(COMPOSER_SEAT_SELECTOR, canvasRect)) : null;
+    // The input card is both a content box and the avoidance target; the card
+    // hook wins over its sticky seat wrapper.
+    const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
+    const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
     if (composer) composerCard = { card: composer.rect, canvas: canvasRect };
+    if (config.glass) {
+      const boxes = collectContentBoxes(canvasRect, cardHit);
+      panes = glassContentPanes({ canvas: canvasRect, boxes, max: CONTENT_MAX_BOXES });
+      // 'clear' (reduced transparency) keeps the panes for the glyph hold-out but
+      // paints no material, so the boxes stay free of the sea either way.
+      tone = glassContentTone(config.glassStrength, material);
+    }
     if (config.composerAvoid && composer) {
       // This canvas paints above the input card, so whale ink must never land on
       // it: avoidance keeps the bodies away, and this rectangle is the guarantee
@@ -1883,18 +3408,7 @@ function createWhaleLayer(canvas, initialConfig) {
       const bottom = Math.min(canvasRect.height, composer.rect.top - canvasRect.top + composer.rect.height + 8);
       avoidRect = right - left > 0 && bottom - top > 0 ? { x: left, y: top, width: right - left, height: bottom - top } : null;
     }
-    if (config.glass || config.composerGlass) {
-      // 'clear' (reduced transparency) keeps the panes for the glyph hold-out but
-      // paints no material, so the reading area stays free of the sea either way.
-      tone = glassTone(config.glassStrength, { ...material, enabled: true });
-      if (config.composerGlass) {
-        composerTone = glassComposerTone(config.glassStrength, material);
-        composerPane = composer
-          ? glassComposerPane({ canvas: canvasRect, card: composer.rect, radius: composerRadius(composer.element) })
-          : null;
-      }
-    }
-    applyComposerObstacle();
+    applySceneObstacles();
   }
 
   function draw() {
@@ -1906,87 +3420,87 @@ function createWhaleLayer(canvas, initialConfig) {
     for (let i = 0; i < scene.particles.length; i++) projectParticle(scene.particles[i], poses[scene.particles[i].whale], projected[i]);
     resolveDepthGrid(projected, grid, scene.triangles, scene.decals);
     // Reduced transparency withholds the material, not the readability work: the
-    // panes still hold the glyphs out (that is what keeps the words over plain
-    // sea), they just paint no tint, frost or rim on top of them.
+    // panes still hold the glyphs out, they just paint no glass over the words.
     const frosted = Boolean(tone) && tone.mode === 'frost';
-    const readingPanes = tone ? panes : [];
-    const composer = tone ? composerPane : null;
-    if (!readingPanes.length && !composer && !avoidRect) { paintGlyphs(ink); return; }
-    const featherOf = pane => (pane.feather ?? tone.feather) || 26;
+    const visiblePanes = tone ? panes : [];
+    const openWater = !visiblePanes.length && !avoidRect;
+    const featherOf = pane => pane.feather ?? (tone ? tone.feather : 10) ?? 10;
     // Glyphs hold out of every pane across that pane's own feather, so no whale
     // is cut by a line; the ramp keeps the body readable right up to the glass.
-    paintGlyphs(ink, (x, y) => {
+    const fade = openWater ? null : (x, y) => {
       // The input card is opaque to whale ink when avoidance is on (see avoidRect).
       if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width
         && y > avoidRect.y && y < avoidRect.y + avoidRect.height) return 0;
       let fade = 1;
-      for (const pane of readingPanes) fade = Math.min(fade, glassEdgeFade(pane, x, y, featherOf(pane)));
-      if (composer) fade = Math.min(fade, glassEdgeFade(composer, x, y, featherOf(composer)));
+      for (const pane of visiblePanes) fade = Math.min(fade, glassEdgeFade(pane, x, y, featherOf(pane)));
       return fade;
-    });
-    // Reading column first, input card second: the two panes overlap when both
-    // are enabled, and the card material has to stay the top surface.
-    if (!frosted) return;
-    for (const pane of readingPanes) paintPane(pane, tone);
-    if (composer) paintPane(composer, composerTone || tone);
+    };
+    const sceneryFade = (x, y) => attenuation(x, y, width, height, config.quietCenter)
+      * (fade ? fade(x, y) : 1);
+    const scenery = { width, height, ratio, font: painter.font, palette: sceneryPalette,
+      cellWidth: grid.cellWidth, cellHeight: grid.cellHeight, opacity: config.opacity, fade: sceneryFade };
+    if (config.reefs && reef) drawReefs(ink, reef, scenery);
+    if (config.ripples) drawWater(ink, water, scenery);
+    paintGlyphs(ink, fade);
+    spout.paint(ink, fade);
+    if (openWater || !frosted || !visiblePanes.length) return;
+    if (!seaBuffers(tone)) return;
+    paintBlurredSea(tone);
+    // One shared sea image for every pane, then the cheap per-pane surface work.
+    paintPaneSeaUnion(visiblePanes, tone);
+    for (const pane of visiblePanes) paintPaneSurface(pane, tone);
   }
 
   /**
-   * Frosted pane, built with no canvas readback and no second glyph pass.
+   * The glass material, drawn in two passes so the expensive step happens once.
    *
-   * The whale's silhouette is what a pane really hides: at 11px the glyph strokes
-   * would blur into noise, so the pane is filled from the depth grid as
-   * overlapping cell blobs. Those go into a buffer several times smaller than the
-   * pane; the blur runs inside that small buffer, so its cost is independent of
-   * the window size, and the upscale finishes the smear.
+   * The blurred sea is the only large operation, so it is painted once for the
+   * whole set of panes: every pane appends its own rounded rectangle to one path
+   * and that union is clipped for a single drawImage. The union only covers the
+   * inside of the boxes — the gaps between two cards are inside no subpath, so
+   * the sea is never drawn there. The per-pane work that remains is one rounded
+   * clip plus three small fills (flat tint, top crest, bottom shade), which keeps
+   * each box's own rounded edge and never welds two cards together.
+   *
+   * The tint is applied on top of the shared sea instead of underneath it. The
+   * veil is only 0.033–0.05 alpha, and composing the two orders gives 4.83:1 vs
+   * 4.88:1 at the worst case — imperceptible, while it lets tint and rim share
+   * one clip per pane instead of two.
+   *
+   * The pane deliberately draws no outline. The card already has DSH's own
+   * hairline elevation ring on exactly this rectangle; a second 1px stroke on the
+   * same path only diverges at the corners under fractional scaling, which reads
+   * as two rounded frames with different radii (T3 measured r≈28.5 neutral vs
+   * r≈33.4 blue-ish). The frame belongs to the DOM, the material belongs to us.
+   *
+   * Nested boxes (a code block inside a card) get the sea once instead of twice,
+   * so an inner pane is no longer slightly denser than its host; each box still
+   * keeps its own tint and rim light.
    */
-  function paintPane(panel, material) {
-    if (!material || material.mode !== 'frost' || !frostBuffer()) return;
-    const scale = glassFrostSize(panel.width, panel.height, material.scale);
-    const pad = 2;
-    const buffer = { width: scale.width + pad * 2, height: scale.height + pad * 2 };
-    if (frost.width !== buffer.width || frost.height !== buffer.height) {
-      frost.width = buffer.width;
-      frost.height = buffer.height;
-    }
-    const s = scale.factor;
-    frostInk.setTransform(1, 0, 0, 1, 0, 0);
-    if (blurSupport) frostInk.filter = 'none';
-    frostInk.clearRect(0, 0, buffer.width, buffer.height);
-    frostInk.setTransform(1 / s, 0, 0, 1 / s, -panel.x / s + pad, -panel.y / s + pad);
-    paintSilhouette(frostInk, panel, material);
-    frostInk.setTransform(1, 0, 0, 1, 0, 0);
-    // Blur inside the small buffer. The radius is divided by the downsample
-    // factor, so the frost looks the same at any window size while the cost
-    // stays proportional to the small buffer instead of the full pane.
-    if (blurSupport) {
-      frostInk.filter = `blur(${Math.max(0.4, material.blur / s).toFixed(2)}px)`;
-      const copy = blurScratch;
-      if (copy.width !== buffer.width || copy.height !== buffer.height) {
-        copy.width = buffer.width; copy.height = buffer.height;
-      }
-      const copyInk = blurInk;
-      copyInk.setTransform(1, 0, 0, 1, 0, 0);
-      copyInk.clearRect(0, 0, buffer.width, buffer.height);
-      copyInk.filter = frostInk.filter;
-      copyInk.drawImage(frost, 0, 0);
-      frostInk.filter = 'none';
-      frostInk.clearRect(0, 0, buffer.width, buffer.height);
-      frostInk.drawImage(copy, 0, 0);
-    }
+  function paintPaneSeaUnion(list, material) {
+    if (!list.length) return;
+    ink.save();
+    ink.beginPath();
+    for (const pane of list) glassRoundedSubpath(ink, pane);
+    ink.clip();
+    ink.imageSmoothingEnabled = true;
+    ink.imageSmoothingQuality = 'high';
+    ink.globalAlpha = material.mist;
+    // The whole shared buffer maps 1:1 onto the canvas: one image, one scale-up.
+    ink.drawImage(blurredSea, seaPad, seaPad, width / seaFactor, height / seaFactor, 0, 0, width, height);
+    ink.globalAlpha = 1;
+    ink.restore();
+  }
 
+  /** Flat tint, top crest and bottom shade for one pane, in a single clip. */
+  function paintPaneSurface(panel, material) {
     ink.save();
     glassRoundedPath(ink, panel);
     ink.clip();
     ink.fillStyle = `rgba(${material.tint}, ${material.veil})`;
     ink.fillRect(panel.x, panel.y, panel.width, panel.height);
-    ink.imageSmoothingEnabled = true;
-    ink.imageSmoothingQuality = 'high';
-    ink.globalAlpha = material.mist;
-    ink.drawImage(frost, pad, pad, scale.width, scale.height, panel.x, panel.y, panel.width, panel.height);
-    ink.globalAlpha = 1;
-    // Light on the rim: a bright band at the top that fades out, and a shade at
-    // the bottom that fades in. Gradients keep the pane from looking framed.
+    // Light on the rim: a short bright band at the top that fades out, and a soft
+    // shade at the bottom. Gradients keep the pane from looking framed.
     const crestHeight = Math.min(material.crestHeight, panel.height * 0.2);
     const crest = ink.createLinearGradient(0, panel.y, 0, panel.y + crestHeight);
     crest.addColorStop(0, material.crest);
@@ -2000,51 +3514,16 @@ function createWhaleLayer(canvas, initialConfig) {
     ink.fillStyle = shade;
     ink.fillRect(panel.x, panel.y + panel.height - material.shadeHeight, panel.width, material.shadeHeight);
     ink.restore();
-    glassRoundedPath(ink, panel);
-    ink.lineWidth = 1;
-    ink.strokeStyle = material.stroke;
-    ink.stroke();
-  }
-
-  /**
-   * The whale's silhouette, as what a pane really hides: bodies become pale
-   * shapes, never letters (at 11px the strokes would blur into noise anyway).
-   *
-   * Cells are filled at full strength and slightly overlapped so contiguous
-   * cells merge into one body instead of a grid of dots; the low-resolution
-   * buffer plus the upscale supply the blur. Near the rim the shape fades out
-   * over the same feather the sharp glyphs use outside, so a whale crossing the
-   * pane edge dissolves instead of being cut by a straight line.
-   */
-  function paintSilhouette(target, panel, material) {
-    target.fillStyle = `rgb(${material.silhouette})`;
-    const over = grid.cellWidth * 0.22;
-    for (let cell = 0; cell < grid.owners.length; cell++) {
-      if (grid.owners[cell] < 0) continue;
-      const visibility = grid.visibility[cell];
-      if (visibility < 0.05) continue;
-      const x = grid.centersX[cell], y = grid.centersY[cell];
-      // The opaque input card (avoidance mode) hides the silhouette as well: a
-      // pane drawn over the card must not carry a whale shape onto it.
-      if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width
-        && y > avoidRect.y && y < avoidRect.y + avoidRect.height) continue;
-      // Only cells inside the pane are painted; the feather ramps them in. The
-      // pane's own feather wins (it carries the composer's short band); the
-      // reading column has none, so its material feather applies.
-      const depthInside = -glassDistance(panel, x, y);
-      if (depthInside <= 0) continue;
-      const ramp = Math.min(1, depthInside / Math.max(1, panel.feather ?? material.feather));
-      target.globalAlpha = Math.min(1, visibility * ramp * ramp * (3 - 2 * ramp));
-      target.fillRect(x - grid.cellWidth / 2 - over, y - grid.cellHeight / 2 - over,
-        grid.cellWidth + over * 2, grid.cellHeight + over * 2);
-    }
-    target.globalAlpha = 1;
   }
 
   function frame(now) {
     raf = 0;
     if (disposed || document.hidden || reduced.matches || !width || !height || !scene) return;
-    if (previous !== null) stepScene(scene, Math.min(0.1, (now - previous) / 1000), config.speed);
+    if (previous !== null) {
+      const startedAt = scene.time;
+      stepScene(scene, Math.min(0.1, (now - previous) / 1000), config.speed);
+      if (config.ripples) stepWater(water, scene, scene.time - startedAt);
+    }
     previous = now;
     if (now - lastPaint >= 1000 / 30) { draw(); lastPaint = now; }
     raf = requestAnimationFrame(frame);
@@ -2079,11 +3558,13 @@ function createWhaleLayer(canvas, initialConfig) {
     if (noChange(changes)) return;
     // The draw loop and the painter share this object, so live options such as
     // opacity and speed apply from the next frame without any rebuild.
+    const previousReefs = config.reefs, previousRipples = config.ripples;
     Object.assign(config, next);
 
     if (changes.scene) {
       const previousScene = scene;
       const replacement = createScene(config.count, config.text, config.species, config.whaleSize);
+      replacement.diveSeed = scenerySeed;
       // Give the replacement the discarded scene's coordinate space before the
       // hand-over, so the adopted positions are valid as they are and never get
       // rescaled. Deriving it from the scene (not from the canvas) also covers
@@ -2097,7 +3578,7 @@ function createWhaleLayer(canvas, initialConfig) {
       projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
       // A new scene starts without obstacles: put the already-measured card
       // back in front of it (margin follows the new body sizes), no DOM read.
-      applyComposerObstacle();
+      applySceneObstacles();
     }
     // A scene change also brings a new glyph alphabet (the user's body text), so
     // the painter is rebuilt for it as well — not only for font and style.
@@ -2109,11 +3590,15 @@ function createWhaleLayer(canvas, initialConfig) {
       painter = createWhalePainter(scene, config);
     }
     // Only the glass groups re-read the DOM; a scene change already reused the
-    // measured card through applyComposerObstacle above.
+    // measured card through applySceneObstacles above.
     if (changes.glass || changes.composer) {
       measuredAt = -Infinity;
       if (width && height) measure();
     }
+
+    if (previousReefs !== config.reefs) applySceneObstacles();
+    if (previousRipples !== config.ripples || changes.scene) resetWaterField(water);
+    if (changes.palette) sceneryPalette = createInkPalette(config.color);
 
     lastPaint = -Infinity;
     if (!document.hidden && width && height) {
@@ -2141,6 +3626,11 @@ function createWhaleLayer(canvas, initialConfig) {
     ink.setTransform(ratio, 0, 0, ratio, 0, 0);
     grid = createDepthGrid(width, height, config.glyphSize, metrics);
     resizeScene(scene, width, height);
+    if (width > 0 && height > 0) {
+      if (reef) resizeReefField(reef, width, height);
+      else reef = createReefField({ width, height, seed: scenerySeed, count: width * height < 360000 ? 2 : 3 });
+      resetWaterField(water);
+    }
     measuredAt = -Infinity;
     sync();
   }
@@ -2156,6 +3646,9 @@ function createWhaleLayer(canvas, initialConfig) {
   document.addEventListener('scroll', onScroll, true);
   resize();
   function dispose() {
+    spout.detach();
+    resetWaterField(water);
+    reef = null;
     disposed = true;
     cancelAnimationFrame(raf);
     raf = 0;
@@ -2171,11 +3664,11 @@ function createWhaleLayer(canvas, initialConfig) {
     painter = null;
     poses = [];
     projected = [];
-    frost = frostInk = blurScratch = blurInk = null;
+    sea = seaInk = blurredSea = blurredSeaInk = null;
+    seaFactor = 0;
+    seaPad = 0;
     panes = [];
     tone = null;
-    composerPane = null;
-    composerTone = null;
     composerCard = null;
     avoidRect = null;
     canvas.width = canvas.height = 1;
@@ -2326,11 +3819,12 @@ function registerWhales(ctx, React, dictionaries) {
     const prefix = React.useId();
     if (snapshot.status !== 'ready' || !editor) return h('p', { role: 'status' }, t(snapshot.status === 'loading' ? 'loading' : 'unavailable'));
     const disabled = !snapshot.writable || saving;
-    // The two input-box options are alternatives: frosted glass already hides the
-    // whales behind the card, so avoiding it as well would only squeeze the school
-    // for no visual gain. Turning one on turns the other off in the same draft, and
-    // the save below submits both keys through the ordinary ops path.
-    const EXCLUSIVE = { composerGlass: 'composerAvoid', composerAvoid: 'composerGlass' };
+    // The content glass and the input-box avoidance are alternatives: glass already
+    // blurs what is behind every box, so avoiding the input box as well would only
+    // squeeze the school for no visual gain. Turning one on turns the other off in
+    // the same draft, and the save below submits both keys through the ordinary ops
+    // path (only the keys that really changed).
+    const EXCLUSIVE = { glass: 'composerAvoid', composerAvoid: 'glass' };
     function update(key, value) {
       setEditor(current => {
         const draft = { ...current.draft, [key]: value };
@@ -2373,7 +3867,9 @@ function registerWhales(ctx, React, dictionaries) {
       h('p', { className: 'aw-purpose' }, t('purpose')),
       h(StylePreview, { draft: editor.draft }),
       !snapshot.writable && h('p', { role: 'status' }, t('readOnly')),
-      ...Object.entries(FIELDS).map(([key, field]) => {
+      // Hidden fields stay in FIELDS for Host schema compatibility (an old profile
+      // may still carry composerGlass) but must not render a row of their own.
+      ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
         const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
         const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii');
         const common = { id, disabled: off, 'aria-describedby': hint };
@@ -2494,7 +3990,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
 
     return {
       inject: ['slots', 'locale', 'configForms'],
-      apply(ctx) { registerWhales(ctx, React, {"en":{"title":"Glyph whales","purpose":"Look straight down through the interface as a sea surface. Each species has its own head, flippers and flukes. Calm cruising alternates vertical tail strokes with glides. Raised backs are darker; flanks and deeper water are paler.","enabled":"Show whales","enabledHint":"Visible on the conversation page. Stops on other pages.","count":"Whale count","countHint":"1 to 8 whales with different sizes and depths.","text":"Whale body text","textHint":"Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境. Up to 40 characters.","speed":"Swimming speed","speedHint":"0.3 to 2. Default 0.65. Scales cruising, turning and tail beats, with glides between strokes.","opacity":"Background opacity","opacityHint":"0.04 to 0.9. Default 0.6. Higher values make the body text clearer.","glyphSize":"Character size","glyphSizeHint":"4 to 16. Default 11. Characters occupy separate, fixed grid cells.","whaleSize":"Whale size","whaleSizeHint":"0.55 to 1.55. Default 1. Changes body length only, not swimming speed; larger whales cover more cells.","color":"Ocean palette","colorHint":"Choose the ocean palette for both glyphs and colored cells.","ocean":"Ocean","azure":"Azure","indigo":"Indigo","quietCenter":"Quieter reading area","quietCenterHint":"Fades whale bodies in the center. The bottom input area always fades out.","leftInset":"Browser left inset","leftInsetHint":"0 to 500 pixels. Default 280. Desktop follows the sidebar automatically. In a browser, adjust this to match its width.","glass":"Rounded glass pane","glassHint":"Puts a rounded frosted pane behind the text column, so whales stay around the words and the words stay readable.","glassStrength":"Glass strength","glassStrengthHint":"0 to 1. Default 0.55. Higher values make the pane thicker and more frosted, so less of the whale shows through.","composerGlass":"Frosted input box","composerGlassHint":"Covers the input box with the same frosted glass as the reading pane, so whales show only as blurred silhouettes. The glass sits above the text and can soften it, so it starts off. Use either this or avoidance, not both.","composerAvoid":"Whales avoid the input box","composerAvoidHint":"Whales treat the input box as an obstacle and swim around it instead of crossing it. Use either this or the frosted input box, not both.","save":"Save","saving":"Saving…","reset":"Restore defaults","discard":"Reload saved values","loading":"Loading whale settings…","unavailable":"Whale settings are unavailable.","readOnly":"These settings are read-only.","saved":"Whale settings saved.","invalid":"Enter numbers within the listed ranges. Count, size, and inset must be whole numbers.","conflict":"Settings changed elsewhere, or the save was refused. Your edits are preserved. Reload saved values before editing again.","failed":"Could not save. Your edits are preserved and can be retried.","species":"Whale species","speciesHint":"Mixed groups cycle through blue, humpback, sperm, fin and bowhead whales. Or choose one species.","renderStyle":"Drawing style","renderStyleHint":"Glyphs draws letters only. Colored cells add shaded backgrounds inside the whale, with soft glyph-only edges.","glyphs":"Glyphs only","cells":"Colored cells","fillMode":"Fill content","fillModeHint":"Custom text keeps your original characters. ASCII selects symbols by density and shading. Either works with colored cells.","custom":"Custom text","ascii":"ASCII characters","stylePreview":"Static whale preview of the current style","stylePreviewNote":"The draft updates this preview. Save to apply it to the background. ASCII keeps your custom text so you can switch back.","mixed":"Mixed group","blue":"Blue whale","humpback":"Humpback whale","sperm":"Sperm whale","fin":"Fin whale","bowhead":"Bowhead whale"},"zh":{"title":"文字蓝鲸","purpose":"把界面看作海面，从正上方俯看文字鲸鱼。各鲸类有独立头型、胸鳍和尾叶，缓缓巡游并在上下摆尾之间滑行。背部隆起较深，两侧和深水处渐浅。","enabled":"显示蓝鲸","enabledHint":"仅在对话页面显示，切换到其他页面时停止。","count":"鲸鱼数量","countHint":"1 至 8 条，大小与远近各有不同。","text":"鱼身文字","textHint":"重复使用这些字组成鲸鱼；留空使用探索未至之境。忽略空白，最多 40 个字符。","speed":"游动速度","speedHint":"0.3 至 2，默认 0.65。巡游、转弯与摆尾同步放缓，摆尾之间有自然滑行。","opacity":"背景浓度","opacityHint":"0.04 至 0.9，默认 0.6。数值越高，鱼身文字越清楚。","glyphSize":"字符大小","glyphSizeHint":"4 至 16，默认 11。文字按固定字格排列，不互相叠压。","whaleSize":"鲸鱼大小","whaleSizeHint":"0.55 至 1.55，默认 1。只改鲸体长度，不改游速与摆尾节奏；鲸体越大，占用的字格越多。","color":"海洋色调","colorHint":"选择字符与彩色字格使用的海洋色调。","ocean":"深海蓝","azure":"晴空蓝","indigo":"靛蓝","quietCenter":"减淡阅读区域","quietCenterHint":"降低中央鲸体的浓度。底部输入区始终保持淡出。","leftInset":"浏览器左侧留白","leftInsetHint":"0 至 500 像素，默认 280。桌面版自动跟随左侧栏；浏览器版按侧栏宽度手动调整。","glass":"圆角毛玻璃","glassHint":"在正文背后加一块圆角磨砂玻璃，鲸鱼只在文字四周可见，正文始终清晰。","glassStrength":"玻璃强度","glassStrengthHint":"0 至 1，默认 0.55。数值越大玻璃更厚、磨砂更重，透出的鲸影也更淡。","composerGlass":"输入框毛玻璃","composerGlassHint":"在输入框上盖一块与阅读区同材质的磨砂玻璃，鲸鱼只以模糊剪影透出。玻璃在文字之上，可能降低输入文字的对比度，默认关闭。与「鱼群避让输入框」二选一。","composerAvoid":"鱼群避让输入框","composerAvoidHint":"鲸鱼把输入框当作障碍物绕开，不再从框内穿过。与「输入框毛玻璃」二选一。","save":"保存","saving":"保存中…","reset":"恢复默认值","discard":"重新载入已保存值","loading":"正在读取蓝鲸设置…","unavailable":"蓝鲸设置暂不可用。","readOnly":"当前设置为只读。","saved":"蓝鲸设置已保存。","invalid":"请在标出的范围内填写数字，数量、大小和留白须为整数。","conflict":"设置已在别处更新，或本次保存未获接受。你的修改已保留。重新载入已保存值后再修改。","failed":"未能保存。你的修改已保留，可以重试。","species":"鲸鱼种类","speciesHint":"混合鲸群依次包含蓝鲸、座头鲸、抹香鲸、长须鲸和弓头鲸；也可只显示一种。","renderStyle":"渲染样式","renderStyleHint":"纯字符只绘文字；彩色字格为鲸体内部铺设深浅底色，轮廓边缘保留柔和字符。","glyphs":"纯字符","cells":"彩色字格","fillMode":"填充内容","fillModeHint":"自定义文字按原文填充；ASCII 按明暗选择疏密不同的符号。两种内容均可搭配彩色字格。","custom":"自定义文字","ascii":"ASCII 字符","stylePreview":"当前样式的鲸鱼静态预览","stylePreviewNote":"预览随草稿更新；点击保存后应用到背景。ASCII 模式会保留你的自定义文字，切回即可使用。","mixed":"混合鲸群","blue":"蓝鲸","humpback":"座头鲸","sperm":"抹香鲸","fin":"长须鲸","bowhead":"弓头鲸"}}); },
+      apply(ctx) { registerWhales(ctx, React, {"en":{"title":"Glyph whales","purpose":"Look straight down through the interface as a sea surface. Each species has its own head, flippers and flukes. Calm cruising alternates vertical tail strokes with glides. Raised backs are darker; flanks and deeper water are paler.","enabled":"Show whales","enabledHint":"Visible on the conversation page. Stops on other pages.","count":"Whale count","countHint":"1 to 8 whales with different sizes and depths.","text":"Whale body text","textHint":"Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境. Up to 40 characters.","speed":"Swimming speed","speedHint":"0.3 to 2. Default 0.65. Scales cruising, turning and tail beats, with glides between strokes.","opacity":"Background opacity","opacityHint":"0.04 to 0.9. Default 0.6. Higher values make the body text clearer.","glyphSize":"Character size","glyphSizeHint":"4 to 16. Default 11. Characters occupy separate, fixed grid cells.","whaleSize":"Whale size","whaleSizeHint":"0.55 to 1.55. Default 1. Changes body length only, not swimming speed; larger whales cover more cells.","color":"Ocean palette","colorHint":"Choose the ocean palette for both glyphs and colored cells.","ocean":"Ocean","azure":"Azure","indigo":"Indigo","quietCenter":"Quieter reading area","quietCenterHint":"Fades whale bodies in the center. The bottom input area always fades out.","leftInset":"Browser left inset","leftInsetHint":"0 to 500 pixels. Default 280. Desktop follows the sidebar automatically. In a browser, adjust this to match its width.","glass":"Frosted content boxes","glassHint":"Every content card and the input box gets frosted: whales show through only as blurred shapes while the text stays crisp. On by default; use either this or input-box avoidance, not both.","glassStrength":"Glass strength","glassStrengthHint":"0 to 1. Default 0.55. Higher values make the glass thicker and blurrier, so less of the whale shows through.","composerGlass":"Frosted input box (folded into content boxes)","composerGlassHint":"The separate 0.10.0 input-box switch; since 0.11.0 it is part of the frosted content boxes. Kept only to read old configs.","composerAvoid":"Whales avoid the input box","composerAvoidHint":"Whales treat the input box as an obstacle and swim around it instead of crossing it. Use either this or the frosted content boxes, not both.","spout":"Spout when clicked","spoutHint":"Off by default. Click a whale for one short mist burst from its blowhole. Empty water, buttons, links and the input box do nothing. The burst fades and does not repeat.","reefs":"Reef rocks","reefsHint":"A few ASCII rocks stay fixed along the margins. Refresh for a new layout; settings keep them in place. Whales steer around them.","ripples":"Tail-stroke ripples","ripplesHint":"Active tail strokes send out a brief splash and spreading ripples. Gliding and submerged whales leave the surface quiet.","save":"Save","saving":"Saving…","reset":"Restore defaults","discard":"Reload saved values","loading":"Loading whale settings…","unavailable":"Whale settings are unavailable.","readOnly":"These settings are read-only.","saved":"Whale settings saved.","invalid":"Enter numbers within the listed ranges. Count, size, and inset must be whole numbers.","conflict":"Settings changed elsewhere, or the save was refused. Your edits are preserved. Reload saved values before editing again.","failed":"Could not save. Your edits are preserved and can be retried.","species":"Whale species","speciesHint":"Mixed groups cycle through blue, humpback, sperm, fin and bowhead whales. Or choose one species.","renderStyle":"Drawing style","renderStyleHint":"Glyphs draws letters only. Colored cells add shaded backgrounds inside the whale, with soft glyph-only edges.","glyphs":"Glyphs only","cells":"Colored cells","fillMode":"Fill content","fillModeHint":"Custom text keeps your original characters. ASCII selects symbols by density and shading. Either works with colored cells.","custom":"Custom text","ascii":"ASCII characters","stylePreview":"Static whale preview of the current style","stylePreviewNote":"The draft updates this preview. Save to apply it to the background. ASCII keeps your custom text so you can switch back.","mixed":"Mixed group","blue":"Blue whale","humpback":"Humpback whale","sperm":"Sperm whale","fin":"Fin whale","bowhead":"Bowhead whale"},"zh":{"title":"文字蓝鲸","purpose":"把界面看作海面，从正上方俯看文字鲸鱼。各鲸类有独立头型、胸鳍和尾叶，缓缓巡游并在上下摆尾之间滑行。背部隆起较深，两侧和深水处渐浅。","enabled":"显示蓝鲸","enabledHint":"仅在对话页面显示，切换到其他页面时停止。","count":"鲸鱼数量","countHint":"1 至 8 条，大小与远近各有不同。","text":"鱼身文字","textHint":"重复使用这些字组成鲸鱼；留空使用探索未至之境。忽略空白，最多 40 个字符。","speed":"游动速度","speedHint":"0.3 至 2，默认 0.65。巡游、转弯与摆尾同步放缓，摆尾之间有自然滑行。","opacity":"背景浓度","opacityHint":"0.04 至 0.9，默认 0.6。数值越高，鱼身文字越清楚。","glyphSize":"字符大小","glyphSizeHint":"4 至 16，默认 11。文字按固定字格排列，不互相叠压。","whaleSize":"鲸鱼大小","whaleSizeHint":"0.55 至 1.55，默认 1。只改鲸体长度，不改游速与摆尾节奏；鲸体越大，占用的字格越多。","color":"海洋色调","colorHint":"选择字符与彩色字格使用的海洋色调。","ocean":"深海蓝","azure":"晴空蓝","indigo":"靛蓝","quietCenter":"减淡阅读区域","quietCenterHint":"降低中央鲸体的浓度。底部输入区始终保持淡出。","leftInset":"浏览器左侧留白","leftInsetHint":"0 至 500 像素，默认 280。桌面版自动跟随左侧栏；浏览器版按侧栏宽度手动调整。","glass":"内容框毛玻璃","glassHint":"对话里的每个内容卡片和输入框都盖一块磨砂玻璃：框内鲸鱼只以模糊形态透出，文字保持清晰。默认开启；与「鱼群避让输入框」二选一。","glassStrength":"玻璃强度","glassStrengthHint":"0 至 1，默认 0.55。数值越大玻璃更厚、磨砂更重，透出的鲸影也更淡。","composerGlass":"输入框毛玻璃（已并入内容框毛玻璃）","composerGlassHint":"0.10.0 的独立输入框开关；0.11.0 起并入「内容框毛玻璃」，此字段仅用于兼容旧配置。","composerAvoid":"鱼群避让输入框","composerAvoidHint":"鲸鱼把输入框当作障碍物绕开，不再从框内穿过。与「内容框毛玻璃」二选一。","spout":"点击喷水","spoutHint":"默认关闭。点在鲸鱼身上，从喷气孔放出一小团雾；点在空海、按钮、链接或输入框上没有反应。雾会散掉，不会连成喷泉。","reefs":"海面礁石","reefsHint":"少量 ASCII 礁石随机分布在两侧，刷新后重新生成，游动和修改设置不会挪动；鲸鱼会绕开。","ripples":"尾拍涟漪","ripplesHint":"鲸鱼用力摆尾时溅起碎水和逐渐扩散的波纹；滑行或潜入水下时不生成。","save":"保存","saving":"保存中…","reset":"恢复默认值","discard":"重新载入已保存值","loading":"正在读取蓝鲸设置…","unavailable":"蓝鲸设置暂不可用。","readOnly":"当前设置为只读。","saved":"蓝鲸设置已保存。","invalid":"请在标出的范围内填写数字，数量、大小和留白须为整数。","conflict":"设置已在别处更新，或本次保存未获接受。你的修改已保留。重新载入已保存值后再修改。","failed":"未能保存。你的修改已保留，可以重试。","species":"鲸鱼种类","speciesHint":"混合鲸群依次包含蓝鲸、座头鲸、抹香鲸、长须鲸和弓头鲸；也可只显示一种。","renderStyle":"渲染样式","renderStyleHint":"纯字符只绘文字；彩色字格为鲸体内部铺设深浅底色，轮廓边缘保留柔和字符。","glyphs":"纯字符","cells":"彩色字格","fillMode":"填充内容","fillModeHint":"自定义文字按原文填充；ASCII 按明暗选择疏密不同的符号。两种内容均可搭配彩色字格。","custom":"自定义文字","ascii":"ASCII 字符","stylePreview":"当前样式的鲸鱼静态预览","stylePreviewNote":"预览随草稿更新；点击保存后应用到背景。ASCII 模式会保留你的自定义文字，切回即可使用。","mixed":"混合鲸群","blue":"蓝鲸","humpback":"座头鲸","sperm":"抹香鲸","fin":"长须鲸","bowhead":"弓头鲸"}}); },
     };
   },
 });

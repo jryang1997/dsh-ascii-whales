@@ -1,0 +1,3 @@
+ts	phase	decision	why	evidence	result
+2026-10-22T07:56:31.947Z	poteto-mode	喷水以印章方案为底盘（物种分形、模块自带监听），嫁接出生时钉死气孔、同一头鲸未结束前拒绝再喷，以及现有测试清单的登记。蓝鲸俯视改成小圆斑，不画成屏幕长条。	交叉评审按六条标准给印章方案 25 分、运动学方案 21 分。运动学的字形和须鲸共用径向冠对不上 NOAA/Leatherwood 的俯视差异；印章把弓头宽 V、座头气球、抹香短斜和长须未验证收成数据。钉死原点是为了避免雾粘在头上变成喷泉。	.scratch/spout-arena/candidate-b.md；.scratch/spout-arena/grok-4.7.md；SPOUT-RESEARCH.md 实现约束；arena cross-judge 评分表。主工作区另有未提交的内容框毛玻璃改动，喷水只做追加，不回滚那些文件。	
+2026-10-22T09:25:39.356Z	poteto-mode	下潜用 Sounding：吻端先沉、尾鳍小幅抬起，再按可见度斜坡消失；水下继续沿原航线游，上浮时吻端先回来。不做成整条鲸一起淡出。	头顶相机里只改透明度看不出入水。近裁剪是硬切，不丝滑。可见度乘在 projectParticle 上，字形和毛玻璃剪影会一起没。不推进现有随机种子，航线测试才不会分叉。	motion.js 与 projectParticle 的 how 结论；.scratch/dive-arena/grok-4.7.md；species.test.js 55 秒只锁 stroke/speed，rig 的格子检查在 6 秒。	

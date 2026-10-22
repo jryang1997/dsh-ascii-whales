@@ -1,12 +1,15 @@
 import { createWhalePainter } from './surface.js';
-import { createScene, resizeScene, stepScene, whalePose, projectParticle, createDepthGrid, resolveDepthGrid, fitCanvas, normalizeConfig } from './model.js';
+import { createScene, resizeScene, stepScene, whalePose, projectParticle, createDepthGrid, resolveDepthGrid, fitCanvas, normalizeConfig, attenuation } from './model.js';
 import { adoptSceneState, setSceneObstacles } from './motion.js';
-import { glassPanes, glassComposerPane, glassRoundedPath, glassTone, glassComposerTone, glassFrostSize, glassEdgeFade, glassDistance } from './glass.js';
+import { glassContentPanes, glassContentTone, glassRoundedPath, glassRoundedSubpath, glassTone, glassSeaFactor, glassSeaBuffer, glassEdgeFade } from './glass.js';
+import { attachSpout } from './spout.js';
+import { createReefField, resizeReefField, reefObstacles, drawReefs } from './reef.js';
+import { createWaterField, resetWaterField, stepWater, drawWater } from './water.js';
+import { createInkPalette } from './shading.js';
 
 // DSH publishes these hooks on the conversation subtree. Every one of them is
 // optional: without them the whales simply paint as before, so an unknown
 // layout can never break the background.
-const FLOW_SELECTOR = '[data-chat-flow], [data-slot="conversation.chat.flow"]';
 const SCROLL_SELECTOR = '[data-conversation-scroll]';
 // The composer card is the rounded input itself; the seat is its sticky wrapper
 // and is only used when the card hook is missing from the build.
@@ -14,6 +17,16 @@ const COMPOSER_CARD_SELECTOR = '[data-composer-card]';
 const COMPOSER_SEAT_SELECTOR = '[data-composer-seat]';
 const COMPOSER_RADIUS = 18;
 const MEASURE_INTERVAL = 400;
+
+// Which of the conversation's boxes get their own pane of glass. Only opaque,
+// rounded, card-sized boxes are candidates; the input card is always one.
+const CONTENT_MAX_BOXES = 16;
+const CONTENT_MAX_SCAN = 600;
+const CONTENT_MIN_AREA = 2000;
+const CONTENT_MAX_AREA_RATIO = 0.55;
+const CONTENT_MAX_HEIGHT_RATIO = 0.9;
+const CONTENT_MIN_ALPHA = 0.9;
+
 
 // Which option belongs to which kind of work. A group only rebuilds its own
 // part; `live` options are read straight from the config while painting, so
@@ -23,7 +36,7 @@ const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset']);
+const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'reefs', 'ripples']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -70,14 +83,87 @@ function pick(selector, canvasRect) {
 }
 
 /**
- * The card's own corner radius, so the glass matches the input it covers.
- * A failed parse falls back to the DSH panel radius.
+ * Parse a computed CSS colour into channels plus alpha. Anything unparsable is
+ * treated as fully transparent, which is exactly how a candidate box that is not
+ * an opaque surface should behave.
  */
+function colorAlpha(value) {
+  const match = String(value || '').match(/^rgba?\(([^)]+)\)$/i);
+  if (!match) return null;
+  const parts = match[1].split(/[,/ ]+/).filter(Boolean).map(Number);
+  if (parts.length < 3 || !parts.slice(0, 3).every(Number.isFinite)) return null;
+  return parts.length >= 4 && Number.isFinite(parts[3]) ? parts[3] : 1;
+}
+
+/** Smallest computed corner radius of an element, in CSS pixels (null if none). */
+function cornerRadius(style) {
+  const values = [style.borderTopLeftRadius, style.borderTopRightRadius,
+    style.borderBottomRightRadius, style.borderBottomLeftRadius]
+    .map(value => parseFloat(value))
+    .filter(value => Number.isFinite(value) && value >= 0);
+  if (values.length) return Math.min(...values);
+  const shorthand = parseFloat(style.borderRadius);
+  return Number.isFinite(shorthand) && shorthand >= 0 ? shorthand : null;
+}
+
+/** The card's own corner radius, so the glass matches the input it covers. */
 function composerRadius(element) {
   try {
-    const radius = parseFloat(getComputedStyle(element).borderTopLeftRadius);
-    return Number.isFinite(radius) && radius >= 0 ? radius : COMPOSER_RADIUS;
+    const radius = cornerRadius(getComputedStyle(element));
+    return radius === null ? COMPOSER_RADIUS : radius;
   } catch { return COMPOSER_RADIUS; }
+}
+
+/**
+ * Every box in the conversation that should carry its own glass.
+ *
+ * Walks the scroller subtree breadth-first (parents before children, so an outer
+ * card is always painted before a card nested in it) and stops after
+ * CONTENT_MAX_SCAN elements. Cheap geometry filters run before any style read:
+ * only elements that are visible, intersect the canvas and are card-sized get a
+ * getComputedStyle call. The input card is appended explicitly because its fill
+ * can be a layered background that the generic opacity test would miss.
+ *
+ * This runs inside measure() only — never per frame.
+ */
+function collectContentBoxes(canvasRect, composerHit) {
+  const boxes = [];
+  const canvasArea = canvasRect.width * canvasRect.height;
+  const scroller = pick(SCROLL_SELECTOR, canvasRect);
+  if (scroller) {
+    const queue = [scroller.element];
+    let checked = 0;
+    while (queue.length && checked < CONTENT_MAX_SCAN) {
+      const element = queue.shift();
+      checked++;
+      const children = element.children;
+      if (children) for (const child of children) queue.push(child);
+      let rect;
+      try { rect = element.getBoundingClientRect(); } catch { continue; }
+      if (!(rect.width > 0) || !(rect.height > 0)) continue;
+      if (rect.left + rect.width < canvasRect.left || rect.left > canvasRect.left + canvasRect.width) continue;
+      if (rect.top + rect.height < canvasRect.top || rect.top > canvasRect.top + canvasRect.height) continue;
+      const area = rect.width * rect.height;
+      if (!(area >= CONTENT_MIN_AREA) || area > canvasArea * CONTENT_MAX_AREA_RATIO) continue;
+      if (!(rect.height < canvasRect.height * CONTENT_MAX_HEIGHT_RATIO)) continue;
+      let style;
+      try { style = getComputedStyle(element); } catch { continue; }
+      if (style.position === 'fixed') continue;
+      if (style.visibility === 'hidden' || style.display === 'none') continue;
+      const alpha = colorAlpha(style.backgroundColor);
+      if (alpha === null || alpha < CONTENT_MIN_ALPHA) continue;
+      const radius = cornerRadius(style);
+      if (!(radius > 0)) continue;
+      boxes.push({ left: rect.left, top: rect.top, width: rect.width, height: rect.height, radius });
+    }
+  }
+  // The input card is always a content box, whatever its background shorthand.
+  if (composerHit) {
+    boxes.push({ left: composerHit.rect.left, top: composerHit.rect.top,
+      width: composerHit.rect.width, height: composerHit.rect.height,
+      radius: composerRadius(composerHit.element) });
+  }
+  return boxes;
 }
 
 /**
@@ -129,19 +215,39 @@ export function createWhaleLayer(canvas, initialConfig) {
   const ink = canvas.getContext('2d');
   if (!ink) return { update() {}, dispose() {} };
   const config = normalizeLayerConfig(initialConfig);
+  const scenerySeed = Math.floor(Math.random() * 0x100000000) >>> 0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
   let scene = createScene(config.count, config.text, config.species, config.whaleSize);
+  scene.diveSeed = scenerySeed;
+  let reef = null;
+  const water = createWaterField();
+  let sceneryPalette = createInkPalette(config.color);
   let poses = scene.whales.map(() => ({}));
   let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
   let painter = createWhalePainter(scene, config);
   ink.font = painter.font;
   let metrics = measureGlyphs();
   let width = 0, height = 0, ratio = 1, grid = null;
-  let frost = null, frostInk = null, blurScratch = null, blurInk = null, blurSupport = false;
-  let panes = [], tone = null, composerPane = null, composerTone = null, composerCard = null;
+  // Shared blurred sea: one downsampled painter pass and one blur per frame; the
+  // number of panes only changes how many times the image is drawn, never the
+  // blur cost.
+  let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
+  let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
+  let panes = [], tone = null, composerCard = null;
   let avoidRect = null;
   let raf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+  const spout = attachSpout(canvas, () => ({
+    enabled: config.spout,
+    reduced: reduced.matches,
+    hidden: document.hidden,
+    opacity: config.opacity,
+    quietCenter: config.quietCenter,
+    glyphSize: config.glyphSize,
+    dark: document.body.hasAttribute('data-ds-dark-theme'),
+    scene, poses, grid, width, height,
+    now: performance.now(),
+  }));
 
   /** The widest/tallest glyph decides the cell size, so measure the whole alphabet. */
   function measureGlyphs() {
@@ -155,26 +261,84 @@ export function createWhaleLayer(canvas, initialConfig) {
     return measured;
   }
 
-  function frostBuffer() {
-    if (frostInk) return true;
+  /** Allocate or resize the shared low-resolution sea buffers for one tone. */
+  function seaBuffers(material) {
+    const factor = glassSeaFactor(material.strength);
+    const buffer = glassSeaBuffer(width, height, { factor, blur: material.blur });
     try {
-      frost = document.createElement('canvas');
-      frostInk = frost.getContext('2d');
-      // Feature-detect the Gaussian blur once: older engines ignore the filter,
-      // and the downsample alone still frosts, just more coarsely.
-      frostInk.filter = 'blur(2px)';
-      blurSupport = frostInk.filter === 'blur(2px)';
-      frostInk.filter = 'none';
-      if (blurSupport) {
-        blurScratch = document.createElement('canvas');
-        blurInk = blurScratch.getContext('2d');
-        if (!blurInk) blurSupport = false;
+      if (!sea) {
+        sea = document.createElement('canvas');
+        seaInk = sea.getContext('2d');
+        blurredSea = document.createElement('canvas');
+        blurredSeaInk = blurredSea.getContext('2d');
+        if (!seaInk || !blurredSeaInk) { sea = seaInk = blurredSea = blurredSeaInk = null; return false; }
+        // Feature-detect the Gaussian filter once; without it the downsample and
+        // upscale still smear the field, just more coarsely.
+        seaInk.filter = 'blur(1px)';
+        blurSupport = seaInk.filter === 'blur(1px)';
+        seaInk.filter = 'none';
       }
-    } catch { frost = frostInk = null; }
-    return Boolean(frostInk);
+    } catch { sea = seaInk = blurredSea = blurredSeaInk = null; return false; }
+    if (sea.width !== buffer.width || sea.height !== buffer.height) {
+      sea.width = buffer.width;
+      sea.height = buffer.height;
+    }
+    if (blurredSea.width !== buffer.width || blurredSea.height !== buffer.height) {
+      blurredSea.width = buffer.width;
+      blurredSea.height = buffer.height;
+    }
+    seaFactor = buffer.factor;
+    seaPad = buffer.pad;
+    seaBlurRadius = buffer.blurRadius;
+    return true;
   }
 
-  /** The cells and their glyphs share one fade at every reading-pane edge. */
+  /**
+   * Paint the whole sea (glyph field, no pane fade) into the low-resolution
+   * buffer and blur it once.
+   *
+   * This image must not be a copy of the main canvas: by the time a pane is
+   * painted, the sharp glyphs inside it have already been faded out, so a copy
+   * would be empty exactly where the glass has to show whales. This separate
+   * pass is the source of truth for "what lies under the glass".
+   *
+   * The glyph-only mode also gets a body silhouette under the letters. At 1/4–1/6
+   * resolution glyph strokes rasterise to a couple of pixels, and the blur then
+   * spreads their alpha so thin that the pane would look empty again — the pale
+   * silhouette is what makes the blurred whale a shape rather than a faint
+   * texture. Cells mode already fills the body with tiles, so it skips this.
+   */
+  function paintBlurredSea(material) {
+    const dark = document.body.hasAttribute('data-ds-dark-theme');
+    seaInk.setTransform(1, 0, 0, 1, 0, 0);
+    seaInk.clearRect(0, 0, sea.width, sea.height);
+    // The painter works in CSS pixels; the 1/factor transform rasterises it at a
+    // fraction of the resolution and the panes scale the blur back up.
+    seaInk.setTransform(1 / seaFactor, 0, 0, 1 / seaFactor, seaPad, seaPad);
+    if (config.renderStyle !== 'cells') paintSeaSilhouette(seaInk, material);
+    painter.paint(seaInk, grid, poses, width, height, 1, null, dark);
+    blurredSeaInk.setTransform(1, 0, 0, 1, 0, 0);
+    blurredSeaInk.clearRect(0, 0, blurredSea.width, blurredSea.height);
+    blurredSeaInk.filter = blurSupport ? `blur(${Math.max(0.4, seaBlurRadius).toFixed(2)}px)` : 'none';
+    blurredSeaInk.drawImage(sea, 0, 0);
+    blurredSeaInk.filter = 'none';
+  }
+
+  /** Pale body shape under the sea's glyphs; the blur turns it into frosted glass. */
+  function paintSeaSilhouette(target, material) {
+    target.fillStyle = `rgb(${material.silhouette})`;
+    target.globalAlpha = 0.9;
+    const over = grid.cellWidth * 0.22;
+    for (let cell = 0; cell < grid.owners.length; cell++) {
+      if (grid.owners[cell] < 0 || grid.visibility[cell] < 0.05) continue;
+      const x = grid.centersX[cell], y = grid.centersY[cell];
+      target.fillRect(x - grid.cellWidth / 2 - over, y - grid.cellHeight / 2 - over,
+        grid.cellWidth + over * 2, grid.cellHeight + over * 2);
+    }
+    target.globalAlpha = 1;
+  }
+
+  /** The cells and their glyphs share one fade at every pane edge. */
   function paintGlyphs(target, fade = null) {
     painter.paint(target, grid, poses, width, height, ratio, fade, document.body.hasAttribute('data-ds-dark-theme'));
   }
@@ -184,54 +348,53 @@ export function createWhaleLayer(canvas, initialConfig) {
    * last measure. No DOM read: a scene rebuild only changes the school, so the
    * margin (which depends on the largest body) is refreshed without measuring.
    */
-  function applyComposerObstacle() {
+  function applySceneObstacles() {
     if (!scene) return;
-    if (!config.composerAvoid || !composerCard) { setSceneObstacles(scene, []); return; }
-    let largest = 0;
-    for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
-    const obstacle = composerObstacle(composerCard.canvas, composerCard.card, largest);
-    setSceneObstacles(scene, obstacle ? [obstacle] : []);
+    const obstacles = config.reefs && reef ? reefObstacles(reef) : [];
+    if (config.composerAvoid && composerCard) {
+      let largest = 0;
+      for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
+      const obstacle = composerObstacle(composerCard.canvas, composerCard.card, largest);
+      if (obstacle) obstacles.push(obstacle);
+    }
+    setSceneObstacles(scene, obstacles);
   }
 
   /**
-   * Re-read the conversation geometry: reading column and/or input card.
+   * Re-read the conversation geometry: one box list for the content glass, plus
+   * the input card for avoidance.
    *
    * Cheap and only layout can change it, so it runs on a 400ms budget and on
-   * every invalidation. The reading pane and the composer are measured
-   * independently: either one alone must keep working.
+   * every invalidation. Box collection and style reads happen here only — never
+   * per frame.
    */
   function measure() {
     measuredAt = performance.now();
     panes = [];
     tone = null;
-    composerPane = null;
-    composerTone = null;
     composerCard = null;
     avoidRect = null;
     if (!width || !height || !scene || disposed) return;
-    if (!config.glass && !config.composerGlass && !config.composerAvoid) {
-      setSceneObstacles(scene, []);
+    if (!config.glass && !config.composerAvoid) {
+      applySceneObstacles();
       return;
     }
     const canvasRect = rectOf(canvas);
     if (!canvasRect) return;
     const dark = document.body.hasAttribute('data-ds-dark-theme');
     const material = { dark, reducedTransparency: reducedTransparency.matches };
-    if (config.glass) {
-      const scroll = pick(SCROLL_SELECTOR, canvasRect);
-      const flow = pick(FLOW_SELECTOR, canvasRect);
-      let column = flow ? flow.rect : null;
-      if (!column && scroll) {
-        const declared = parseFloat(getComputedStyle(scroll.element).getPropertyValue('--dsh-chat-content-width'));
-        if (declared > 0) column = { left: scroll.rect.left + (scroll.rect.width - declared) / 2, top: scroll.rect.top, width: declared, height: scroll.rect.height };
-      }
-      panes = glassPanes({ canvas: canvasRect, viewport: scroll?.rect ?? null, column });
-    }
-    // The composer card is needed for both the glass and the avoidance, and the
-    // card hook is preferred over its sticky seat wrapper.
-    const composer = config.composerGlass || config.composerAvoid
-      ? (pick(COMPOSER_CARD_SELECTOR, canvasRect) || pick(COMPOSER_SEAT_SELECTOR, canvasRect)) : null;
+    // The input card is both a content box and the avoidance target; the card
+    // hook wins over its sticky seat wrapper.
+    const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
+    const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
     if (composer) composerCard = { card: composer.rect, canvas: canvasRect };
+    if (config.glass) {
+      const boxes = collectContentBoxes(canvasRect, cardHit);
+      panes = glassContentPanes({ canvas: canvasRect, boxes, max: CONTENT_MAX_BOXES });
+      // 'clear' (reduced transparency) keeps the panes for the glyph hold-out but
+      // paints no material, so the boxes stay free of the sea either way.
+      tone = glassContentTone(config.glassStrength, material);
+    }
     if (config.composerAvoid && composer) {
       // This canvas paints above the input card, so whale ink must never land on
       // it: avoidance keeps the bodies away, and this rectangle is the guarantee
@@ -242,18 +405,7 @@ export function createWhaleLayer(canvas, initialConfig) {
       const bottom = Math.min(canvasRect.height, composer.rect.top - canvasRect.top + composer.rect.height + 8);
       avoidRect = right - left > 0 && bottom - top > 0 ? { x: left, y: top, width: right - left, height: bottom - top } : null;
     }
-    if (config.glass || config.composerGlass) {
-      // 'clear' (reduced transparency) keeps the panes for the glyph hold-out but
-      // paints no material, so the reading area stays free of the sea either way.
-      tone = glassTone(config.glassStrength, { ...material, enabled: true });
-      if (config.composerGlass) {
-        composerTone = glassComposerTone(config.glassStrength, material);
-        composerPane = composer
-          ? glassComposerPane({ canvas: canvasRect, card: composer.rect, radius: composerRadius(composer.element) })
-          : null;
-      }
-    }
-    applyComposerObstacle();
+    applySceneObstacles();
   }
 
   function draw() {
@@ -265,87 +417,87 @@ export function createWhaleLayer(canvas, initialConfig) {
     for (let i = 0; i < scene.particles.length; i++) projectParticle(scene.particles[i], poses[scene.particles[i].whale], projected[i]);
     resolveDepthGrid(projected, grid, scene.triangles, scene.decals);
     // Reduced transparency withholds the material, not the readability work: the
-    // panes still hold the glyphs out (that is what keeps the words over plain
-    // sea), they just paint no tint, frost or rim on top of them.
+    // panes still hold the glyphs out, they just paint no glass over the words.
     const frosted = Boolean(tone) && tone.mode === 'frost';
-    const readingPanes = tone ? panes : [];
-    const composer = tone ? composerPane : null;
-    if (!readingPanes.length && !composer && !avoidRect) { paintGlyphs(ink); return; }
-    const featherOf = pane => (pane.feather ?? tone.feather) || 26;
+    const visiblePanes = tone ? panes : [];
+    const openWater = !visiblePanes.length && !avoidRect;
+    const featherOf = pane => pane.feather ?? (tone ? tone.feather : 10) ?? 10;
     // Glyphs hold out of every pane across that pane's own feather, so no whale
     // is cut by a line; the ramp keeps the body readable right up to the glass.
-    paintGlyphs(ink, (x, y) => {
+    const fade = openWater ? null : (x, y) => {
       // The input card is opaque to whale ink when avoidance is on (see avoidRect).
       if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width
         && y > avoidRect.y && y < avoidRect.y + avoidRect.height) return 0;
       let fade = 1;
-      for (const pane of readingPanes) fade = Math.min(fade, glassEdgeFade(pane, x, y, featherOf(pane)));
-      if (composer) fade = Math.min(fade, glassEdgeFade(composer, x, y, featherOf(composer)));
+      for (const pane of visiblePanes) fade = Math.min(fade, glassEdgeFade(pane, x, y, featherOf(pane)));
       return fade;
-    });
-    // Reading column first, input card second: the two panes overlap when both
-    // are enabled, and the card material has to stay the top surface.
-    if (!frosted) return;
-    for (const pane of readingPanes) paintPane(pane, tone);
-    if (composer) paintPane(composer, composerTone || tone);
+    };
+    const sceneryFade = (x, y) => attenuation(x, y, width, height, config.quietCenter)
+      * (fade ? fade(x, y) : 1);
+    const scenery = { width, height, ratio, font: painter.font, palette: sceneryPalette,
+      cellWidth: grid.cellWidth, cellHeight: grid.cellHeight, opacity: config.opacity, fade: sceneryFade };
+    if (config.reefs && reef) drawReefs(ink, reef, scenery);
+    if (config.ripples) drawWater(ink, water, scenery);
+    paintGlyphs(ink, fade);
+    spout.paint(ink, fade);
+    if (openWater || !frosted || !visiblePanes.length) return;
+    if (!seaBuffers(tone)) return;
+    paintBlurredSea(tone);
+    // One shared sea image for every pane, then the cheap per-pane surface work.
+    paintPaneSeaUnion(visiblePanes, tone);
+    for (const pane of visiblePanes) paintPaneSurface(pane, tone);
   }
 
   /**
-   * Frosted pane, built with no canvas readback and no second glyph pass.
+   * The glass material, drawn in two passes so the expensive step happens once.
    *
-   * The whale's silhouette is what a pane really hides: at 11px the glyph strokes
-   * would blur into noise, so the pane is filled from the depth grid as
-   * overlapping cell blobs. Those go into a buffer several times smaller than the
-   * pane; the blur runs inside that small buffer, so its cost is independent of
-   * the window size, and the upscale finishes the smear.
+   * The blurred sea is the only large operation, so it is painted once for the
+   * whole set of panes: every pane appends its own rounded rectangle to one path
+   * and that union is clipped for a single drawImage. The union only covers the
+   * inside of the boxes — the gaps between two cards are inside no subpath, so
+   * the sea is never drawn there. The per-pane work that remains is one rounded
+   * clip plus three small fills (flat tint, top crest, bottom shade), which keeps
+   * each box's own rounded edge and never welds two cards together.
+   *
+   * The tint is applied on top of the shared sea instead of underneath it. The
+   * veil is only 0.033–0.05 alpha, and composing the two orders gives 4.83:1 vs
+   * 4.88:1 at the worst case — imperceptible, while it lets tint and rim share
+   * one clip per pane instead of two.
+   *
+   * The pane deliberately draws no outline. The card already has DSH's own
+   * hairline elevation ring on exactly this rectangle; a second 1px stroke on the
+   * same path only diverges at the corners under fractional scaling, which reads
+   * as two rounded frames with different radii (T3 measured r≈28.5 neutral vs
+   * r≈33.4 blue-ish). The frame belongs to the DOM, the material belongs to us.
+   *
+   * Nested boxes (a code block inside a card) get the sea once instead of twice,
+   * so an inner pane is no longer slightly denser than its host; each box still
+   * keeps its own tint and rim light.
    */
-  function paintPane(panel, material) {
-    if (!material || material.mode !== 'frost' || !frostBuffer()) return;
-    const scale = glassFrostSize(panel.width, panel.height, material.scale);
-    const pad = 2;
-    const buffer = { width: scale.width + pad * 2, height: scale.height + pad * 2 };
-    if (frost.width !== buffer.width || frost.height !== buffer.height) {
-      frost.width = buffer.width;
-      frost.height = buffer.height;
-    }
-    const s = scale.factor;
-    frostInk.setTransform(1, 0, 0, 1, 0, 0);
-    if (blurSupport) frostInk.filter = 'none';
-    frostInk.clearRect(0, 0, buffer.width, buffer.height);
-    frostInk.setTransform(1 / s, 0, 0, 1 / s, -panel.x / s + pad, -panel.y / s + pad);
-    paintSilhouette(frostInk, panel, material);
-    frostInk.setTransform(1, 0, 0, 1, 0, 0);
-    // Blur inside the small buffer. The radius is divided by the downsample
-    // factor, so the frost looks the same at any window size while the cost
-    // stays proportional to the small buffer instead of the full pane.
-    if (blurSupport) {
-      frostInk.filter = `blur(${Math.max(0.4, material.blur / s).toFixed(2)}px)`;
-      const copy = blurScratch;
-      if (copy.width !== buffer.width || copy.height !== buffer.height) {
-        copy.width = buffer.width; copy.height = buffer.height;
-      }
-      const copyInk = blurInk;
-      copyInk.setTransform(1, 0, 0, 1, 0, 0);
-      copyInk.clearRect(0, 0, buffer.width, buffer.height);
-      copyInk.filter = frostInk.filter;
-      copyInk.drawImage(frost, 0, 0);
-      frostInk.filter = 'none';
-      frostInk.clearRect(0, 0, buffer.width, buffer.height);
-      frostInk.drawImage(copy, 0, 0);
-    }
+  function paintPaneSeaUnion(list, material) {
+    if (!list.length) return;
+    ink.save();
+    ink.beginPath();
+    for (const pane of list) glassRoundedSubpath(ink, pane);
+    ink.clip();
+    ink.imageSmoothingEnabled = true;
+    ink.imageSmoothingQuality = 'high';
+    ink.globalAlpha = material.mist;
+    // The whole shared buffer maps 1:1 onto the canvas: one image, one scale-up.
+    ink.drawImage(blurredSea, seaPad, seaPad, width / seaFactor, height / seaFactor, 0, 0, width, height);
+    ink.globalAlpha = 1;
+    ink.restore();
+  }
 
+  /** Flat tint, top crest and bottom shade for one pane, in a single clip. */
+  function paintPaneSurface(panel, material) {
     ink.save();
     glassRoundedPath(ink, panel);
     ink.clip();
     ink.fillStyle = `rgba(${material.tint}, ${material.veil})`;
     ink.fillRect(panel.x, panel.y, panel.width, panel.height);
-    ink.imageSmoothingEnabled = true;
-    ink.imageSmoothingQuality = 'high';
-    ink.globalAlpha = material.mist;
-    ink.drawImage(frost, pad, pad, scale.width, scale.height, panel.x, panel.y, panel.width, panel.height);
-    ink.globalAlpha = 1;
-    // Light on the rim: a bright band at the top that fades out, and a shade at
-    // the bottom that fades in. Gradients keep the pane from looking framed.
+    // Light on the rim: a short bright band at the top that fades out, and a soft
+    // shade at the bottom. Gradients keep the pane from looking framed.
     const crestHeight = Math.min(material.crestHeight, panel.height * 0.2);
     const crest = ink.createLinearGradient(0, panel.y, 0, panel.y + crestHeight);
     crest.addColorStop(0, material.crest);
@@ -359,51 +511,16 @@ export function createWhaleLayer(canvas, initialConfig) {
     ink.fillStyle = shade;
     ink.fillRect(panel.x, panel.y + panel.height - material.shadeHeight, panel.width, material.shadeHeight);
     ink.restore();
-    glassRoundedPath(ink, panel);
-    ink.lineWidth = 1;
-    ink.strokeStyle = material.stroke;
-    ink.stroke();
-  }
-
-  /**
-   * The whale's silhouette, as what a pane really hides: bodies become pale
-   * shapes, never letters (at 11px the strokes would blur into noise anyway).
-   *
-   * Cells are filled at full strength and slightly overlapped so contiguous
-   * cells merge into one body instead of a grid of dots; the low-resolution
-   * buffer plus the upscale supply the blur. Near the rim the shape fades out
-   * over the same feather the sharp glyphs use outside, so a whale crossing the
-   * pane edge dissolves instead of being cut by a straight line.
-   */
-  function paintSilhouette(target, panel, material) {
-    target.fillStyle = `rgb(${material.silhouette})`;
-    const over = grid.cellWidth * 0.22;
-    for (let cell = 0; cell < grid.owners.length; cell++) {
-      if (grid.owners[cell] < 0) continue;
-      const visibility = grid.visibility[cell];
-      if (visibility < 0.05) continue;
-      const x = grid.centersX[cell], y = grid.centersY[cell];
-      // The opaque input card (avoidance mode) hides the silhouette as well: a
-      // pane drawn over the card must not carry a whale shape onto it.
-      if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width
-        && y > avoidRect.y && y < avoidRect.y + avoidRect.height) continue;
-      // Only cells inside the pane are painted; the feather ramps them in. The
-      // pane's own feather wins (it carries the composer's short band); the
-      // reading column has none, so its material feather applies.
-      const depthInside = -glassDistance(panel, x, y);
-      if (depthInside <= 0) continue;
-      const ramp = Math.min(1, depthInside / Math.max(1, panel.feather ?? material.feather));
-      target.globalAlpha = Math.min(1, visibility * ramp * ramp * (3 - 2 * ramp));
-      target.fillRect(x - grid.cellWidth / 2 - over, y - grid.cellHeight / 2 - over,
-        grid.cellWidth + over * 2, grid.cellHeight + over * 2);
-    }
-    target.globalAlpha = 1;
   }
 
   function frame(now) {
     raf = 0;
     if (disposed || document.hidden || reduced.matches || !width || !height || !scene) return;
-    if (previous !== null) stepScene(scene, Math.min(0.1, (now - previous) / 1000), config.speed);
+    if (previous !== null) {
+      const startedAt = scene.time;
+      stepScene(scene, Math.min(0.1, (now - previous) / 1000), config.speed);
+      if (config.ripples) stepWater(water, scene, scene.time - startedAt);
+    }
     previous = now;
     if (now - lastPaint >= 1000 / 30) { draw(); lastPaint = now; }
     raf = requestAnimationFrame(frame);
@@ -438,11 +555,13 @@ export function createWhaleLayer(canvas, initialConfig) {
     if (noChange(changes)) return;
     // The draw loop and the painter share this object, so live options such as
     // opacity and speed apply from the next frame without any rebuild.
+    const previousReefs = config.reefs, previousRipples = config.ripples;
     Object.assign(config, next);
 
     if (changes.scene) {
       const previousScene = scene;
       const replacement = createScene(config.count, config.text, config.species, config.whaleSize);
+      replacement.diveSeed = scenerySeed;
       // Give the replacement the discarded scene's coordinate space before the
       // hand-over, so the adopted positions are valid as they are and never get
       // rescaled. Deriving it from the scene (not from the canvas) also covers
@@ -456,7 +575,7 @@ export function createWhaleLayer(canvas, initialConfig) {
       projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
       // A new scene starts without obstacles: put the already-measured card
       // back in front of it (margin follows the new body sizes), no DOM read.
-      applyComposerObstacle();
+      applySceneObstacles();
     }
     // A scene change also brings a new glyph alphabet (the user's body text), so
     // the painter is rebuilt for it as well — not only for font and style.
@@ -468,11 +587,15 @@ export function createWhaleLayer(canvas, initialConfig) {
       painter = createWhalePainter(scene, config);
     }
     // Only the glass groups re-read the DOM; a scene change already reused the
-    // measured card through applyComposerObstacle above.
+    // measured card through applySceneObstacles above.
     if (changes.glass || changes.composer) {
       measuredAt = -Infinity;
       if (width && height) measure();
     }
+
+    if (previousReefs !== config.reefs) applySceneObstacles();
+    if (previousRipples !== config.ripples || changes.scene) resetWaterField(water);
+    if (changes.palette) sceneryPalette = createInkPalette(config.color);
 
     lastPaint = -Infinity;
     if (!document.hidden && width && height) {
@@ -500,6 +623,11 @@ export function createWhaleLayer(canvas, initialConfig) {
     ink.setTransform(ratio, 0, 0, ratio, 0, 0);
     grid = createDepthGrid(width, height, config.glyphSize, metrics);
     resizeScene(scene, width, height);
+    if (width > 0 && height > 0) {
+      if (reef) resizeReefField(reef, width, height);
+      else reef = createReefField({ width, height, seed: scenerySeed, count: width * height < 360000 ? 2 : 3 });
+      resetWaterField(water);
+    }
     measuredAt = -Infinity;
     sync();
   }
@@ -515,6 +643,9 @@ export function createWhaleLayer(canvas, initialConfig) {
   document.addEventListener('scroll', onScroll, true);
   resize();
   function dispose() {
+    spout.detach();
+    resetWaterField(water);
+    reef = null;
     disposed = true;
     cancelAnimationFrame(raf);
     raf = 0;
@@ -530,11 +661,11 @@ export function createWhaleLayer(canvas, initialConfig) {
     painter = null;
     poses = [];
     projected = [];
-    frost = frostInk = blurScratch = blurInk = null;
+    sea = seaInk = blurredSea = blurredSeaInk = null;
+    seaFactor = 0;
+    seaPad = 0;
     panes = [];
     tone = null;
-    composerPane = null;
-    composerTone = null;
     composerCard = null;
     avoidRect = null;
     canvas.width = canvas.height = 1;

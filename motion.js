@@ -1,9 +1,11 @@
 import { whaleSpecies } from './species.js';
-import { resetWhaleRig, resizeWhaleRig, updateWhaleRig, writeWhaleRigPose } from './rig.js';
+import { deformWhaleParticle, resetWhaleRig, resizeWhaleRig, updateWhaleRig, writeWhaleRigPose } from './rig.js';
 
 // Stateful screen-space swimming. All helpers are prefixed because the release
 // build concatenates this module with the renderer and geometry modules.
 const motionTick = 1 / 60;
+// Model y points down into the water; the fog band begins at this plane.
+export const DIVE_WATERLINE = 0.10;
 // Mirrors FIELDS.whaleSize; motion.js cannot import model.js because model.js
 // already imports this module (a cycle would leave FIELDS uninitialized).
 const motionWhaleSizeFloor = 0.55, motionWhaleSizeCeiling = 1.55;
@@ -129,14 +131,21 @@ function motionHullReach(whale) {
 
 /** Soft boundary of one obstacle for one point, grown by that point's allowance. */
 function motionObstacleBounds(obstacle, allowance) {
+  if (obstacle.circle) {
+    const reach = obstacle.radius + allowance;
+    return { left: obstacle.x - reach, right: obstacle.x + reach,
+      top: obstacle.y - reach, bottom: obstacle.y + reach };
+  }
   return { left: obstacle.x - allowance, right: obstacle.x + obstacle.width + allowance,
     top: obstacle.y - allowance, bottom: obstacle.y + obstacle.height + allowance };
 }
 
 /**
- * Obstacles are canvas-space rectangles the school must swim around. Accept
- * anything rectangular and finite; unusable entries are dropped so a broken
- * measurement can never push a whale to NaN.
+ * Obstacles are canvas-space shapes the school must swim around. The reading
+ * column and the input card are rectangles; reefs are circles, because a
+ * bounding box would make the school dodge the empty corners of a round rock.
+ * Anything unusable is dropped so a broken measurement can never push a whale
+ * to NaN.
  */
 function motionObstacleNormalize(obstacles) {
   if (!Array.isArray(obstacles)) return [];
@@ -145,9 +154,17 @@ function motionObstacleNormalize(obstacles) {
     if (!obstacle) continue;
     const x = Number(obstacle.x), y = Number(obstacle.y);
     const width = Number(obstacle.width), height = Number(obstacle.height);
+    const radius = Number(obstacle.radius);
+    // No extent plus a positive radius means a circle (see reef.js). A rect may
+    // also carry a corner radius, so the extent check decides the shape.
+    if (!(width > 0) && !(height > 0)) {
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(radius) || !(radius > 0)) continue;
+      normalized.push({ x, y, radius, circle: true });
+      continue;
+    }
     if (![x, y, width, height].every(Number.isFinite) || !(width > 0) || !(height > 0)) continue;
     normalized.push({ x, y, width, height,
-      radius: motionLimit(motionFinite(Number(obstacle.radius), 0), 0, Math.min(width, height) / 2) });
+      radius: motionLimit(motionFinite(radius, 0), 0, Math.min(width, height) / 2) });
   }
   return normalized;
 }
@@ -160,6 +177,17 @@ function motionObstacleNormalize(obstacles) {
  * glass, so the steering has to anticipate rather than react *inside* it.
  */
 function motionObstacleApproach(obstacle, allowance, x, y, band) {
+  if (obstacle.circle) {
+    // Radial signed distance: positive inside the rock plus the hull's own
+    // clearance, negative outside and still inside the turning band.
+    const dx = x - obstacle.x, dy = y - obstacle.y;
+    const distance = Math.hypot(dx, dy);
+    const clearance = obstacle.radius + allowance;
+    const gap = distance - clearance;
+    if (!(gap < band)) return null;
+    if (distance > 1e-6) return { depth: -gap, nx: dx / distance, ny: dy / distance };
+    return { depth: -gap, nx: 1, ny: 0 };
+  }
   const { left, right, top, bottom } = motionObstacleBounds(obstacle, allowance);
   const insideX = x > left && x < right, insideY = y > top && y < bottom;
   if (insideX && insideY) {
@@ -196,6 +224,7 @@ function motionObstacleApproachBody(whale, obstacle, band) {
 
 /** True when this station's silhouette disc reaches into the obstacle bounds. */
 function motionHullInside(obstacle, x, y, radius) {
+  if (obstacle.circle) return Math.hypot(x - obstacle.x, y - obstacle.y) < obstacle.radius + radius;
   const { left, right, top, bottom } = motionObstacleBounds(obstacle, radius);
   return x > left && x < right && y > top && y < bottom;
 }
@@ -222,6 +251,31 @@ function motionPushOut(whale, obstacles, width, height) {
     let changed = false;
     for (const obstacle of obstacles) {
       const hull = motionBodyHull(whale);
+      if (obstacle.circle) {
+        // A round rock has no sides to slide along, so the rigid move is radial:
+        // away from the rock centre, far enough for the last-reaching station.
+        const centreX = motionFinite(whale.x, 0), centreY = motionFinite(whale.y, 0);
+        let dx = centreX - obstacle.x, dy = centreY - obstacle.y;
+        let length = Math.hypot(dx, dy);
+        if (!(length > 0.001)) {
+          dx = Math.cos(motionFinite(whale.heading, 0));
+          dy = Math.sin(motionFinite(whale.heading, 0));
+          length = 1;
+        }
+        const nx = dx / length, ny = dy / length;
+        let shift = 0;
+        for (let i = 0; i < hull.length; i += 3) {
+          const clearance = obstacle.radius + hull[i + 2];
+          if (!(Math.hypot(hull[i] - obstacle.x, hull[i + 1] - obstacle.y) < clearance)) continue;
+          shift = Math.max(shift, clearance - ((hull[i] - obstacle.x) * nx + (hull[i + 1] - obstacle.y) * ny));
+        }
+        if (shift > 0) {
+          whale.x = motionLimit(centreX + nx * shift, 0, width);
+          whale.y = motionLimit(centreY + ny * shift, 0, height);
+          moved = changed = true;
+        }
+        continue;
+      }
       let leftShift = 0, rightShift = 0, upShift = 0, downShift = 0, inside = false;
       for (let i = 0; i < hull.length; i += 3) {
         const x = hull[i], y = hull[i + 1], radius = hull[i + 2];
@@ -263,6 +317,16 @@ function motionAvoidTarget(whale, x, y, obstacles, width, height) {
   if (!obstacles || !obstacles.length) return { x, y };
   const allowance = motionHullReach(whale) + Math.max(8, motionFinite(whale.length, 0) * 0.08);
   for (const obstacle of obstacles) {
+    if (obstacle.circle) {
+      const clearance = obstacle.radius + allowance;
+      const dx = x - obstacle.x, dy = y - obstacle.y;
+      const distance = Math.hypot(dx, dy);
+      if (!(distance < clearance)) continue;
+      const nx = distance > 0.001 ? dx / distance : 1, ny = distance > 0.001 ? dy / distance : 0;
+      x = motionLimit(obstacle.x + nx * clearance, 0, width);
+      y = motionLimit(obstacle.y + ny * clearance, 0, height);
+      continue;
+    }
     const { left, right, top, bottom } = motionObstacleBounds(obstacle, allowance);
     if (!(x > left && x < right && y > top && y < bottom)) continue;
     if (top >= 0) { x = motionLimit(x, 0, width); y = top; continue; }
@@ -313,6 +377,10 @@ export function resizeScene(scene, width, height) {
     const scaleX = width / oldWidth, scaleY = height / oldHeight;
     for (const obstacle of scene.obstacles) {
       obstacle.x *= scaleX; obstacle.y *= scaleY;
+      if (obstacle.circle) {
+        obstacle.radius *= Math.min(scaleX, scaleY);
+        continue;
+      }
       obstacle.width *= scaleX; obstacle.height *= scaleY;
     }
   }
@@ -331,7 +399,8 @@ export function resizeScene(scene, width, height) {
     } else {
       const state = whale._motion = { seed: motionSeed(whale, i), age: 0,
         routeDirection: i % 2 ? -1 : 1, targetIndex: 0, wander: 0,
-        wanderGoal: 0, wanderDue: 0, wave: motionFinite(whale.phase, 0) };
+        wanderGoal: 0, wanderDue: 0, wave: motionFinite(whale.phase, 0),
+        submergence: 0, pitch: 0, noseFirst: false, depth: 0, tailKick: 0, arch: 0 };
       const anatomy = whaleSpecies(whale.species);
       state.cruise = anatomy.cruise * (0.94 + motionRandom(state) * 0.12);
       state.agility = anatomy.turnRate * (0.96 + motionRandom(state) * 0.08);
@@ -387,7 +456,12 @@ export function adoptSceneState(previous, next) {
     for (const key of ['x', 'y', 'heading', 'turn', 'speed', 'vx', 'vy']) {
       if (Number.isFinite(source[key])) whale[key] = source[key];
     }
-    if (source._motion) whale._motion = { ...source._motion };
+    if (source._motion) {
+      whale._motion = { ...source._motion };
+      // Dive scheduling owns a separate random stream and duration snapshot.
+      // A rebuilt scene must continue it without mutating the discarded scene.
+      if (source._motion.dive) whale._motion.dive = { ...source._motion.dive };
+    }
     // `_motion` carries the species base cruise/turn values with the individual
     // jitter already baked in. On a species switch (mixed group <-> one species)
     // the rebuilt whale must swim with the new anatomy straight away, so rescale
@@ -590,8 +664,152 @@ function motionIntegrate(scene, speed) {
     state.stroke += (envelope - state.stroke) * (1 - Math.exp(-travelTick * 2.2));
     state.wave += travelTick * anatomy.beat * (0.7 + 0.3 * Math.min(1.4, Math.sqrt(effort)))
       * (0.08 + 0.92 * state.stroke);
+    motionStepDive(whale, i, scene.diveSeed, anatomy, travelTick);
   }
   scene.time += motionTick;
+}
+
+function diveSmoothstep(amount) {
+  const u = amount < 0 ? 0 : amount > 1 ? 1 : amount;
+  return u * u * (3 - 2 * u);
+}
+
+// Hash a separate stream from identity, never from the mutable cruise seed.
+// Optional scene.diveSeed (or whale.diveSeed) is read only at the first tick,
+// allowing the engine to supply session entropy after createScene's resize.
+function motionDiveSeed(whale, index, sceneSeed) {
+  const supplied = motionFinite(whale.diveSeed, motionFinite(sceneSeed, 0)) >>> 0;
+  let seed = (motionSeed(whale, index) ^ supplied ^ 0x91e10da5) >>> 0;
+  seed = Math.imul(seed ^ (seed >>> 16), 0x85ebca6b);
+  seed = Math.imul(seed ^ (seed >>> 13), 0xc2b2ae35);
+  return (seed ^ (seed >>> 16)) >>> 0;
+}
+
+function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
+  const state = whale._motion;
+  if (!state.dive) {
+    const dive = state.dive = { seed: motionDiveSeed(whale, index, sceneSeed),
+      activity: 0, nextDecision: 0, startedAt: null, entry: 0, under: 0, exit: 0,
+      decisions: 0, skipped: 0, dives: 0, completed: 0,
+      splashSerial: 0, splashKind: 'dive', splashStrength: 0, contactStage: 0 };
+    dive.activity = 0.32 + motionRandom(dive) * 0.36;
+    dive.nextDecision = Math.max(6, state.age - dt) + 2 + motionRandom(dive) * 16;
+  }
+  const dive = state.dive;
+  const surfacePace = motionLimit(22 / anatomy.cruise, 0.75, 1.3);
+  if (dive.startedAt !== null && state.age >= dive.startedAt + dive.entry + dive.under + dive.exit) {
+    const endedAt = dive.startedAt + dive.entry + dive.under + dive.exit;
+    dive.startedAt = null;
+    dive.completed++;
+    dive.nextDecision = endedAt + (10 + motionRandom(dive) * 16) * surfacePace;
+  }
+  if (dive.startedAt === null && state.age >= dive.nextDecision) {
+    dive.decisions++;
+    if (motionRandom(dive) < dive.activity) {
+      dive.startedAt = dive.nextDecision;
+      dive.dives++;
+      dive.contactStage = 0;
+      // Snapshot the whole action. Later species/size changes do not truncate it.
+      dive.entry = 2 + motionRandom(dive) * 2;
+      dive.under = (3 + motionRandom(dive) * 4) * motionLimit(anatomy.glide / 0.32, 0.8, 1.5);
+      dive.exit = 2.4 + motionRandom(dive) * 1.6;
+    } else {
+      dive.skipped++;
+      dive.nextDecision += (5 + motionRandom(dive) * 10) * surfacePace;
+    }
+  }
+  const pose = dive.startedAt === null ? diveLevel() : divePose(state.age - dive.startedAt, dive);
+  state.submergence = pose.submergence;
+  state.pitch = pose.pitch;
+  state.noseFirst = pose.noseFirst;
+  state.depth = pose.depth;
+  state.tailKick = pose.tailKick;
+  state.arch = pose.arch;
+  if (dive.startedAt !== null && dive.contactStage < 2) {
+    const elapsed = state.age - dive.startedAt;
+    const isTail = dive.contactStage === 0;
+    // Tail: wait until after the lift. Nose: wait until the ascent starts.
+    // The height then comes from the very same rig, gait and curve as the mesh.
+    if (elapsed >= (isTail ? dive.entry * 0.46 : dive.entry + dive.under)) {
+      const contactPose = motionDiveContactPose;
+      contactPose.wave = state.wave;
+      contactPose.turn = whale.turn;
+      contactPose.submergence = state.submergence;
+      contactPose.divePitch = state.pitch;
+      contactPose.diveDepth = state.depth;
+      contactPose.diveKick = state.tailKick;
+      contactPose.diveArch = state.arch;
+      writeWhaleRigPose(whale, contactPose);
+      const point = isTail ? DIVE_TAIL_CONTACT : DIVE_NOSE_CONTACT;
+      const height = deformWhaleParticle(point, contactPose, motionDiveContactOut).y;
+      if (isTail ? height >= DIVE_WATERLINE : height <= DIVE_WATERLINE) {
+        dive.splashSerial++;
+        dive.splashKind = isTail ? 'dive' : 'surface';
+        dive.splashStrength = isTail ? 0.95 : 0.9;
+        dive.contactStage++;
+      }
+    }
+  }
+}
+
+// Reused probes and output avoid allocating a particle per tick. Contact state
+// stays primitive so adopting a scene can keep its existing independent clone.
+export const DIVE_TAIL_CONTACT = Object.freeze({ x: -1.05, y: 0.01, z: 0,
+  nx: 0, ny: -1, nz: 0, part: 'fluke' });
+export const DIVE_NOSE_CONTACT = Object.freeze({ x: 1.04, y: -0.08, z: 0,
+  nx: 0, ny: -1, nz: 0, part: 'body' });
+const motionDiveContactPose = {};
+const motionDiveContactOut = {};
+
+function motionEnsureDive(state) {
+  if (!Number.isFinite(state.submergence)) state.submergence = 0;
+  if (!Number.isFinite(state.pitch)) state.pitch = 0;
+  if (!Number.isFinite(state.depth)) state.depth = 0;
+  if (!Number.isFinite(state.tailKick)) state.tailKick = 0;
+  if (!Number.isFinite(state.arch)) state.arch = 0;
+  if (state.noseFirst !== true && state.noseFirst !== false) state.noseFirst = false;
+}
+
+function diveLevel() {
+  return { submergence: 0, pitch: 0, noseFirst: false, depth: 0, tailKick: 0, arch: 0 };
+}
+
+/** Pure pose for one sampled action; elapsed starts at entry, never repeats. */
+export function divePose(elapsed, timing) {
+  if (!Number.isFinite(elapsed) || !timing) return diveLevel();
+  const { entry, under, exit } = timing;
+  if (![entry, under, exit].every(value => Number.isFinite(value) && value > 0)
+    || elapsed <= 0 || elapsed >= entry + under + exit) return diveLevel();
+  let t = elapsed;
+  if (t < entry) {
+    const u = t / entry;
+    const submergence = diveSmoothstep(u);
+    const pitch = u < 0.38 ? 0.5 * diveSmoothstep(u / 0.38)
+      : 0.5 + 0.22 * diveSmoothstep((u - 0.38) / 0.62);
+    const depth = 0.12 * diveSmoothstep((u - 0.2) / 0.35)
+      + 1.08 * diveSmoothstep((u - 0.55) / 0.45);
+    const tailKick = u < 0.46 ? -0.55 * diveSmoothstep((u - 0.18) / 0.28)
+      : u < 0.68 ? -0.55 + 1.05 * diveSmoothstep((u - 0.46) / 0.22)
+        : 0.5 * (1 - diveSmoothstep((u - 0.68) / 0.24));
+    const arch = 0.13 * diveSmoothstep(u / 0.35) * (1 - diveSmoothstep((u - 0.65) / 0.35));
+    return { submergence, pitch, noseFirst: false, depth, tailKick, arch };
+  }
+  t -= entry;
+  if (t < under) {
+    return { submergence: 1, pitch: 0.72 * (1 - diveSmoothstep(t / under)),
+      noseFirst: false, depth: 1.2, tailKick: 0, arch: 0 };
+  }
+  t -= under;
+  const u = t / exit;
+  // A faster push through the surface, then a longer, monotonic settle.
+  const pitch = u < 0.32 ? -0.5 * diveSmoothstep(u / 0.32)
+    : -0.5 * (1 - diveSmoothstep((u - 0.32) / 0.68));
+  const depth = u < 0.58 ? 1.2 - 1.3 * diveSmoothstep(u / 0.58)
+    : -0.1 * (1 - diveSmoothstep((u - 0.58) / 0.42));
+  const arch = 0.08 * diveSmoothstep(u / 0.3) * (1 - diveSmoothstep((u - 0.4) / 0.6));
+  const submergence = u < 0.65 ? 1 - 0.8 * diveSmoothstep(u / 0.65)
+    : 0.2 * (1 - diveSmoothstep((u - 0.65) / 0.35));
+  return { submergence, pitch, noseFirst: submergence > 0, depth, tailKick: 0, arch };
 }
 
 /** Integrate a capped frame in fixed ticks; no DOM or wall-clock dependency. */
@@ -616,6 +834,7 @@ export function whalePose(whale, elapsed, width, height, speed, out = {}) {
   width = Math.max(1, motionFinite(width, 1));
   height = Math.max(1, motionFinite(height, 1));
   const phase = motionFinite(whale.phase, 0), state = whale._motion;
+  if (state) motionEnsureDive(state);
   const age = state ? state.age : motionFinite(elapsed, 0) * motionFinite(speed, 1);
   const heading = motionFinite(whale.heading, 0), turn = motionFinite(whale.turn, 0);
   const depth = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5)
@@ -631,6 +850,12 @@ export function whalePose(whale, elapsed, width, height, speed, out = {}) {
     scale, focal, cameraZ: focal * depth, near: focal * 0.12,
     yaw, pitch, roll, heading, length, turn,
     wave: state ? state.wave : age * 1.8 + phase,
+    submergence: state ? state.submergence : 0,
+    divePitch: state ? state.pitch : 0,
+    diveDepth: state ? state.depth : 0,
+    diveKick: state ? state.tailKick : 0,
+    diveArch: state ? state.arch : 0,
+    noseFirst: state ? state.noseFirst : false,
     cy, sy, cp, sp, cr: Math.cos(roll), sr: Math.sin(roll) });
   return writeWhaleRigPose(whale, out);
 }

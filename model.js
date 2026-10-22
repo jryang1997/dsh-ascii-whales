@@ -1,5 +1,5 @@
 import { WHALE_SPECIES, SPECIES_IDS, whaleSpecies } from './species.js';
-import { resizeScene } from './motion.js';
+import { DIVE_WATERLINE, resizeScene } from './motion.js';
 import { deformWhaleParticle } from './rig.js';
 import { surfaceInkTone } from './shading.js';
 export { resizeScene, stepScene, whalePose } from './motion.js';
@@ -20,8 +20,15 @@ export const FIELDS = Object.freeze({
   leftInset: { kind: 'number', min: 0, max: 500, step: 1, default: 280 },
   glass: { kind: 'boolean', default: true },
   glassStrength: { kind: 'number', min: 0, max: 1, step: 0.05, default: 0.55 },
-  composerGlass: { kind: 'boolean', default: false },
+  // Folded into `glass` in 0.11.0: every content box, the composer included, is
+  // frosted by the same option. Kept as a hidden field so old profile entries
+  // still validate, and so a 0.10.0 config that only enabled the composer is
+  // migrated below instead of silently losing its effect.
+  composerGlass: { kind: 'boolean', default: false, hidden: true },
   composerAvoid: { kind: 'boolean', default: false },
+  spout: { kind: 'boolean', default: false },
+  reefs: { kind: 'boolean', default: true },
+  ripples: { kind: 'boolean', default: true },
 });
 export const DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -41,10 +48,17 @@ export function normalizeConfig(value = {}) {
     else v = typeof v === 'string' ? v.slice(0, f.max).replace(/[\uD800-\uDBFF]$/u, '') : f.default;
     return [key, v];
   }));
-  // The input-box glass and the input-box avoidance are alternatives: glass
-  // already hides the whales behind the card, so avoiding it as well would only
-  // squeeze the school for no visual gain. Glass wins if both arrive enabled.
-  if (config.composerGlass && config.composerAvoid) config.composerAvoid = false;
+  // 0.10.0 had a separate composer-only glass. When a stored config never
+  // mentioned `glass` at all but had that switch on, fold it into the content
+  // glass so the upgrade keeps the effect instead of silently dropping it.
+  if (config.composerGlass === true && value && !('glass' in value)) {
+    config.glass = true;
+    config.composerGlass = false;
+  }
+  // The content glass and the input-box avoidance are alternatives: glass
+  // already hides the whales behind every box, so avoiding them as well would
+  // only squeeze the school for no visual gain. Glass wins if both arrive on.
+  if (config.glass && config.composerAvoid) config.composerAvoid = false;
   return config;
 }
 
@@ -241,6 +255,26 @@ export function projectParticle(p, pose, out = {}) {
   out.perspective = perspective;
   out.light = tone;
   out.visibility = cameraDistance <= pose.near ? 0 : smooth((facing + 0.04) / 0.26);
+  const sub = Number.isFinite(pose.submergence) ? pose.submergence : 0;
+  if (Number.isFinite(pose.diveDepth)) {
+    // elevation was recorded immediately after rig deformation, before camera
+    // projection. An exposed fluke remains visible even when the nose is deep.
+    const wet = smooth((-out.elevation - DIVE_WATERLINE) / 0.18);
+    const engagement = Number.isFinite(pose.diveEngagement) ? pose.diveEngagement
+      : smooth(Math.max(sub * 8, Math.abs(pose.diveDepth) * 4,
+        Math.abs(Number.isFinite(pose.divePitch) ? pose.divePitch : 0) * 3,
+        Math.abs(Number.isFinite(pose.diveKick) ? pose.diveKick : 0) * 2));
+    // Blend the physical waterline in/out with flat endpoints, so returning to
+    // the unmasked resting pose cannot suddenly reveal a partially wet flank.
+    if (engagement > 0) out.visibility *= 1 - engagement * wet;
+  } else {
+    const lead = Math.min(1, Math.max(0, (p.x + 1.2) / 2.24));
+    const noseFirst = pose.noseFirst === true;
+    const gate = 0.35 + 0.65 * (noseFirst ? lead : 1 - lead);
+    let u = sub > 0 ? (gate - sub) / gate : 1;
+    u = u < 0 ? 0 : u > 1 ? 1 : u;
+    out.visibility *= u * u * (3 - 2 * u);
+  }
   return out;
 }
 

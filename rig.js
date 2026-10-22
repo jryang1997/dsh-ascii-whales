@@ -64,14 +64,31 @@ export function writeWhaleRigPose(whale, pose) {
   pose.spine = spine;
   pose.anatomy = whaleSpecies(whale.species);
   pose.stroke = whale._motion?.stroke ?? 1;
+  pose.diveEngagement = rigDiveEngagement(pose);
+  const dive = Number.isFinite(pose.divePitch) ? pose.divePitch : 0;
+  pose.diveSin = Math.sin(dive);
+  pose.diveCos = Math.cos(dive);
   return pose;
+}
+
+function rigDiveEngagement(pose) {
+  const sub = Number.isFinite(pose.submergence) ? pose.submergence : 0;
+  const depth = Number.isFinite(pose.diveDepth) ? pose.diveDepth : 0;
+  const pitch = Number.isFinite(pose.divePitch) ? pose.divePitch : 0;
+  const kick = Number.isFinite(pose.diveKick) ? pose.diveKick : 0;
+  return rigSmooth(Math.max(sub * 8, Math.abs(depth) * 4, Math.abs(pitch) * 3, Math.abs(kick) * 2));
 }
 
 export function deformWhaleParticle(p, pose, out) {
   const anatomy = pose.anatomy || WHALE_SPECIES.blue;
   let x = p.x, y = p.y, z = p.z, nx = p.nx, ny = p.ny, nz = p.nz;
   const bank = rigLimit((pose.turn || 0) * 0.28, -0.09, 0.09);
-  const wave = pose.wave || 0, stroke = pose.stroke ?? 1;
+  const wave = pose.wave || 0;
+  let stroke = pose.stroke ?? 1;
+  const engagement = Number.isFinite(pose.diveEngagement) ? pose.diveEngagement : rigDiveEngagement(pose);
+  if (engagement > 0) stroke *= 1 - engagement;
+  const kick = Number.isFinite(pose.diveKick) ? pose.diveKick : 0;
+  const arch = Number.isFinite(pose.diveArch) ? pose.diveArch : 0;
   let bind = x;
   if (p.part === 'fin') {
     const root = anatomy.flipper.root;
@@ -87,7 +104,8 @@ export function deformWhaleParticle(p, pose, out) {
     const normalX = cs * nx + ss * nz; nz = -ss * nx + cs * nz; nx = normalX;
   } else if (p.part === 'fluke') {
     bind = -0.96;
-    const pitch = Math.cos(wave - 1.2) * 0.24 * stroke;
+    let pitch = Math.cos(wave - 1.2) * 0.24 * stroke;
+    if (kick !== 0) pitch -= kick * 0.65;
     const c = Math.cos(pitch), s = Math.sin(pitch), dx = x - bind, dy = y - 0.01;
     x = bind + c * dx - s * dy; y = 0.01 + s * dx + c * dy;
     const normalX = c * nx - s * ny; ny = s * nx + c * ny; nx = normalX;
@@ -120,10 +138,19 @@ export function deformWhaleParticle(p, pose, out) {
   // x/z steering curve. Preserve surface normals through both rotations.
   const u = rigLimit((0.5 - bind) / 1.46, 0, 1), ramp = rigSmooth(u);
   const phase = wave - u * 1.2;
-  const heave = anatomy.amplitude * ramp * ramp * Math.sin(phase) * stroke;
+  let heave = anatomy.amplitude * ramp * ramp * Math.sin(phase) * stroke;
   const rampDerivative = u > 0 && u < 1 ? -6 * u * (1 - u) / 1.46 : 0;
-  const slope = anatomy.amplitude * stroke * (2 * ramp * rampDerivative * Math.sin(phase)
+  let slope = anatomy.amplitude * stroke * (2 * ramp * rampDerivative * Math.sin(phase)
     + ramp * ramp * Math.cos(phase) * (u > 0 && u < 1 ? 1.2 / 1.46 : 0));
+  if (kick !== 0) {
+    heave += kick * ramp * ramp;
+    slope += kick * 2 * ramp * rampDerivative;
+  }
+  if (arch !== 0) {
+    const a = rigLimit((bind + 1.05) / 1.9, 0, 1), b = 1 - a;
+    heave -= arch * 16 * a * a * b * b;
+    slope -= arch * 32 * a * b * (1 - 2 * a) / 1.9;
+  }
   const pitch = Math.atan(slope), cv = Math.cos(pitch), sv = Math.sin(pitch);
   const along = x - bind, localX = cv * along - sv * y;
   const vertical = heave + sv * along + cv * y;
@@ -137,5 +164,17 @@ export function deformWhaleParticle(p, pose, out) {
   out.nx = tx * localNX + ty * lateralNormal;
   out.ny = verticalNormal;
   out.nz = -ty * localNX + tx * lateralNormal;
+  const dive = pose.divePitch;
+  if (Number.isFinite(dive) && dive !== 0) {
+    const cd = Number.isFinite(pose.diveCos) ? pose.diveCos : Math.cos(dive);
+    const sd = Number.isFinite(pose.diveSin) ? pose.diveSin : Math.sin(dive);
+    const ox = out.x, oy = out.y;
+    out.x = cd * ox - sd * oy;
+    out.y = sd * ox + cd * oy;
+    const nx = out.nx, ny = out.ny;
+    out.nx = cd * nx - sd * ny;
+    out.ny = sd * nx + cd * ny;
+  }
+  if (Number.isFinite(pose.diveDepth) && pose.diveDepth !== 0) out.y += pose.diveDepth;
   return out;
 }

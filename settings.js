@@ -138,11 +138,12 @@ export function registerWhales(ctx, React, dictionaries) {
     const prefix = React.useId();
     if (snapshot.status !== 'ready' || !editor) return h('p', { role: 'status' }, t(snapshot.status === 'loading' ? 'loading' : 'unavailable'));
     const disabled = !snapshot.writable || saving;
-    // The two input-box options are alternatives: frosted glass already hides the
-    // whales behind the card, so avoiding it as well would only squeeze the school
-    // for no visual gain. Turning one on turns the other off in the same draft, and
-    // the save below submits both keys through the ordinary ops path.
-    const EXCLUSIVE = { composerGlass: 'composerAvoid', composerAvoid: 'composerGlass' };
+    // The content glass and the input-box avoidance are alternatives: glass already
+    // blurs what is behind every box, so avoiding the input box as well would only
+    // squeeze the school for no visual gain. Turning one on turns the other off in
+    // the same draft, and the save below submits both keys through the ordinary ops
+    // path (only the keys that really changed).
+    const EXCLUSIVE = { glass: 'composerAvoid', composerAvoid: 'glass' };
     function update(key, value) {
       setEditor(current => {
         const draft = { ...current.draft, [key]: value };
@@ -185,7 +186,9 @@ export function registerWhales(ctx, React, dictionaries) {
       h('p', { className: 'aw-purpose' }, t('purpose')),
       h(StylePreview, { draft: editor.draft }),
       !snapshot.writable && h('p', { role: 'status' }, t('readOnly')),
-      ...Object.entries(FIELDS).map(([key, field]) => {
+      // Hidden fields stay in FIELDS for Host schema compatibility (an old profile
+      // may still carry composerGlass) but must not render a row of their own.
+      ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
         const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
         const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii');
         const common = { id, disabled: off, 'aria-describedby': hint };

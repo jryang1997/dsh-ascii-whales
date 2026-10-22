@@ -1,11 +1,13 @@
 import { readFile, writeFile } from 'node:fs/promises';
 const root = new URL('./', import.meta.url);
-const names = ['species.js', 'rig.js', 'shading.js', 'motion.js', 'model.js', 'surface.js', 'glass.js', 'engine.js'];
+// Keep this list in the same order as build.mjs: the preview inlines the whole
+// renderer, so any module engine.js imports (glass, spout, …) must be here too.
+const names = ['species.js', 'rig.js', 'shading.js', 'reef.js', 'water.js', 'motion.js', 'model.js', 'surface.js', 'glass.js', 'spout.js', 'engine.js'];
 const strip = text => text.replace(/^import .*;\r?\n/gm, '').replace(/^export \{.*\} from .*;\r?\n/gm, '').replace(/^export /gm, '');
 const source = (await Promise.all(names.map(name => readFile(new URL(name, root), 'utf8')))).map(strip).join('\n');
 const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>文字鲸鱼 · 彩色字格与 ASCII</title>
 <style>
-:root{font:14px/1.7 "Microsoft YaHei",sans-serif;color:#234357;background:#f3f6f8}*{box-sizing:border-box}body{margin:0;padding:32px 20px}main{max-width:1180px;margin:auto}h1{font-size:26px;margin:0 0 10px}h2{font-size:18px;margin:0 0 6px}p{color:#627987;margin:0 0 18px}.comparisons{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card,section{background:#fff;border:1px solid #dbe5eb;border-radius:12px;padding:20px}.card canvas{display:block;width:100%;height:270px}.card p{font-size:12px;margin:0}.card h2{font-size:16px}section{margin-top:22px}label{display:inline-flex;align-items:center;gap:7px;margin:0 16px 12px 0}select,input,button{font:inherit;color:inherit;border:1px solid #c7d6df;border-radius:6px;padding:5px 8px;background:#fff}input[type=text]{width:180px}button{cursor:pointer}.stage{position:relative;isolation:isolate;height:650px}.stage canvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}.reading{display:none;position:absolute;left:25%;right:25%;top:0;bottom:0;padding:25px;z-index:1;overflow:hidden}.reading h3{font-size:18px;margin:8px 0}.reading p{color:#29475a;margin:0 0 20px}.stage.glass-demo .reading{display:block}.hint{font-size:12px;margin:12px 0 0}#status{font-size:12px;color:#627987}body.dark{background:#171d25;color:#d1dfeb}body.dark .card,body.dark section{background:#202730;border-color:#384654}body.dark select,body.dark input,body.dark button{background:#293342;color:#d1dfeb;border-color:#45576a}body.dark .reading p{color:#d1dfeb}body.dark output{color:#9fc3dd}
+:root{font:14px/1.7 "Microsoft YaHei",sans-serif;color:#234357;background:#f3f6f8}*{box-sizing:border-box}body{margin:0;padding:32px 20px}main{max-width:1180px;margin:auto}h1{font-size:26px;margin:0 0 10px}h2{font-size:18px;margin:0 0 6px}p{color:#627987;margin:0 0 18px}.comparisons{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card,section{background:#fff;border:1px solid #dbe5eb;border-radius:12px;padding:20px}.card canvas{display:block;width:100%;height:270px}.card p{font-size:12px;margin:0}.card h2{font-size:16px}section{margin-top:22px}label{display:inline-flex;align-items:center;gap:7px;margin:0 16px 12px 0}select,input,button{font:inherit;color:inherit;border:1px solid #c7d6df;border-radius:6px;padding:5px 8px;background:#fff}input[type=text]{width:180px}button{cursor:pointer}.stage{position:relative;isolation:isolate;height:650px}.stage canvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}.flow{position:absolute;inset:0 0 156px 0;z-index:1;display:flex;flex-direction:column;gap:16px;padding:24px 10%;overflow:hidden}.msg-card{background:#fff;border:1px solid #dbe5eb;border-radius:20px;padding:18px 22px;box-shadow:0 4px 16px rgba(35,62,86,.06);color:#29475a;font-size:14px}.msg-card h3{font-size:16px;margin:0 0 6px;color:#234357}.msg-card p{margin:0;font-size:13px;line-height:1.7;color:#54707f}.msg-card--wide{width:100%}.msg-card--mid{width:84%;border-radius:24px;border-color:#cfdee8}.msg-card--narrow{width:66%;border-radius:28px;align-self:flex-end;border-color:#d3e2ea}.hint{font-size:12px;margin:12px 0 0}#status{font-size:12px;color:#627987}body.dark{background:#171d25;color:#d1dfeb}body.dark .card,body.dark section{background:#202730;border-color:#384654}body.dark select,body.dark input,body.dark button{background:#293342;color:#d1dfeb;border-color:#45576a}body.dark .msg-card{background:#202730;border-color:#384654;color:#cfdbe5;box-shadow:0 4px 16px rgba(0,0,0,.28)}body.dark .msg-card h3{color:#d1dfeb}body.dark .msg-card p{color:#a9bccb}body.dark output{color:#9fc3dd}
 /* DSH-shaped composer: seat at the bottom, card centred. The plugin canvas sits
    above it, exactly like the shell overlay, so the frosted pane is drawn on top. */
 .composer-seat{position:absolute;left:0;right:0;bottom:0;z-index:2;display:flex;justify-content:center;padding:10px 18px 16px;background:linear-gradient(to top,rgba(243,246,248,.94),rgba(243,246,248,0))}
@@ -15,18 +17,18 @@ body.dark .composer-seat{background:linear-gradient(to top,rgba(23,29,37,.94),rg
 body.dark .composer-card{background:#202730;border-color:#384654;color:#93a8ba;box-shadow:0 8px 28px rgba(0,0,0,.35)}
 body.dark .composer-note{color:#6f8494}
 input[type=range]{width:150px;padding:0;border:0;background:transparent;accent-color:#2f6a9a;vertical-align:middle;cursor:pointer}label.slider{gap:6px}output{display:inline-block;min-width:3.1em;font-weight:600;font-variant-numeric:tabular-nums;color:#2f6a9a}
-@media(max-width:700px){body{padding:18px 10px}.comparisons{grid-template-columns:1fr}.card,section{padding:14px}.stage{height:500px}.reading{left:15%;right:15%;padding:15px}input[type=range]{width:118px}label{margin-right:10px}.composer-seat{padding:8px 10px 10px}.composer-card{min-height:96px;padding:14px 16px;border-radius:20px}}
+@media(max-width:700px){body{padding:18px 10px}.comparisons{grid-template-columns:1fr}.card,section{padding:14px}.stage{height:500px}.flow{inset:0 0 132px 0;gap:10px;padding:14px 5%}.msg-card{padding:12px 14px;border-radius:16px}.msg-card h3{font-size:14px}.msg-card p{font-size:12px}input[type=range]{width:118px}label{margin-right:10px}.composer-seat{padding:8px 10px 10px}.composer-card{min-height:96px;padding:14px 16px;border-radius:20px}}
 </style><main><h1>彩色字格与 ASCII 鲸鱼</h1><p>字格底色与字符来源可以自由搭配。下面四张使用同一只蓝鲸、同一鲸体大小和浓度，仅切换渲染选项；拖动下方的“鲸鱼大小”滑杆，四张会一起变大变小。</p>
 <div class="comparisons">
 <article class="card"><h2>纯字符 · 自定义文字</h2><canvas data-style="glyphs" data-fill="custom" aria-label="纯字符自定义文字"></canvas><p>保留原来的轻盈观感，只绘制你填写的字符。</p></article>
 <article class="card"><h2>彩色字格 · 自定义文字</h2><canvas data-style="cells" data-fill="custom" aria-label="彩色字格自定义文字"></canvas><p>文字仍是原文，格子底色显示背部、侧身和鳍尾的深浅。</p></article>
 <article class="card"><h2>纯字符 · ASCII</h2><canvas data-style="glyphs" data-fill="ascii" aria-label="纯字符ASCII"></canvas><p>按明暗选择疏密不同的符号，使用等宽字体。</p></article>
 <article class="card"><h2>彩色字格 · ASCII</h2><canvas data-style="cells" data-fill="ascii" aria-label="彩色字格ASCII"></canvas><p>先绘深浅底格，再叠加 ASCII 字符，接近参考截图的构成。</p></article>
-</div><section><h2>巡游与阅读区预览</h2><p>先查看鲸鱼，再开启磨砂阅读区比较。所有数值项都是滑杆：拖动数量、大小和速度会直接更新同一层鲸鱼，不会让鱼群回到起点。输入框毛玻璃会在输入框位置盖一块与阅读区同材质的磨砂玻璃；鱼群避让会把输入框当成障碍绕开。两项互斥，打开一项会自动关掉另一项。实际插件保存设置后生效。</p>
-<div class="controls"><label>渲染样式<select id="renderStyle"><option value="glyphs">纯字符</option><option value="cells" selected>彩色字格</option></select></label><label>填充内容<select id="fillMode"><option value="custom">自定义文字</option><option value="ascii" selected>ASCII</option></select></label><label>鱼身文字<input id="text" type="text" value="探索未至之境" maxlength="40"></label><label>鲸类<select id="species"><option value="mixed">混合鲸群</option><option value="blue">蓝鲸</option><option value="humpback">座头鲸</option><option value="sperm">抹香鲸</option><option value="fin">长须鲸</option><option value="bowhead">弓头鲸</option></select></label><label class="slider">数量<input id="count" type="range" min="1" max="8" step="1" value="3"><output id="countOut" for="count">3</output></label><label class="slider">鲸鱼大小<input id="whaleSize" type="range" min="0.55" max="1.55" step="0.05" value="1"><output id="whaleSizeOut" for="whaleSize">1.00</output></label><label class="slider">速度<input id="speed" type="range" min="0.3" max="2" step="0.05" value="0.65"><output id="speedOut" for="speed">0.65</output></label><label><input id="glass" type="checkbox" checked>磨砂阅读区</label><label><input id="dark" type="checkbox">深色背景</label><label><input id="composerGlass" type="checkbox">输入框毛玻璃</label><label><input id="composerAvoid" type="checkbox">鱼群避让输入框</label><button id="pause" type="button">暂停</button> <span id="status" role="status"></span></div>
-<div class="stage" id="stage" data-conversation-scroll><div class="reading" data-chat-flow><h3>鲸鱼从文字旁经过</h3><p>这是一段用于预览的阅读文字。彩色格子和字符在阅读区边缘一起淡出，玻璃内保留柔和的鲸影。</p><p>自定义文字与 ASCII 可以随时切换，原来的鱼身文字会保留。关闭彩色底格，鲸体恢复为纯字符。</p><p>五种鲸类沿用各自的体型和沉稳的上下摆尾；调整鲸鱼大小只改体长，不改游速与摆尾节奏。</p></div><div class="composer-seat" data-composer-seat><div class="composer-card" data-composer-card>给鲸鱼发一条消息，按 Enter 发送<span class="composer-note">预览用假输入框：座位 [data-composer-seat] 与卡片 [data-composer-card] 的结构和实际 DSH 一致</span></div></div><canvas id="live" aria-label="鲸鱼巡游动态预览"></canvas></div>
+</div><section><h2>巡游与内容框毛玻璃预览</h2><p>先查看鲸鱼，再开内容框毛玻璃比较。所有数值项都是滑杆：拖动数量、大小和速度会直接更新同一层鲸鱼，不会让鱼群回到起点。开启「内容框毛玻璃」后，下面每个消息卡片和输入框都会盖上与主题同材质的磨砂玻璃：框内鲸鱼只以模糊形态透出，文字保持清晰。「鱼群避让输入框」则让鲸鱼把输入框当成障碍绕开。两项互斥，打开一项会自动关掉另一项。实际插件保存设置后生效。</p>
+<div class="controls"><label>渲染样式<select id="renderStyle"><option value="glyphs">纯字符</option><option value="cells" selected>彩色字格</option></select></label><label>填充内容<select id="fillMode"><option value="custom">自定义文字</option><option value="ascii" selected>ASCII</option></select></label><label>鱼身文字<input id="text" type="text" value="探索未至之境" maxlength="40"></label><label>鲸类<select id="species"><option value="mixed">混合鲸群</option><option value="blue">蓝鲸</option><option value="humpback">座头鲸</option><option value="sperm">抹香鲸</option><option value="fin">长须鲸</option><option value="bowhead">弓头鲸</option></select></label><label class="slider">数量<input id="count" type="range" min="1" max="8" step="1" value="3"><output id="countOut" for="count">3</output></label><label class="slider">鲸鱼大小<input id="whaleSize" type="range" min="0.55" max="1.55" step="0.05" value="1"><output id="whaleSizeOut" for="whaleSize">1.00</output></label><label class="slider">速度<input id="speed" type="range" min="0.3" max="2" step="0.05" value="0.65"><output id="speedOut" for="speed">0.65</output></label><label><input id="glass" type="checkbox" checked>内容框毛玻璃</label><label><input id="dark" type="checkbox">深色背景</label><label><input id="composerAvoid" type="checkbox">鱼群避让输入框</label><button id="pause" type="button">暂停</button> <span id="status" role="status"></span></div>
+<div class="stage" id="stage" data-conversation-scroll><div class="flow" data-chat-flow><article class="msg-card msg-card--wide"><h3>鲸鱼从文字旁经过</h3><p>这是一段用于预览的阅读文字。开启内容框毛玻璃后，每个卡片都会盖上一块磨砂玻璃，鲸鱼在框内只以模糊形态透出，正文保持清晰。</p></article><article class="msg-card msg-card--mid"><h3>五种鲸类</h3><p>蓝鲸、座头鲸、抹香鲸、长须鲸、弓头鲸各有自己的头型、胸鳍与尾叶；拖动数量与大小可以对比它们在同一片海里的比例。</p></article><article class="msg-card msg-card--narrow"><h3>鱼群避让输入框</h3><p>另一选项：鲸鱼把输入框当成障碍绕开，不再从框内穿过。与内容框毛玻璃二选一。</p></article></div><div class="composer-seat" data-composer-seat><div class="composer-card" data-composer-card>给鲸鱼发一条消息，按 Enter 发送<span class="composer-note">预览用假输入框：座位 [data-composer-seat] 与卡片 [data-composer-card] 的结构和实际 DSH 一致</span></div></div><canvas id="live" aria-label="鲸鱼巡游动态预览"></canvas></div>
 <p class="hint">使用插件的正式渲染器：控件变化只调用 update()，不重建画布；暂停冻结最后一帧，恢复后从原地继续。系统减少动态效果时显示静态姿态，页面在后台时暂停。</p>
-<p class="hint">鲸鱼大小只改体长：0.55 约半身，1.00 默认，1.55 最大。输入框两项互斥：开“毛玻璃”会关“避让”，反之亦然。独立预览不替代实际 DSH 窗口的最终观感。</p></section><p class="hint">原版字格研究见 ASCII-RENDER-NOTES.md，鲸类图片依据见 WHALE-REFERENCES.md。</p></main>
+<p class="hint">鲸鱼大小只改体长：0.55 约半身，1.00 默认，1.55 最大。内容框毛玻璃与鱼群避让二选一：开一个会自动关掉另一个。独立预览不替代实际 DSH 窗口的最终观感。</p></section><p class="hint">原版字格研究见 ASCII-RENDER-NOTES.md，鲸类图片依据见 WHALE-REFERENCES.md。</p></main>
 <script>
 ${source}
 const el=id=>document.getElementById(id);
@@ -52,7 +54,6 @@ function readConfig(){
     opacity:0.8,
     glass:el('glass').checked,
     quietCenter:false,
-    composerGlass:el('composerGlass').checked,
     composerAvoid:el('composerAvoid').checked,
   };
 }
@@ -61,15 +62,14 @@ function syncDom(config){
   const dark=el('dark').checked;
   document.body.classList.toggle('dark',dark);
   document.body.toggleAttribute('data-ds-dark-theme',dark);
-  el('stage').classList.toggle('glass-demo',config.glass);
   el('text').disabled=el('fillMode').value==='ascii';
   el('countOut').value=String(config.count);
   el('whaleSizeOut').value=twoDigits(config.whaleSize);
   el('speedOut').value=twoDigits(el('speed').value);
   el('pause').textContent=paused?'播放':'暂停';
   el('status').textContent=paused?'已暂停'
-    :config.composerGlass?'输入框毛玻璃开'
     :config.composerAvoid?'鱼群避让开'
+    :config.glass?'内容框毛玻璃开'
     :'上下摆尾与滑行';
 }
 
@@ -86,14 +86,14 @@ function apply(){const config=readConfig();syncDom(config);if(layer)layer.update
 function boot(){layer=createWhaleLayer(el('live'),readConfig());}
 function disposeLayer(){if(layer){layer.dispose();layer=null;}}
 
-const controls=['renderStyle','fillMode','text','species','count','whaleSize','speed','glass'];
+const controls=['renderStyle','fillMode','text','species','count','whaleSize','speed'];
 for(const id of controls){el(id).addEventListener('input',apply);el(id).addEventListener('change',apply);}
 el('whaleSize').addEventListener('input',scheduleSamples);
 el('dark').addEventListener('change',()=>{apply();scheduleSamples();});
 el('pause').addEventListener('click',()=>{paused=!paused;apply();});
-/** The two input-box options are alternatives, exactly like the settings page. */
-const EXCLUSIVE={composerGlass:'composerAvoid',composerAvoid:'composerGlass'};
-for(const id of ['composerGlass','composerAvoid']){
+/** Content glass and input-box avoidance are alternatives, like the settings page. */
+const EXCLUSIVE={glass:'composerAvoid',composerAvoid:'glass'};
+for(const id of ['glass','composerAvoid']){
   el(id).addEventListener('change',()=>{
     const opposite=EXCLUSIVE[id];
     if(opposite&&el(id).checked)el(opposite).checked=false;
@@ -112,9 +112,9 @@ window.__previewTest={
   apply,
   size:value=>{el('whaleSize').value=String(value);apply();drawSamples();},
   layerAlive:()=>Boolean(layer),
-  /** Toggle one input-box option; the other switches off, like the settings page. */
-  composer(which,on){
-    const id=which==='glass'?'composerGlass':'composerAvoid';
+  /** Toggle an option; the exclusive partner switches off, like the settings page. */
+  option(which,on){
+    const id=which==='avoid'?'composerAvoid':'glass';
     el(id).checked=Boolean(on);
     if(on)el(EXCLUSIVE[id]).checked=false;
     apply();
