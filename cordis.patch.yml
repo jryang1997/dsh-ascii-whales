@@ -1,0 +1,4 @@
+- insert:
+    - id: ascii-whale-background
+      name: '@local/dsh-ascii-ocean'
+      config: {}

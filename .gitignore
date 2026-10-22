@@ -1,0 +1,15 @@
+# 依赖
+node_modules/
+
+# 本地验证证据、安装包解包副本与研究资料（不随仓库发布）
+.scratch/
+
+# 第三方参考实现，仅本地用于思路对照
+ascii-sharks-reference/
+
+# 构建产物：安装包通过 Releases 分发
+*.tgz
+
+# 系统文件
+.DS_Store
+Thumbs.db

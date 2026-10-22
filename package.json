@@ -1,0 +1,70 @@
+{
+  "name": "@local/dsh-ascii-ocean",
+  "version": "0.10.0",
+  "private": true,
+  "type": "module",
+  "description": "Five whale species with shaded cells or ASCII fill, frosted panes for the reading column and the input box, optional input-box avoidance, a whale-size slider, and in-place config updates that never restart the school.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "rig.js",
+    "shading.js",
+    "motion.js",
+    "model.js",
+    "surface.js",
+    "surface.test.js",
+    "ASCII-RENDER-NOTES.md",
+    "glass.js",
+    "engine.js",
+    "settings.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "SOURCE-NOTES.md",
+    "build.mjs",
+    "model.test.js",
+    "motion.test.js",
+    "regression.test.js",
+    "rig.test.js",
+    "shading.test.js",
+    "overhead.test.js",
+    "glass.test.js",
+    "update.test.js",
+    "composer.test.js",
+    "species.js",
+    "species.test.js",
+    "WHALE-REFERENCES.md",
+    "preview.mjs",
+    "whale-preview.html"
+  ],
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.5"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test model.test.js motion.test.js regression.test.js rig.test.js shading.test.js overhead.test.js glass.test.js species.test.js surface.test.js update.test.js composer.test.js",
+    "check": "node --check index.js && node --check rig.js && node --check shading.js && node --check motion.js && node --check model.js && node --check glass.js && node --check engine.js && node --check settings.js && node --check client.js && node --check build.mjs && node --check model.test.js && node --check motion.test.js && node --check regression.test.js && node --check rig.test.js && node --check shading.test.js && node --check overhead.test.js && node --check glass.test.js && node --check species.js && node --check species.test.js && node --check preview.mjs && node --check surface.js && node --check surface.test.js && node --check update.test.js && node --check composer.test.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  }
+}
+
