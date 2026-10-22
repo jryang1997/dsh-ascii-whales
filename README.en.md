@@ -6,16 +6,16 @@
 
 <p align="center">Turn your own text into whales that swim across DeepSeek Harness.</p>
 
-<p align="center"><a href="./README.md">��������</a> �� <strong>English</strong></p>
+<p align="center"><a href="./README.md">简体中文</a> · <strong>English</strong></p>
 
 <p align="center">
   <a href="https://github.com/jryang1997/dsh-ascii-whales/releases/latest"><img src="https://img.shields.io/github/v/release/jryang1997/dsh-ascii-whales?style=flat-square&amp;color=658EFF&amp;label=release" alt="Latest release"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/jryang1997/dsh-ascii-whales/releases/latest">Download</a> ��
-  <a href="#install">Install</a> �� <a href="#settings">Settings</a> ��
-  <a href="#local-preview">Local preview</a> �� <a href="./CHANGELOG.md">Changelog</a>
+  <a href="https://github.com/jryang1997/dsh-ascii-whales/releases/latest">Download</a> ·
+  <a href="#install">Install</a> · <a href="#settings">Settings</a> ·
+  <a href="#local-preview">Local preview</a> · <a href="./CHANGELOG.md">Changelog</a>
 </p>
 
 > Inspired by [ascii-sharks](https://github.com/stackedlol/ascii-sharks). Thanks to the project for the original visual idea.
@@ -32,13 +32,13 @@ Five whale species cruise, turn, and glide through the conversation page, seen f
 
 1. Download a `local-dsh-ascii-ocean-*.tgz` package from [Releases](https://github.com/jryang1997/dsh-ascii-whales/releases/latest).
 2. Install the file through the DSH plugin manager.
-3. Open **Plugins �� Glyph whales**, adjust the settings, and select **Save**.
+3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
 The current published package is [v0.10.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.10.0). The features and screenshots below describe that release.
 
 ## Features
 
-- Form whales from Chinese characters, English text, or emoji. Leave the text blank to use the default phrase, `̽��δ��֮��`.
+- Form whales from Chinese characters, English text, or emoji. Leave the text blank to use the default phrase, `探索未至之境`.
 - Choose blue, humpback, sperm, fin, or bowhead whales, or let a mixed group swim together.
 - Draw glyphs alone for a lighter outline, or add colored cells to shade the back, flanks, flippers, and flukes.
 - Adjust the count, body size, speed, opacity, and palette. Body size does not change swimming speed or tail-beat timing.
@@ -85,13 +85,13 @@ Dragging a slider updates the static sample in the settings page. Select **Save*
 
 | Numeric setting | Range | Default |
 | --- | --- | --- |
-| Whale count | 1�C8 | 3 |
-| Swimming speed | 0.3�C2 | 0.65 |
-| Background opacity | 0.04�C0.9 | 0.6 |
-| Character size | 4�C16 | 11 |
-| Whale size | 0.55�C1.55 | 1 |
-| Glass strength | 0�C1 | 0.55 |
-| Browser left inset | 0�C500 px | 280 px |
+| Whale count | 1–8 | 3 |
+| Swimming speed | 0.3–2 | 0.65 |
+| Background opacity | 0.04–0.9 | 0.6 |
+| Character size | 4–16 | 11 |
+| Whale size | 0.55–1.55 | 1 |
+| Glass strength | 0–1 | 0.55 |
+| Browser left inset | 0–500 px | 280 px |
 
 | Style setting | Choices |
 | --- | --- |
