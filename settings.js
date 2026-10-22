@@ -1,6 +1,12 @@
 import { FIELDS, DEFAULTS, normalizeConfig, configSignature } from './model.js';
 import { createWhaleLayer } from './engine.js';
-import { drawWhaleSample } from './surface.js';
+
+/** The preview always shows the school, whatever the saved switches say. */
+function previewConfigOf(draft) {
+  // quietCenter:false matches the static sample's convention (surface.js): the
+  // preview is small, so fading its centre would hide exactly what is on trial.
+  return normalizeConfig({ ...draft, enabled: true, quietCenter: false });
+}
 
 /** Slider readouts follow the field's own step: whole-number fields show integers. */
 function readout(field, value) {
@@ -61,43 +67,44 @@ export function registerWhales(ctx, React, dictionaries) {
   }
 
   /**
-   * A static sample of the draft. Drag events arrive faster than the renderer
-   * needs them, so redraws are coalesced into one animation frame and that frame
-   * reads the latest draft; the theme observer keeps the sample in step with
-   * DSH switching between light and dark.
+   * The live twin of the background: one layer, mounted once, that keeps
+   * swimming on its own while the draft changes around it.
+   *
+   * Drag events arrive faster than the renderer needs them, and a scene-key
+   * change rebuilds the school, so draft updates are coalesced into one
+   * animation frame which then reads the latest draft. The injected demo card
+   * stands in for a DSH content card: the settings page has no conversation DOM
+   * to measure, yet the glass and avoidance options need a card to act on.
    */
-  function StylePreview({ draft }) {
+  function LivePreview({ draft }) {
     const ref = React.useRef(null);
     const latest = React.useRef(draft);
+    const layer = React.useRef(null);
     const frame = React.useRef(0);
-    const draw = React.useCallback(() => {
-      frame.current = 0;
-      const canvas = ref.current;
-      if (!canvas) return;
-      drawWhaleSample(canvas, normalizeConfig(latest.current), {
-        ratio: Math.min(2, window.devicePixelRatio || 1),
-        dark: document.body.hasAttribute('data-ds-dark-theme'),
-      });
-    }, []);
-    const schedule = React.useCallback(() => {
-      if (!frame.current) frame.current = requestAnimationFrame(draw);
-    }, [draw]);
-    React.useEffect(() => { latest.current = draft; schedule(); }, [draft, schedule]);
     React.useEffect(() => {
-      const observer = new ResizeObserver(schedule);
-      const themeObserver = new MutationObserver(schedule);
-      observer.observe(ref.current);
-      themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
-      schedule();
+      const instance = createWhaleLayer(ref.current, previewConfigOf(latest.current), {
+        demoCard: { x: 0.1, y: 0.52, width: 0.8, height: 0.2, radius: 14 },
+      });
+      layer.current = instance;
       return () => {
-        observer.disconnect();
-        themeObserver.disconnect();
         if (frame.current) cancelAnimationFrame(frame.current);
         frame.current = 0;
+        instance.dispose();
+        layer.current = null;
       };
-    }, [schedule]);
-    return h('div', { className: 'aw-style-preview' },
-      h('canvas', { ref, role: 'img', 'aria-label': t('stylePreview') }),
+      // Mount-only on purpose: this effect owns the canvas, not the draft.
+    }, []);
+    const apply = React.useCallback(() => {
+      frame.current = 0;
+      layer.current?.update(previewConfigOf(latest.current));
+    }, []);
+    const schedule = React.useCallback(() => {
+      if (!frame.current) frame.current = requestAnimationFrame(apply);
+    }, [apply]);
+    React.useEffect(() => { latest.current = draft; schedule(); }, [draft, schedule]);
+    return h('aside', { className: 'aw-preview' },
+      h('div', { className: 'aw-preview-card' },
+        h('canvas', { ref, role: 'img', 'aria-label': t('stylePreview') })),
       h('p', null, t('stylePreviewNote')));
   }
 
@@ -180,66 +187,71 @@ export function registerWhales(ctx, React, dictionaries) {
       finally { setSaving(false); }
     }
     function discard() { setEditor(editorFrom(form.getSnapshot())); setNotice(''); }
+    // Two columns: the sticky live preview on the left, the scrolling fields on
+    // the right. The whole fields column (read-only notice, rows, actions and
+    // the save notice) moves as one block; only the preview stays put.
     return h('form', { className: 'aw-settings', onSubmit: save },
       h('style', null, SETTINGS_CSS),
       h('h2', null, t('title')),
       h('p', { className: 'aw-purpose' }, t('purpose')),
-      h(StylePreview, { draft: editor.draft }),
-      !snapshot.writable && h('p', { role: 'status' }, t('readOnly')),
-      // Hidden fields stay in FIELDS for Host schema compatibility (an old profile
-      // may still carry composerGlass) but must not render a row of their own.
-      ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
-        const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
-        const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii');
-        const common = { id, disabled: off, 'aria-describedby': hint };
-        let control;
-        if (field.kind === 'boolean') {
-          control = h('button', {
-            ...common, type: 'button', role: 'switch', 'aria-checked': value, 'aria-label': t(key),
-            className: 'aw-switch', onClick: () => update(key, !value),
-          }, h('span', { className: 'aw-switch-knob' }));
-        } else if (field.kind === 'enum') {
-          // Segmented slider: one native range over the option indexes, with the
-          // option names under the track. A native range keeps arrow keys, Home,
-          // End and screen-reader semantics without any custom key handling.
-          const index = optionIndex(field, value), current = field.values[index];
-          const last = field.values.length - 1;
-          control = h('div', { className: 'aw-control aw-segments', style: { '--aw-stops': String(field.values.length) } },
-            h('input', {
-              ...common, type: 'range', className: 'aw-slider', min: 0, max: last, step: 1, value: index,
-              'aria-valuetext': t(current), style: { '--aw-pct': trackFill(last ? index / last : 0) },
-              onChange: event => update(key, field.values[Number(event.target.value)] ?? current),
-            }),
-            h('div', { className: 'aw-ticks' }, ...field.values.map((option, position) => h('button', {
-              key: option, type: 'button', disabled: off, className: 'aw-tick', tabIndex: -1,
-              'aria-pressed': position === index, onClick: () => update(key, option),
-            }, t(option)))));
-        } else if (field.kind === 'string') {
-          control = h('input', {
-            ...common, className: 'aw-text', type: 'text', value, maxLength: field.max,
-            onChange: event => update(key, event.target.value),
-          });
-        } else {
-          const number = value === '' || !Number.isFinite(Number(value)) ? field.default : Number(value);
-          control = h('div', { className: 'aw-control aw-number' },
-            h('div', { className: 'aw-number-head' },
-              h('output', { htmlFor: id, className: 'aw-readout' }, readout(field, value))),
-            h('input', {
-              ...common, type: 'range', className: 'aw-slider', min: field.min, max: field.max, step: field.step,
-              value: number, style: { '--aw-pct': trackFill((number - field.min) / (field.max - field.min || 1)) },
-              onChange: event => update(key, Number(event.target.value)),
-            }),
-            h('div', { className: 'aw-scale', 'aria-hidden': 'true' },
-              h('span', null, readout(field, field.min)), h('span', null, readout(field, field.max))));
-        }
-        return h('div', { className: 'aw-row', key },
-          h('div', { className: 'aw-copy' }, h('label', { htmlFor: id }, t(key)), h('p', { id: hint }, t(`${key}Hint`))), control);
-      }),
-      h('div', { className: 'aw-actions' },
-        h('button', { type: 'submit', disabled: disabled || !dirty, className: 'aw-save' }, t(saving ? 'saving' : 'save')),
-        h('button', { type: 'button', disabled, onClick: () => { setEditor(e => ({ ...e, draft: { ...DEFAULTS } })); setNotice(''); } }, t('reset')),
-        h('button', { type: 'button', disabled: saving, onClick: discard }, t('discard'))),
-      notice && h('p', { role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice)));
+      h('div', { className: 'aw-layout' },
+        h(LivePreview, { draft: editor.draft }),
+        h('div', { className: 'aw-fields' },
+          !snapshot.writable && h('p', { role: 'status' }, t('readOnly')),
+          // Hidden fields stay in FIELDS for Host schema compatibility (an old profile
+          // may still carry composerGlass) but must not render a row of their own.
+          ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
+            const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
+            const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii');
+            const common = { id, disabled: off, 'aria-describedby': hint };
+            let control;
+            if (field.kind === 'boolean') {
+              control = h('button', {
+                ...common, type: 'button', role: 'switch', 'aria-checked': value, 'aria-label': t(key),
+                className: 'aw-switch', onClick: () => update(key, !value),
+              }, h('span', { className: 'aw-switch-knob' }));
+            } else if (field.kind === 'enum') {
+              // Segmented slider: one native range over the option indexes, with the
+              // option names under the track. A native range keeps arrow keys, Home,
+              // End and screen-reader semantics without any custom key handling.
+              const index = optionIndex(field, value), current = field.values[index];
+              const last = field.values.length - 1;
+              control = h('div', { className: 'aw-control aw-segments', style: { '--aw-stops': String(field.values.length) } },
+                h('input', {
+                  ...common, type: 'range', className: 'aw-slider', min: 0, max: last, step: 1, value: index,
+                  'aria-valuetext': t(current), style: { '--aw-pct': trackFill(last ? index / last : 0) },
+                  onChange: event => update(key, field.values[Number(event.target.value)] ?? current),
+                }),
+                h('div', { className: 'aw-ticks' }, ...field.values.map((option, position) => h('button', {
+                  key: option, type: 'button', disabled: off, className: 'aw-tick', tabIndex: -1,
+                  'aria-pressed': position === index, onClick: () => update(key, option),
+                }, t(option)))));
+            } else if (field.kind === 'string') {
+              control = h('input', {
+                ...common, className: 'aw-text', type: 'text', value, maxLength: field.max,
+                onChange: event => update(key, event.target.value),
+              });
+            } else {
+              const number = value === '' || !Number.isFinite(Number(value)) ? field.default : Number(value);
+              control = h('div', { className: 'aw-control aw-number' },
+                h('div', { className: 'aw-number-head' },
+                  h('output', { htmlFor: id, className: 'aw-readout' }, readout(field, value))),
+                h('input', {
+                  ...common, type: 'range', className: 'aw-slider', min: field.min, max: field.max, step: field.step,
+                  value: number, style: { '--aw-pct': trackFill((number - field.min) / (field.max - field.min || 1)) },
+                  onChange: event => update(key, Number(event.target.value)),
+                }),
+                h('div', { className: 'aw-scale', 'aria-hidden': 'true' },
+                  h('span', null, readout(field, field.min)), h('span', null, readout(field, field.max))));
+            }
+            return h('div', { className: 'aw-row', key },
+              h('div', { className: 'aw-copy' }, h('label', { htmlFor: id }, t(key)), h('p', { id: hint }, t(`${key}Hint`))), control);
+          }),
+          h('div', { className: 'aw-actions' },
+            h('button', { type: 'submit', disabled: disabled || !dirty, className: 'aw-save' }, t(saving ? 'saving' : 'save')),
+            h('button', { type: 'button', disabled, onClick: () => { setEditor(e => ({ ...e, draft: { ...DEFAULTS } })); setNotice(''); } }, t('reset')),
+            h('button', { type: 'button', disabled: saving, onClick: discard }, t('discard'))),
+          notice && h('p', { role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice)))));
   }
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
@@ -251,12 +263,20 @@ export function registerWhales(ctx, React, dictionaries) {
 }
 
 const SETTINGS_CSS = `
-.aw-settings{color:var(--dsw-alias-label-primary);font:inherit;max-width:760px;padding:4px 0 24px}
+.aw-settings{color:var(--dsw-alias-label-primary);font:inherit;max-width:1060px;padding:4px 0 24px}
 .aw-settings h2{font-size:18px;font-weight:600;margin:0 0 8px}
 .aw-settings .aw-purpose{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 20px}
-.aw-settings .aw-style-preview{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;margin:0 0 8px;background:var(--dsw-alias-bg-layer-1)}
-.aw-settings .aw-style-preview canvas{display:block;width:100%;height:220px}
-.aw-settings .aw-style-preview p{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:0;padding:0 14px 12px}
+/* Two columns: a live preview that stays in view while the fields scroll. The
+   host plugin page is the scroll container and none of the ancestors between it
+   and this form clips, so sticky works. align-items:flex-start is load-bearing:
+   a stretched aside would fill the whole row and sticky would have nowhere to
+   travel inside its own column. */
+.aw-settings .aw-layout{display:flex;gap:24px;align-items:flex-start}
+.aw-settings .aw-preview{position:sticky;top:16px;flex:0 0 340px}
+.aw-settings .aw-preview-card{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;margin:0 0 8px;background:var(--dsw-alias-bg-layer-1)}
+.aw-settings .aw-preview-card canvas{display:block;width:100%;height:min(56vh,520px)}
+.aw-settings .aw-preview p{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:0}
+.aw-settings .aw-fields{flex:1 1 420px;min-width:0}
 .aw-settings .aw-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;padding:14px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .aw-settings .aw-copy{min-width:0;flex:1 1 200px}
 .aw-settings label{font-weight:500}
@@ -297,6 +317,13 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
 .aw-settings input[type=range]:active::-webkit-slider-thumb{transform:scale(1.08)}
 .aw-settings .aw-switch-knob{transition:transform .14s ease,background .14s ease}
 .aw-settings .aw-tick{transition:color .12s ease,background .12s ease}
+}
+/* Narrow screens collapse to one column: the preview scrolls with the page and
+   gives most of the height back to the fields. */
+@media(max-width:820px){
+.aw-settings .aw-layout{display:block}
+.aw-settings .aw-preview{position:static;flex:none}
+.aw-settings .aw-preview-card canvas{height:240px}
 }
 @media(max-width:540px){
 .aw-settings .aw-row{gap:8px 12px;align-items:flex-start}

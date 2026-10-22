@@ -1761,10 +1761,16 @@ function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
     // Tail: wait until after the lift. Nose: wait until the ascent starts.
     // The height then comes from the very same rig, gait and curve as the mesh.
     if (elapsed >= (isTail ? dive.entry * 0.46 : dive.entry + dive.under)) {
-      const contactPose = writeWhaleRigPose(whale, { wave: state.wave, turn: whale.turn,
-        submergence: state.submergence, divePitch: state.pitch, diveDepth: state.depth,
-        diveKick: state.tailKick, diveArch: state.arch });
-      const point = isTail ? motionDiveTailContact : motionDiveNoseContact;
+      const contactPose = motionDiveContactPose;
+      contactPose.wave = state.wave;
+      contactPose.turn = whale.turn;
+      contactPose.submergence = state.submergence;
+      contactPose.divePitch = state.pitch;
+      contactPose.diveDepth = state.depth;
+      contactPose.diveKick = state.tailKick;
+      contactPose.diveArch = state.arch;
+      writeWhaleRigPose(whale, contactPose);
+      const point = isTail ? DIVE_TAIL_CONTACT : DIVE_NOSE_CONTACT;
       const height = deformWhaleParticle(point, contactPose, motionDiveContactOut).y;
       if (isTail ? height >= DIVE_WATERLINE : height <= DIVE_WATERLINE) {
         dive.splashSerial++;
@@ -1778,10 +1784,11 @@ function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
 
 // Reused probes and output avoid allocating a particle per tick. Contact state
 // stays primitive so adopting a scene can keep its existing independent clone.
-const motionDiveTailContact = Object.freeze({ x: -1.05, y: 0.01, z: 0,
+const DIVE_TAIL_CONTACT = Object.freeze({ x: -1.05, y: 0.01, z: 0,
   nx: 0, ny: -1, nz: 0, part: 'fluke' });
-const motionDiveNoseContact = Object.freeze({ x: 1.04, y: -0.08, z: 0,
+const DIVE_NOSE_CONTACT = Object.freeze({ x: 1.04, y: -0.08, z: 0,
   nx: 0, ny: -1, nz: 0, part: 'body' });
+const motionDiveContactPose = {};
 const motionDiveContactOut = {};
 
 function motionEnsureDive(state) {
@@ -3030,6 +3037,16 @@ const CONTENT_MAX_AREA_RATIO = 0.55;
 const CONTENT_MAX_HEIGHT_RATIO = 0.9;
 const CONTENT_MIN_ALPHA = 0.9;
 
+// The injected demo card (settings preview): one near-opaque rounded body plus
+// grey text lines, standing in for a DSH content card that the preview canvas
+// has no DOM hook for. Two theme variants, like the material below.
+const DEMO_CARD_BODY_DARK = 'rgba(24, 26, 31, 0.96)';
+const DEMO_CARD_BODY_LIGHT = 'rgba(252, 253, 254, 0.96)';
+const DEMO_LINE_DARK = 'rgba(203, 217, 231, 0.34)';
+const DEMO_LINE_LIGHT = 'rgba(45, 66, 88, 0.32)';
+const DEMO_LINE_INSET = 14;
+const DEMO_LINE_HEIGHT = 7;
+
 
 // Which option belongs to which kind of work. A group only rebuilds its own
 // part; `live` options are read straight from the config while painting, so
@@ -3214,10 +3231,17 @@ function normalizeLayerConfig(value) {
  * painter and the draw loop read the new opacity/speed straight away instead of
  * being rebuilt.
  */
-function createWhaleLayer(canvas, initialConfig) {
+function createWhaleLayer(canvas, initialConfig, options = {}) {
   const ink = canvas.getContext('2d');
   if (!ink) return { update() {}, dispose() {} };
   const config = normalizeLayerConfig(initialConfig);
+  // Optional preview injection: `demoCard` places one card by canvas ratios
+  // (0..1) with a pixel radius. With it, measure() never reads the DOM — the
+  // settings preview has no conversation hooks to find, yet the glass and
+  // avoidance options still need a card to act on. Without it every path below
+  // is byte-for-byte the default one; Overlay and the standalone preview never
+  // pass a third argument.
+  const demo = options.demoCard || null;
   const scenerySeed = Math.floor(Math.random() * 0x100000000) >>> 0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
@@ -3363,6 +3387,46 @@ function createWhaleLayer(canvas, initialConfig) {
     setSceneObstacles(scene, obstacles);
   }
 
+  /** The demo card as a pixel rectangle for the current canvas size. */
+  function demoCardRect() {
+    if (!demo || !width || !height) return null;
+    const left = demo.x * width, top = demo.y * height;
+    const cardWidth = demo.width * width, cardHeight = demo.height * height;
+    if (!(cardWidth >= 1) || !(cardHeight >= 1)) return null;
+    return { left, top, width: cardWidth, height: cardHeight,
+      radius: Number.isFinite(demo.radius) ? demo.radius : 0 };
+  }
+
+  /**
+   * Preview measurement: the injected ratios replace every DOM read. The card
+   * is both the one glass pane and the avoidance target, so those two options
+   * show their real effect inside the settings preview; with both off the sea
+   * is simply open water and nothing is painted for the card. Resizes need no
+   * extra bookkeeping: every resize invalidates the measurement, and the ratios
+   * are re-applied to the new canvas size.
+   */
+  function measureDemoCard() {
+    const card = demoCardRect();
+    if (card && config.glass) {
+      panes = glassContentPanes({ canvas: { left: 0, top: 0, width, height }, boxes: [card], max: 1 });
+      tone = glassContentTone(config.glassStrength,
+        { dark: document.body.hasAttribute('data-ds-dark-theme'), reducedTransparency: reducedTransparency.matches });
+    }
+    if (card && config.composerAvoid) {
+      // Same shapes as the real composer: the margin obstacle steers the
+      // school, and the 8px rectangle guarantees no ink on the card even from
+      // a transiently bent fluke.
+      composerCard = { card, canvas: { left: 0, top: 0, width, height } };
+      const left = Math.max(0, card.left - 8);
+      const top = Math.max(0, card.top - 8);
+      const right = Math.min(width, card.left + card.width + 8);
+      const bottom = Math.min(height, card.top + card.height + 8);
+      avoidRect = right - left > 0 && bottom - top > 0
+        ? { x: left, y: top, width: right - left, height: bottom - top } : null;
+    }
+    applySceneObstacles();
+  }
+
   /**
    * Re-read the conversation geometry: one box list for the content glass, plus
    * the input card for avoidance.
@@ -3378,6 +3442,7 @@ function createWhaleLayer(canvas, initialConfig) {
     composerCard = null;
     avoidRect = null;
     if (!width || !height || !scene || disposed) return;
+    if (demo) { measureDemoCard(); return; }
     if (!config.glass && !config.composerAvoid) {
       applySceneObstacles();
       return;
@@ -3421,7 +3486,6 @@ function createWhaleLayer(canvas, initialConfig) {
     resolveDepthGrid(projected, grid, scene.triangles, scene.decals);
     // Reduced transparency withholds the material, not the readability work: the
     // panes still hold the glyphs out, they just paint no glass over the words.
-    const frosted = Boolean(tone) && tone.mode === 'frost';
     const visiblePanes = tone ? panes : [];
     const openWater = !visiblePanes.length && !avoidRect;
     const featherOf = pane => pane.feather ?? (tone ? tone.feather : 10) ?? 10;
@@ -3443,12 +3507,21 @@ function createWhaleLayer(canvas, initialConfig) {
     if (config.ripples) drawWater(ink, water, scenery);
     paintGlyphs(ink, fade);
     spout.paint(ink, fade);
-    if (openWater || !frosted || !visiblePanes.length) return;
-    if (!seaBuffers(tone)) return;
-    paintBlurredSea(tone);
-    // One shared sea image for every pane, then the cheap per-pane surface work.
-    paintPaneSeaUnion(visiblePanes, tone);
-    for (const pane of visiblePanes) paintPaneSurface(pane, tone);
+    // The demo card is the preview's stand-in for a DSH card: whale ink is
+    // already held out of it by the fade above, the card body covers the open
+    // sea, the ordinary glass pipeline stacks on the body, and the text lines
+    // stay crisp on top — the same composite the real overlay produces over
+    // the DOM. Avoidance mode skips the material and keeps body plus lines.
+    if (demo && (config.glass || config.composerAvoid)) {
+      const card = demoCardRect();
+      if (card) {
+        paintDemoCardBody(card);
+        paintGlassMaterial();
+        paintDemoCardText(card);
+      }
+      return;
+    }
+    paintGlassMaterial();
   }
 
   /**
@@ -3514,6 +3587,51 @@ function createWhaleLayer(canvas, initialConfig) {
     ink.fillStyle = shade;
     ink.fillRect(panel.x, panel.y + panel.height - material.shadeHeight, panel.width, material.shadeHeight);
     ink.restore();
+  }
+
+  /**
+   * The whole glass pipeline behind one guard: nothing to paint unless the
+   * material is frost and there is a pane. This is the exact condition the draw
+   * tail used to test inline (open water / clear mode / no pane), so the default
+   * path paints the same calls in the same order as before; the demo card reuses
+   * it between its card body and its text lines.
+   */
+  function paintGlassMaterial() {
+    if (!tone || tone.mode !== 'frost' || !panes.length) return;
+    if (!seaBuffers(tone)) return;
+    paintBlurredSea(tone);
+    // One shared sea image for every pane, then the cheap per-pane surface work.
+    paintPaneSeaUnion(panes, tone);
+    for (const pane of panes) paintPaneSurface(pane, tone);
+  }
+
+  /** The demo card's own body: one near-opaque rounded fill under the glass. */
+  function paintDemoCardBody(card) {
+    glassRoundedPath(ink, { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius });
+    ink.fillStyle = document.body.hasAttribute('data-ds-dark-theme') ? DEMO_CARD_BODY_DARK : DEMO_CARD_BODY_LIGHT;
+    ink.fill();
+  }
+
+  /**
+   * Four grey text lines, the last one 70% wide — the "text stays crisp" half
+   * of the demo. A card too short for four lines (the narrow-screen preview)
+   * draws as many as fit instead of overlapping them.
+   */
+  function paintDemoCardText(card) {
+    const inner = Math.max(0, card.height - DEMO_LINE_INSET * 2);
+    const count = Math.min(4, Math.floor(inner / DEMO_LINE_HEIGHT));
+    if (count < 1 || !(card.width > DEMO_LINE_INSET * 2 + 2)) return;
+    const step = count > 1 ? (inner - DEMO_LINE_HEIGHT) / (count - 1) : 0;
+    ink.fillStyle = document.body.hasAttribute('data-ds-dark-theme') ? DEMO_LINE_DARK : DEMO_LINE_LIGHT;
+    for (let line = 0; line < count; line++) {
+      const width = (card.width - DEMO_LINE_INSET * 2) * (line === count - 1 ? 0.7 : 1);
+      glassRoundedPath(ink, {
+        x: card.left + DEMO_LINE_INSET,
+        y: card.top + DEMO_LINE_INSET + step * line,
+        width, height: DEMO_LINE_HEIGHT, radius: DEMO_LINE_HEIGHT / 2,
+      });
+      ink.fill();
+    }
   }
 
   function frame(now) {
@@ -3683,6 +3801,13 @@ function mountWhales(canvas, config) {
 }
 
 
+/** The preview always shows the school, whatever the saved switches say. */
+function previewConfigOf(draft) {
+  // quietCenter:false matches the static sample's convention (surface.js): the
+  // preview is small, so fading its centre would hide exactly what is on trial.
+  return normalizeConfig({ ...draft, enabled: true, quietCenter: false });
+}
+
 /** Slider readouts follow the field's own step: whole-number fields show integers. */
 function readout(field, value) {
   const number = typeof value === 'number' ? value : Number(value);
@@ -3742,43 +3867,44 @@ function registerWhales(ctx, React, dictionaries) {
   }
 
   /**
-   * A static sample of the draft. Drag events arrive faster than the renderer
-   * needs them, so redraws are coalesced into one animation frame and that frame
-   * reads the latest draft; the theme observer keeps the sample in step with
-   * DSH switching between light and dark.
+   * The live twin of the background: one layer, mounted once, that keeps
+   * swimming on its own while the draft changes around it.
+   *
+   * Drag events arrive faster than the renderer needs them, and a scene-key
+   * change rebuilds the school, so draft updates are coalesced into one
+   * animation frame which then reads the latest draft. The injected demo card
+   * stands in for a DSH content card: the settings page has no conversation DOM
+   * to measure, yet the glass and avoidance options need a card to act on.
    */
-  function StylePreview({ draft }) {
+  function LivePreview({ draft }) {
     const ref = React.useRef(null);
     const latest = React.useRef(draft);
+    const layer = React.useRef(null);
     const frame = React.useRef(0);
-    const draw = React.useCallback(() => {
-      frame.current = 0;
-      const canvas = ref.current;
-      if (!canvas) return;
-      drawWhaleSample(canvas, normalizeConfig(latest.current), {
-        ratio: Math.min(2, window.devicePixelRatio || 1),
-        dark: document.body.hasAttribute('data-ds-dark-theme'),
-      });
-    }, []);
-    const schedule = React.useCallback(() => {
-      if (!frame.current) frame.current = requestAnimationFrame(draw);
-    }, [draw]);
-    React.useEffect(() => { latest.current = draft; schedule(); }, [draft, schedule]);
     React.useEffect(() => {
-      const observer = new ResizeObserver(schedule);
-      const themeObserver = new MutationObserver(schedule);
-      observer.observe(ref.current);
-      themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
-      schedule();
+      const instance = createWhaleLayer(ref.current, previewConfigOf(latest.current), {
+        demoCard: { x: 0.1, y: 0.52, width: 0.8, height: 0.2, radius: 14 },
+      });
+      layer.current = instance;
       return () => {
-        observer.disconnect();
-        themeObserver.disconnect();
         if (frame.current) cancelAnimationFrame(frame.current);
         frame.current = 0;
+        instance.dispose();
+        layer.current = null;
       };
-    }, [schedule]);
-    return h('div', { className: 'aw-style-preview' },
-      h('canvas', { ref, role: 'img', 'aria-label': t('stylePreview') }),
+      // Mount-only on purpose: this effect owns the canvas, not the draft.
+    }, []);
+    const apply = React.useCallback(() => {
+      frame.current = 0;
+      layer.current?.update(previewConfigOf(latest.current));
+    }, []);
+    const schedule = React.useCallback(() => {
+      if (!frame.current) frame.current = requestAnimationFrame(apply);
+    }, [apply]);
+    React.useEffect(() => { latest.current = draft; schedule(); }, [draft, schedule]);
+    return h('aside', { className: 'aw-preview' },
+      h('div', { className: 'aw-preview-card' },
+        h('canvas', { ref, role: 'img', 'aria-label': t('stylePreview') })),
       h('p', null, t('stylePreviewNote')));
   }
 
@@ -3861,66 +3987,71 @@ function registerWhales(ctx, React, dictionaries) {
       finally { setSaving(false); }
     }
     function discard() { setEditor(editorFrom(form.getSnapshot())); setNotice(''); }
+    // Two columns: the sticky live preview on the left, the scrolling fields on
+    // the right. The whole fields column (read-only notice, rows, actions and
+    // the save notice) moves as one block; only the preview stays put.
     return h('form', { className: 'aw-settings', onSubmit: save },
       h('style', null, SETTINGS_CSS),
       h('h2', null, t('title')),
       h('p', { className: 'aw-purpose' }, t('purpose')),
-      h(StylePreview, { draft: editor.draft }),
-      !snapshot.writable && h('p', { role: 'status' }, t('readOnly')),
-      // Hidden fields stay in FIELDS for Host schema compatibility (an old profile
-      // may still carry composerGlass) but must not render a row of their own.
-      ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
-        const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
-        const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii');
-        const common = { id, disabled: off, 'aria-describedby': hint };
-        let control;
-        if (field.kind === 'boolean') {
-          control = h('button', {
-            ...common, type: 'button', role: 'switch', 'aria-checked': value, 'aria-label': t(key),
-            className: 'aw-switch', onClick: () => update(key, !value),
-          }, h('span', { className: 'aw-switch-knob' }));
-        } else if (field.kind === 'enum') {
-          // Segmented slider: one native range over the option indexes, with the
-          // option names under the track. A native range keeps arrow keys, Home,
-          // End and screen-reader semantics without any custom key handling.
-          const index = optionIndex(field, value), current = field.values[index];
-          const last = field.values.length - 1;
-          control = h('div', { className: 'aw-control aw-segments', style: { '--aw-stops': String(field.values.length) } },
-            h('input', {
-              ...common, type: 'range', className: 'aw-slider', min: 0, max: last, step: 1, value: index,
-              'aria-valuetext': t(current), style: { '--aw-pct': trackFill(last ? index / last : 0) },
-              onChange: event => update(key, field.values[Number(event.target.value)] ?? current),
-            }),
-            h('div', { className: 'aw-ticks' }, ...field.values.map((option, position) => h('button', {
-              key: option, type: 'button', disabled: off, className: 'aw-tick', tabIndex: -1,
-              'aria-pressed': position === index, onClick: () => update(key, option),
-            }, t(option)))));
-        } else if (field.kind === 'string') {
-          control = h('input', {
-            ...common, className: 'aw-text', type: 'text', value, maxLength: field.max,
-            onChange: event => update(key, event.target.value),
-          });
-        } else {
-          const number = value === '' || !Number.isFinite(Number(value)) ? field.default : Number(value);
-          control = h('div', { className: 'aw-control aw-number' },
-            h('div', { className: 'aw-number-head' },
-              h('output', { htmlFor: id, className: 'aw-readout' }, readout(field, value))),
-            h('input', {
-              ...common, type: 'range', className: 'aw-slider', min: field.min, max: field.max, step: field.step,
-              value: number, style: { '--aw-pct': trackFill((number - field.min) / (field.max - field.min || 1)) },
-              onChange: event => update(key, Number(event.target.value)),
-            }),
-            h('div', { className: 'aw-scale', 'aria-hidden': 'true' },
-              h('span', null, readout(field, field.min)), h('span', null, readout(field, field.max))));
-        }
-        return h('div', { className: 'aw-row', key },
-          h('div', { className: 'aw-copy' }, h('label', { htmlFor: id }, t(key)), h('p', { id: hint }, t(`${key}Hint`))), control);
-      }),
-      h('div', { className: 'aw-actions' },
-        h('button', { type: 'submit', disabled: disabled || !dirty, className: 'aw-save' }, t(saving ? 'saving' : 'save')),
-        h('button', { type: 'button', disabled, onClick: () => { setEditor(e => ({ ...e, draft: { ...DEFAULTS } })); setNotice(''); } }, t('reset')),
-        h('button', { type: 'button', disabled: saving, onClick: discard }, t('discard'))),
-      notice && h('p', { role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice)));
+      h('div', { className: 'aw-layout' },
+        h(LivePreview, { draft: editor.draft }),
+        h('div', { className: 'aw-fields' },
+          !snapshot.writable && h('p', { role: 'status' }, t('readOnly')),
+          // Hidden fields stay in FIELDS for Host schema compatibility (an old profile
+          // may still carry composerGlass) but must not render a row of their own.
+          ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
+            const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
+            const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii');
+            const common = { id, disabled: off, 'aria-describedby': hint };
+            let control;
+            if (field.kind === 'boolean') {
+              control = h('button', {
+                ...common, type: 'button', role: 'switch', 'aria-checked': value, 'aria-label': t(key),
+                className: 'aw-switch', onClick: () => update(key, !value),
+              }, h('span', { className: 'aw-switch-knob' }));
+            } else if (field.kind === 'enum') {
+              // Segmented slider: one native range over the option indexes, with the
+              // option names under the track. A native range keeps arrow keys, Home,
+              // End and screen-reader semantics without any custom key handling.
+              const index = optionIndex(field, value), current = field.values[index];
+              const last = field.values.length - 1;
+              control = h('div', { className: 'aw-control aw-segments', style: { '--aw-stops': String(field.values.length) } },
+                h('input', {
+                  ...common, type: 'range', className: 'aw-slider', min: 0, max: last, step: 1, value: index,
+                  'aria-valuetext': t(current), style: { '--aw-pct': trackFill(last ? index / last : 0) },
+                  onChange: event => update(key, field.values[Number(event.target.value)] ?? current),
+                }),
+                h('div', { className: 'aw-ticks' }, ...field.values.map((option, position) => h('button', {
+                  key: option, type: 'button', disabled: off, className: 'aw-tick', tabIndex: -1,
+                  'aria-pressed': position === index, onClick: () => update(key, option),
+                }, t(option)))));
+            } else if (field.kind === 'string') {
+              control = h('input', {
+                ...common, className: 'aw-text', type: 'text', value, maxLength: field.max,
+                onChange: event => update(key, event.target.value),
+              });
+            } else {
+              const number = value === '' || !Number.isFinite(Number(value)) ? field.default : Number(value);
+              control = h('div', { className: 'aw-control aw-number' },
+                h('div', { className: 'aw-number-head' },
+                  h('output', { htmlFor: id, className: 'aw-readout' }, readout(field, value))),
+                h('input', {
+                  ...common, type: 'range', className: 'aw-slider', min: field.min, max: field.max, step: field.step,
+                  value: number, style: { '--aw-pct': trackFill((number - field.min) / (field.max - field.min || 1)) },
+                  onChange: event => update(key, Number(event.target.value)),
+                }),
+                h('div', { className: 'aw-scale', 'aria-hidden': 'true' },
+                  h('span', null, readout(field, field.min)), h('span', null, readout(field, field.max))));
+            }
+            return h('div', { className: 'aw-row', key },
+              h('div', { className: 'aw-copy' }, h('label', { htmlFor: id }, t(key)), h('p', { id: hint }, t(`${key}Hint`))), control);
+          }),
+          h('div', { className: 'aw-actions' },
+            h('button', { type: 'submit', disabled: disabled || !dirty, className: 'aw-save' }, t(saving ? 'saving' : 'save')),
+            h('button', { type: 'button', disabled, onClick: () => { setEditor(e => ({ ...e, draft: { ...DEFAULTS } })); setNotice(''); } }, t('reset')),
+            h('button', { type: 'button', disabled: saving, onClick: discard }, t('discard'))),
+          notice && h('p', { role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice)))));
   }
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
@@ -3932,12 +4063,20 @@ function registerWhales(ctx, React, dictionaries) {
 }
 
 const SETTINGS_CSS = `
-.aw-settings{color:var(--dsw-alias-label-primary);font:inherit;max-width:760px;padding:4px 0 24px}
+.aw-settings{color:var(--dsw-alias-label-primary);font:inherit;max-width:1060px;padding:4px 0 24px}
 .aw-settings h2{font-size:18px;font-weight:600;margin:0 0 8px}
 .aw-settings .aw-purpose{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 20px}
-.aw-settings .aw-style-preview{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;margin:0 0 8px;background:var(--dsw-alias-bg-layer-1)}
-.aw-settings .aw-style-preview canvas{display:block;width:100%;height:220px}
-.aw-settings .aw-style-preview p{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:0;padding:0 14px 12px}
+/* Two columns: a live preview that stays in view while the fields scroll. The
+   host plugin page is the scroll container and none of the ancestors between it
+   and this form clips, so sticky works. align-items:flex-start is load-bearing:
+   a stretched aside would fill the whole row and sticky would have nowhere to
+   travel inside its own column. */
+.aw-settings .aw-layout{display:flex;gap:24px;align-items:flex-start}
+.aw-settings .aw-preview{position:sticky;top:16px;flex:0 0 340px}
+.aw-settings .aw-preview-card{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;margin:0 0 8px;background:var(--dsw-alias-bg-layer-1)}
+.aw-settings .aw-preview-card canvas{display:block;width:100%;height:min(56vh,520px)}
+.aw-settings .aw-preview p{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:0}
+.aw-settings .aw-fields{flex:1 1 420px;min-width:0}
 .aw-settings .aw-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;padding:14px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .aw-settings .aw-copy{min-width:0;flex:1 1 200px}
 .aw-settings label{font-weight:500}
@@ -3979,6 +4118,13 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
 .aw-settings .aw-switch-knob{transition:transform .14s ease,background .14s ease}
 .aw-settings .aw-tick{transition:color .12s ease,background .12s ease}
 }
+/* Narrow screens collapse to one column: the preview scrolls with the page and
+   gives most of the height back to the fields. */
+@media(max-width:820px){
+.aw-settings .aw-layout{display:block}
+.aw-settings .aw-preview{position:static;flex:none}
+.aw-settings .aw-preview-card canvas{height:240px}
+}
 @media(max-width:540px){
 .aw-settings .aw-row{gap:8px 12px;align-items:flex-start}
 .aw-settings .aw-copy{flex:1 1 100%}
@@ -3990,7 +4136,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
 
     return {
       inject: ['slots', 'locale', 'configForms'],
-      apply(ctx) { registerWhales(ctx, React, {"en":{"title":"Glyph whales","purpose":"Look straight down through the interface as a sea surface. Each species has its own head, flippers and flukes. Calm cruising alternates vertical tail strokes with glides. Raised backs are darker; flanks and deeper water are paler.","enabled":"Show whales","enabledHint":"Visible on the conversation page. Stops on other pages.","count":"Whale count","countHint":"1 to 8 whales with different sizes and depths.","text":"Whale body text","textHint":"Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境. Up to 40 characters.","speed":"Swimming speed","speedHint":"0.3 to 2. Default 0.65. Scales cruising, turning and tail beats, with glides between strokes.","opacity":"Background opacity","opacityHint":"0.04 to 0.9. Default 0.6. Higher values make the body text clearer.","glyphSize":"Character size","glyphSizeHint":"4 to 16. Default 11. Characters occupy separate, fixed grid cells.","whaleSize":"Whale size","whaleSizeHint":"0.55 to 1.55. Default 1. Changes body length only, not swimming speed; larger whales cover more cells.","color":"Ocean palette","colorHint":"Choose the ocean palette for both glyphs and colored cells.","ocean":"Ocean","azure":"Azure","indigo":"Indigo","quietCenter":"Quieter reading area","quietCenterHint":"Fades whale bodies in the center. The bottom input area always fades out.","leftInset":"Browser left inset","leftInsetHint":"0 to 500 pixels. Default 280. Desktop follows the sidebar automatically. In a browser, adjust this to match its width.","glass":"Frosted content boxes","glassHint":"Every content card and the input box gets frosted: whales show through only as blurred shapes while the text stays crisp. On by default; use either this or input-box avoidance, not both.","glassStrength":"Glass strength","glassStrengthHint":"0 to 1. Default 0.55. Higher values make the glass thicker and blurrier, so less of the whale shows through.","composerGlass":"Frosted input box (folded into content boxes)","composerGlassHint":"The separate 0.10.0 input-box switch; since 0.11.0 it is part of the frosted content boxes. Kept only to read old configs.","composerAvoid":"Whales avoid the input box","composerAvoidHint":"Whales treat the input box as an obstacle and swim around it instead of crossing it. Use either this or the frosted content boxes, not both.","spout":"Spout when clicked","spoutHint":"Off by default. Click a whale for one short mist burst from its blowhole. Empty water, buttons, links and the input box do nothing. The burst fades and does not repeat.","reefs":"Reef rocks","reefsHint":"A few ASCII rocks stay fixed along the margins. Refresh for a new layout; settings keep them in place. Whales steer around them.","ripples":"Tail-stroke ripples","ripplesHint":"Active tail strokes send out a brief splash and spreading ripples. Gliding and submerged whales leave the surface quiet.","save":"Save","saving":"Saving…","reset":"Restore defaults","discard":"Reload saved values","loading":"Loading whale settings…","unavailable":"Whale settings are unavailable.","readOnly":"These settings are read-only.","saved":"Whale settings saved.","invalid":"Enter numbers within the listed ranges. Count, size, and inset must be whole numbers.","conflict":"Settings changed elsewhere, or the save was refused. Your edits are preserved. Reload saved values before editing again.","failed":"Could not save. Your edits are preserved and can be retried.","species":"Whale species","speciesHint":"Mixed groups cycle through blue, humpback, sperm, fin and bowhead whales. Or choose one species.","renderStyle":"Drawing style","renderStyleHint":"Glyphs draws letters only. Colored cells add shaded backgrounds inside the whale, with soft glyph-only edges.","glyphs":"Glyphs only","cells":"Colored cells","fillMode":"Fill content","fillModeHint":"Custom text keeps your original characters. ASCII selects symbols by density and shading. Either works with colored cells.","custom":"Custom text","ascii":"ASCII characters","stylePreview":"Static whale preview of the current style","stylePreviewNote":"The draft updates this preview. Save to apply it to the background. ASCII keeps your custom text so you can switch back.","mixed":"Mixed group","blue":"Blue whale","humpback":"Humpback whale","sperm":"Sperm whale","fin":"Fin whale","bowhead":"Bowhead whale"},"zh":{"title":"文字蓝鲸","purpose":"把界面看作海面，从正上方俯看文字鲸鱼。各鲸类有独立头型、胸鳍和尾叶，缓缓巡游并在上下摆尾之间滑行。背部隆起较深，两侧和深水处渐浅。","enabled":"显示蓝鲸","enabledHint":"仅在对话页面显示，切换到其他页面时停止。","count":"鲸鱼数量","countHint":"1 至 8 条，大小与远近各有不同。","text":"鱼身文字","textHint":"重复使用这些字组成鲸鱼；留空使用探索未至之境。忽略空白，最多 40 个字符。","speed":"游动速度","speedHint":"0.3 至 2，默认 0.65。巡游、转弯与摆尾同步放缓，摆尾之间有自然滑行。","opacity":"背景浓度","opacityHint":"0.04 至 0.9，默认 0.6。数值越高，鱼身文字越清楚。","glyphSize":"字符大小","glyphSizeHint":"4 至 16，默认 11。文字按固定字格排列，不互相叠压。","whaleSize":"鲸鱼大小","whaleSizeHint":"0.55 至 1.55，默认 1。只改鲸体长度，不改游速与摆尾节奏；鲸体越大，占用的字格越多。","color":"海洋色调","colorHint":"选择字符与彩色字格使用的海洋色调。","ocean":"深海蓝","azure":"晴空蓝","indigo":"靛蓝","quietCenter":"减淡阅读区域","quietCenterHint":"降低中央鲸体的浓度。底部输入区始终保持淡出。","leftInset":"浏览器左侧留白","leftInsetHint":"0 至 500 像素，默认 280。桌面版自动跟随左侧栏；浏览器版按侧栏宽度手动调整。","glass":"内容框毛玻璃","glassHint":"对话里的每个内容卡片和输入框都盖一块磨砂玻璃：框内鲸鱼只以模糊形态透出，文字保持清晰。默认开启；与「鱼群避让输入框」二选一。","glassStrength":"玻璃强度","glassStrengthHint":"0 至 1，默认 0.55。数值越大玻璃更厚、磨砂更重，透出的鲸影也更淡。","composerGlass":"输入框毛玻璃（已并入内容框毛玻璃）","composerGlassHint":"0.10.0 的独立输入框开关；0.11.0 起并入「内容框毛玻璃」，此字段仅用于兼容旧配置。","composerAvoid":"鱼群避让输入框","composerAvoidHint":"鲸鱼把输入框当作障碍物绕开，不再从框内穿过。与「内容框毛玻璃」二选一。","spout":"点击喷水","spoutHint":"默认关闭。点在鲸鱼身上，从喷气孔放出一小团雾；点在空海、按钮、链接或输入框上没有反应。雾会散掉，不会连成喷泉。","reefs":"海面礁石","reefsHint":"少量 ASCII 礁石随机分布在两侧，刷新后重新生成，游动和修改设置不会挪动；鲸鱼会绕开。","ripples":"尾拍涟漪","ripplesHint":"鲸鱼用力摆尾时溅起碎水和逐渐扩散的波纹；滑行或潜入水下时不生成。","save":"保存","saving":"保存中…","reset":"恢复默认值","discard":"重新载入已保存值","loading":"正在读取蓝鲸设置…","unavailable":"蓝鲸设置暂不可用。","readOnly":"当前设置为只读。","saved":"蓝鲸设置已保存。","invalid":"请在标出的范围内填写数字，数量、大小和留白须为整数。","conflict":"设置已在别处更新，或本次保存未获接受。你的修改已保留。重新载入已保存值后再修改。","failed":"未能保存。你的修改已保留，可以重试。","species":"鲸鱼种类","speciesHint":"混合鲸群依次包含蓝鲸、座头鲸、抹香鲸、长须鲸和弓头鲸；也可只显示一种。","renderStyle":"渲染样式","renderStyleHint":"纯字符只绘文字；彩色字格为鲸体内部铺设深浅底色，轮廓边缘保留柔和字符。","glyphs":"纯字符","cells":"彩色字格","fillMode":"填充内容","fillModeHint":"自定义文字按原文填充；ASCII 按明暗选择疏密不同的符号。两种内容均可搭配彩色字格。","custom":"自定义文字","ascii":"ASCII 字符","stylePreview":"当前样式的鲸鱼静态预览","stylePreviewNote":"预览随草稿更新；点击保存后应用到背景。ASCII 模式会保留你的自定义文字，切回即可使用。","mixed":"混合鲸群","blue":"蓝鲸","humpback":"座头鲸","sperm":"抹香鲸","fin":"长须鲸","bowhead":"弓头鲸"}}); },
+      apply(ctx) { registerWhales(ctx, React, {"en":{"title":"Glyph whales","purpose":"Look straight down through the interface as a sea surface. Each species has its own head, flippers and flukes. Calm cruising alternates vertical tail strokes with glides. Raised backs are darker; flanks and deeper water are paler.","enabled":"Show whales","enabledHint":"Visible on the conversation page. Stops on other pages.","count":"Whale count","countHint":"1 to 8 whales with different sizes and depths.","text":"Whale body text","textHint":"Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境. Up to 40 characters.","speed":"Swimming speed","speedHint":"0.3 to 2. Default 0.65. Scales cruising, turning and tail beats, with glides between strokes.","opacity":"Background opacity","opacityHint":"0.04 to 0.9. Default 0.6. Higher values make the body text clearer.","glyphSize":"Character size","glyphSizeHint":"4 to 16. Default 11. Characters occupy separate, fixed grid cells.","whaleSize":"Whale size","whaleSizeHint":"0.55 to 1.55. Default 1. Changes body length only, not swimming speed; larger whales cover more cells.","color":"Ocean palette","colorHint":"Choose the ocean palette for both glyphs and colored cells.","ocean":"Ocean","azure":"Azure","indigo":"Indigo","quietCenter":"Quieter reading area","quietCenterHint":"Fades whale bodies in the center. The bottom input area always fades out.","leftInset":"Browser left inset","leftInsetHint":"0 to 500 pixels. Default 280. Desktop follows the sidebar automatically. In a browser, adjust this to match its width.","glass":"Frosted content boxes","glassHint":"Every content card and the input box gets frosted: whales show through only as blurred shapes while the text stays crisp. On by default; use either this or input-box avoidance, not both.","glassStrength":"Glass strength","glassStrengthHint":"0 to 1. Default 0.55. Higher values make the glass thicker and blurrier, so less of the whale shows through.","composerGlass":"Frosted input box (folded into content boxes)","composerGlassHint":"The separate 0.10.0 input-box switch; since 0.11.0 it is part of the frosted content boxes. Kept only to read old configs.","composerAvoid":"Whales avoid the input box","composerAvoidHint":"Whales treat the input box as an obstacle and swim around it instead of crossing it. Use either this or the frosted content boxes, not both.","spout":"Spout when clicked","spoutHint":"Off by default. Click a whale for one short mist burst from its blowhole. Empty water, buttons, links and the input box do nothing. The burst fades and does not repeat.","reefs":"Reef rocks","reefsHint":"A few ASCII rocks stay fixed along the margins. Refresh for a new layout; settings keep them in place. Whales steer around them.","ripples":"Tail-stroke ripples","ripplesHint":"Active tail strokes send out a brief splash and spreading ripples. Gliding and submerged whales leave the surface quiet.","save":"Save","saving":"Saving…","reset":"Restore defaults","discard":"Reload saved values","loading":"Loading whale settings…","unavailable":"Whale settings are unavailable.","readOnly":"These settings are read-only.","saved":"Whale settings saved.","invalid":"Enter numbers within the listed ranges. Count, size, and inset must be whole numbers.","conflict":"Settings changed elsewhere, or the save was refused. Your edits are preserved. Reload saved values before editing again.","failed":"Could not save. Your edits are preserved and can be retried.","species":"Whale species","speciesHint":"Mixed groups cycle through blue, humpback, sperm, fin and bowhead whales. Or choose one species.","renderStyle":"Drawing style","renderStyleHint":"Glyphs draws letters only. Colored cells add shaded backgrounds inside the whale, with soft glyph-only edges.","glyphs":"Glyphs only","cells":"Colored cells","fillMode":"Fill content","fillModeHint":"Custom text keeps your original characters. ASCII selects symbols by density and shading. Either works with colored cells.","custom":"Custom text","ascii":"ASCII characters","stylePreview":"Live whale preview of the current draft","stylePreviewNote":"The preview follows the draft live; save to apply it to the background. With “Spout when clicked” on, you can click a whale in the preview to try it. The pale card stands in for a DSH content card and shows what frosted content boxes / input-box avoidance do over it.","mixed":"Mixed group","blue":"Blue whale","humpback":"Humpback whale","sperm":"Sperm whale","fin":"Fin whale","bowhead":"Bowhead whale"},"zh":{"title":"文字蓝鲸","purpose":"把界面看作海面，从正上方俯看文字鲸鱼。各鲸类有独立头型、胸鳍和尾叶，缓缓巡游并在上下摆尾之间滑行。背部隆起较深，两侧和深水处渐浅。","enabled":"显示蓝鲸","enabledHint":"仅在对话页面显示，切换到其他页面时停止。","count":"鲸鱼数量","countHint":"1 至 8 条，大小与远近各有不同。","text":"鱼身文字","textHint":"重复使用这些字组成鲸鱼；留空使用探索未至之境。忽略空白，最多 40 个字符。","speed":"游动速度","speedHint":"0.3 至 2，默认 0.65。巡游、转弯与摆尾同步放缓，摆尾之间有自然滑行。","opacity":"背景浓度","opacityHint":"0.04 至 0.9，默认 0.6。数值越高，鱼身文字越清楚。","glyphSize":"字符大小","glyphSizeHint":"4 至 16，默认 11。文字按固定字格排列，不互相叠压。","whaleSize":"鲸鱼大小","whaleSizeHint":"0.55 至 1.55，默认 1。只改鲸体长度，不改游速与摆尾节奏；鲸体越大，占用的字格越多。","color":"海洋色调","colorHint":"选择字符与彩色字格使用的海洋色调。","ocean":"深海蓝","azure":"晴空蓝","indigo":"靛蓝","quietCenter":"减淡阅读区域","quietCenterHint":"降低中央鲸体的浓度。底部输入区始终保持淡出。","leftInset":"浏览器左侧留白","leftInsetHint":"0 至 500 像素，默认 280。桌面版自动跟随左侧栏；浏览器版按侧栏宽度手动调整。","glass":"内容框毛玻璃","glassHint":"对话里的每个内容卡片和输入框都盖一块磨砂玻璃：框内鲸鱼只以模糊形态透出，文字保持清晰。默认开启；与「鱼群避让输入框」二选一。","glassStrength":"玻璃强度","glassStrengthHint":"0 至 1，默认 0.55。数值越大玻璃更厚、磨砂更重，透出的鲸影也更淡。","composerGlass":"输入框毛玻璃（已并入内容框毛玻璃）","composerGlassHint":"0.10.0 的独立输入框开关；0.11.0 起并入「内容框毛玻璃」，此字段仅用于兼容旧配置。","composerAvoid":"鱼群避让输入框","composerAvoidHint":"鲸鱼把输入框当作障碍物绕开，不再从框内穿过。与「内容框毛玻璃」二选一。","spout":"点击喷水","spoutHint":"默认关闭。点在鲸鱼身上，从喷气孔放出一小团雾；点在空海、按钮、链接或输入框上没有反应。雾会散掉，不会连成喷泉。","reefs":"海面礁石","reefsHint":"少量 ASCII 礁石随机分布在两侧，刷新后重新生成，游动和修改设置不会挪动；鲸鱼会绕开。","ripples":"尾拍涟漪","ripplesHint":"鲸鱼用力摆尾时溅起碎水和逐渐扩散的波纹；滑行或潜入水下时不生成。","save":"保存","saving":"保存中…","reset":"恢复默认值","discard":"重新载入已保存值","loading":"正在读取蓝鲸设置…","unavailable":"蓝鲸设置暂不可用。","readOnly":"当前设置为只读。","saved":"蓝鲸设置已保存。","invalid":"请在标出的范围内填写数字，数量、大小和留白须为整数。","conflict":"设置已在别处更新，或本次保存未获接受。你的修改已保留。重新载入已保存值后再修改。","failed":"未能保存。你的修改已保留，可以重试。","species":"鲸鱼种类","speciesHint":"混合鲸群依次包含蓝鲸、座头鲸、抹香鲸、长须鲸和弓头鲸；也可只显示一种。","renderStyle":"渲染样式","renderStyleHint":"纯字符只绘文字；彩色字格为鲸体内部铺设深浅底色，轮廓边缘保留柔和字符。","glyphs":"纯字符","cells":"彩色字格","fillMode":"填充内容","fillModeHint":"自定义文字按原文填充；ASCII 按明暗选择疏密不同的符号。两种内容均可搭配彩色字格。","custom":"自定义文字","ascii":"ASCII 字符","stylePreview":"当前草稿的实时鲸鱼预览","stylePreviewNote":"预览实时跟随草稿变化，保存后才应用到背景。开启「点击喷水」后，可以直接在预览里点鲸鱼试效果。预览中的灰白卡片演示「内容框毛玻璃 / 鱼群避让」开启后对卡片的效果。","mixed":"混合鲸群","blue":"蓝鲸","humpback":"座头鲸","sperm":"抹香鲸","fin":"长须鲸","bowhead":"弓头鲸"}}); },
     };
   },
 });
