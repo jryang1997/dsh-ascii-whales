@@ -23,6 +23,12 @@
 Five whale species cruise, turn, and glide through the conversation page, seen from directly above. Their bodies consist of your text or ASCII characters chosen by shading. Whales are drawn locally, without image assets or external services.
 
 <p align="center">
+  <img src="./docs/cruise.gif" width="760" alt="Three whales swimming past conversation cards, tails beating up and down">
+</p>
+
+<p align="center"><sub>Cruising on the conversation page. Opacity is higher than the default 0.6 so the motion is easier to see. The cards wear the content-box glass.</sub></p>
+
+<p align="center">
   <img src="./docs/modes.png" width="960" alt="Four views of the same blue whale: glyphs or colored cells, each with custom text or ASCII">
 </p>
 
@@ -34,7 +40,7 @@ Five whale species cruise, turn, and glide through the conversation page, seen f
 2. Install the file through the DSH plugin manager.
 3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
-The current published package is [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). Screenshots below come from the standalone preview and do not show every newer switch.
+The current published package is [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). The pictures below come from the real renderer, not a recording of the desktop window. The clips use a higher opacity than the default, and the fully hidden part of a dive is shortened.
 
 ## Features
 
@@ -46,6 +52,20 @@ The current published package is [v0.14.0](https://github.com/jryang1997/dsh-asc
 - Version 0.14.0 adds sea-surface wind streaks and slow cloud shadows, each with its own switch. Whales leave through any edge and return on the opposite side, steering clear of obstacles there before they cross. See [atmosphere research](./ATMOSPHERE-RESEARCH.md).
 - Each whale dives and comes back up on its own. The nose goes under first, the tail lifts and slaps, and the whale keeps its course while it is hidden. The nose returns first. The school does not dive together, and there is no separate dive switch. See the [changelog](./CHANGELOG.md).
 - Follow light and dark themes and system preferences. Reduced motion shows a static pose. Hidden pages pause the animation, and the decorative layer lets pointer events pass through.
+
+## Motion
+
+<p align="center">
+  <img src="./docs/dive.gif" width="640" alt="A blue whale puts its nose under first, leaves the tail up, then surfaces nose first">
+</p>
+
+<p align="center"><sub>Dive and return. The nose goes under while the tail is still up. The fully hidden seconds are cut. The nose comes back first.</sub></p>
+
+<p align="center">
+  <img src="./docs/tail.gif" width="460" alt="A humpback fluke beating up and down">
+</p>
+
+<p align="center"><sub>A humpback fluke. Both lobes beat up and down together while the whale swims forward.</sub></p>
 
 ## Whales around your conversation
 
