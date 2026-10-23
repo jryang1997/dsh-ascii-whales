@@ -236,6 +236,8 @@ function harness(options = {}) {
     mainGlyphs: 0, seaGlyphs: 0, seaTiles: 0, blurCopies: 0,
     paneClips: 0, paneStrokes: 0, panePaths: 0, paneMoves: 0, paneImages: 0, paneGradients: 0 };
   const drawn = [];
+  let exteriorDepth = 0;
+  const clipStack = [];
   const viewport = { width: options.width ?? 800, height: options.height ?? 600 };
   const context = {
     font: '', textAlign: '', textBaseline: '', fillStyle: '', globalAlpha: 1, filter: 'none',
@@ -245,8 +247,9 @@ function harness(options = {}) {
       const width = Math.min(16, 7 + glyph.length * 2);
       return { width, actualBoundingBoxLeft: 0, actualBoundingBoxRight: width, actualBoundingBoxAscent: 10, actualBoundingBoxDescent: 2 };
     },
-    fillText(glyph, x, y) { stats.mainGlyphs++; drawn.push({ glyph, x, y, alpha: this.globalAlpha }); },
-    save() {}, restore() {}, clip() { stats.paneClips++; }, stroke() { stats.paneStrokes++; },
+    fillText(glyph, x, y) { stats.mainGlyphs++; drawn.push({ glyph, x, y, alpha: this.globalAlpha, exteriorDepth }); },
+    save() { clipStack.push(exteriorDepth); }, restore() { exteriorDepth = clipStack.pop() ?? 0; },
+    clip(rule) { stats.paneClips++; if (rule === 'evenodd') exteriorDepth++; }, stroke() { stats.paneStrokes++; },
     beginPath() { stats.panePaths++; }, moveTo() { stats.paneMoves++; }, lineTo() {}, arcTo() {}, closePath() {},
     drawImage() { stats.paneImages++; },
     createLinearGradient() { stats.paneGradients++; return { addColorStop() {} }; },
@@ -561,17 +564,14 @@ test('content glass gives every card a pane and fades the sharp glyphs inside it
   assert.equal(stats.createCanvas, 2, 'the shared sea and its blur buffer are allocated once');
   assert.ok(stats.draws > 0);
   assert.equal(stats.getContext, 1);
-  // The panes hide part of the sea, so fewer glyphs than the bare scene — but the
-  // school still paints everywhere outside the boxes.
+  // Commands may cross a pane, but the exterior clip keeps their raster out of it.
   assert.ok(drawn.length > 50);
   const insideCard = point => cards.concat([composer]).some(card => point.x > card.left
     && point.x < card.left + card.width && point.y > card.top && point.y < card.top + card.height);
-  assert.ok(drawn.every(point => !insideCard(point)), 'sharp glyphs must not show under any content glass');
+  assert.ok(drawn.every(point => point.exteriorDepth === 3), 'every sharp glyph is drawn outside all three panes');
   assert.ok(drawn.some(point => !insideCard(point)), 'glyphs remain outside the panes');
 
-  // The glass must contain the blurred sea, not an empty copy: the sea pass
-  // painted the glyph field on its own offscreen canvas (including the glyphs the
-  // panes just faded out of the main canvas), and that canvas was blurred once.
+  // The separate sea buffer includes the whole field for the blurred material.
   assert.ok(stats.seaGlyphs > 0, 'the shared sea was painted from the glyph field');
   assert.ok(stats.seaGlyphs >= stats.mainGlyphs,
     `the sea keeps every glyph the panes hide (${stats.seaGlyphs} vs ${stats.mainGlyphs})`);
@@ -586,12 +586,9 @@ test('content glass gives every card a pane and fades the sharp glyphs inside it
   assert.ok(paneCount >= 3, `expected one pane per box, got ${paneCount}`);
   assert.equal(stats.paneStrokes, 0, 'the pane never draws an outline (the DOM frame owns it)');
   assert.equal(stats.paneImages, 1, 'one shared blurred-sea draw for all panes');
-  assert.equal(stats.paneClips, paneCount + 1, 'one union clip plus one surface clip per pane');
-  assert.equal(stats.panePaths, stats.paneClips, 'one rounded path per clip, no stray path');
-  // The union path must really contain one subpath per pane (N moveTo for the
-  // union + N for the per-pane surfaces), which is what keeps the gaps between
-  // cards uncovered.
-  assert.equal(stats.paneMoves, paneCount * 2, 'union path appends every pane subpath');
+  assert.equal(stats.paneClips, paneCount * 2 + 1, 'exterior and surface clips per pane plus one shared sea clip');
+  assert.equal(stats.panePaths, stats.paneClips, 'one path per clip, no stray path');
+  assert.equal(stats.paneMoves, paneCount * 4, 'each exterior includes the canvas and pane, plus material paths');
   assert.equal(stats.paneGradients, paneCount * 2, 'crest and shade gradients per pane');
 
   // Turning the content glass off brings the sharp glyphs back over the cards,
@@ -608,10 +605,10 @@ test('content glass gives every card a pane and fades the sharp glyphs inside it
   assert.equal(stats.getContext, before.getContext, 'the glass comes back without a new canvas');
   assert.ok(stats.paneClips > before.clips, 'panes are painted again');
   const clipsAdded = stats.paneClips - before.clips;
-  const framesWithGlass = clipsAdded / (paneCount + 1);
-  assert.equal(clipsAdded % (paneCount + 1), 0, 'each glass frame uses the same clip count');
+  const framesWithGlass = clipsAdded / (paneCount * 2 + 1);
+  assert.equal(clipsAdded % (paneCount * 2 + 1), 0, 'each glass frame uses the same clip count');
   assert.equal(stats.paneImages - before.images, framesWithGlass, 'one shared sea image per glass frame');
-  assert.ok(drawn.every(point => !insideCard(point)));
+  assert.ok(drawn.every(point => point.exteriorDepth === paneCount));
   layer.dispose();
 });
 
@@ -624,14 +621,14 @@ test('reduced transparency clears the content material but still holds glyphs ou
   const layer = createWhaleLayer(canvas(), config);
   assert.equal(stats.createCanvas, 0, 'no sea buffer is allocated when the material is cleared');
   assert.equal(stats.seaGlyphs, 0, 'no sea glyph pass runs when the material is cleared');
-  assert.equal(stats.paneClips, 0, 'no pane is drawn when the material is cleared');
+  assert.equal(stats.paneClips, 1, 'the sharp sea is clipped even without glass material');
   assert.equal(stats.paneImages, 0);
   const insideCard = point => point.x > card.left && point.x < card.left + card.width
     && point.y > card.top && point.y < card.top + card.height;
   assert.ok(drawn.length > 100);
   // The material is gone, but the card area stays clear of the sea: sharp glyphs
   // are still held out of every pane, exactly like 0.10.0's clear mode.
-  assert.ok(drawn.every(point => !insideCard(point)), 'clear mode still holds glyphs out of the panes');
+  assert.ok(drawn.every(point => point.exteriorDepth === 1), 'clear mode still clips the sharp sea out of the pane');
   assert.ok(drawn.some(point => !insideCard(point)), 'glyphs remain outside the pane');
   layer.dispose();
 });
@@ -726,7 +723,8 @@ test('content glass reaches deeply nested user bubbles past offscreen history, s
   assert.equal(paneCount, 5, 'main bubble, two short bubbles, tall card and composer all receive glass panes');
   const insideMain = point => point.x > mainBubble.left && point.x < mainBubble.left + mainBubble.width
     && point.y > mainBubble.top && point.y < mainBubble.top + mainBubble.height;
-  assert.ok(drawn.every(point => !insideMain(point)), 'sharp glyphs are faded inside the deeply nested blue bubble');
+  assert.ok(drawn.some(insideMain), 'the whole field is issued before clipping');
+  assert.ok(drawn.every(point => point.exteriorDepth === paneCount), 'all deeply nested panes clip the sharp sea');
   layer.dispose();
 });
 

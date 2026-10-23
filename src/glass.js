@@ -117,6 +117,20 @@ export function glassRoundedSubpath(ctx, rect) {
   ctx.closePath();
 }
 
+/**
+ * Keep the sharp sea outside every pane. Intersect one exterior clip per pane
+ * so overlapping or nested panes stay excluded, including in clear mode.
+ * The caller owns save/restore; no feather or raster tile can widen this edge.
+ */
+export function glassClipExterior(ctx, panes, width, height) {
+  for (const pane of panes) {
+    ctx.beginPath();
+    glassRoundedSubpath(ctx, { x: 0, y: 0, width, height, radius: 0 });
+    glassRoundedSubpath(ctx, pane);
+    ctx.clip('evenodd');
+  }
+}
+
 /** Trace a rounded rectangle; callers decide whether to fill, stroke or clip. */
 export function glassRoundedPath(ctx, rect) {
   ctx.beginPath();

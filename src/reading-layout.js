@@ -1,4 +1,4 @@
-import { glassContentPanes, glassContentTone, glassEdgeFade } from './glass.js';
+import { glassContentPanes, glassContentTone } from './glass.js';
 import { attenuation } from './model.js';
 
 function readingExpandedRect(canvas, card, margin) {
@@ -15,24 +15,15 @@ export function createReadingLayout(snapshot, config, material = {}) {
   const { canvas, boxes = [], composer = null } = snapshot;
   const panes = config.glass ? glassContentPanes({ canvas, boxes, max: 16 }) : [];
   const tone = config.glass ? glassContentTone(config.glassStrength, material) : null;
-  const visiblePanes = tone ? panes : [];
   const avoidRect = config.composerAvoid && composer
     ? readingExpandedRect(canvas, composer, 8) : null;
-  const fade = !visiblePanes.length && !avoidRect ? null : (x, y) => {
-    if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width
-      && y > avoidRect.y && y < avoidRect.y + avoidRect.height) return 0;
-    let value = 1;
-    for (const pane of visiblePanes) {
-      value = Math.min(value, glassEdgeFade(pane, x, y, pane.feather ?? tone?.feather ?? 10));
-    }
-    return value;
-  };
+  const fade = !avoidRect ? null : (x, y) => x > avoidRect.x && x < avoidRect.x + avoidRect.width
+    && y > avoidRect.y && y < avoidRect.y + avoidRect.height ? 0 : 1;
   return {
     panes, tone, fade,
     sceneryFade(x, y) {
-      for (const pane of visiblePanes) {
-        if (x >= pane.x && x <= pane.x + pane.width && y >= pane.y && y <= pane.y + pane.height) return 0;
-      }
+      // Glass is clipped by the renderer at the actual rounded edge. Feeding a
+      // pane mask to the cloud raster would erase whole tiles outside that edge.
       return attenuation(x, y, canvas.width, canvas.height, config.quietCenter) * (fade ? fade(x, y) : 1);
     },
     obstacles(largestRadius) {

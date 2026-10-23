@@ -22,10 +22,19 @@ test('DOM and demo coordinates share glass, masks and size-aware obstacles', () 
   }
 });
 
-test('reduced transparency still protects text while weather stays outside the whole card', () => {
+test('glass uses a rounded clip instead of fading open water outside the card', () => {
+  const layout = createReadingLayout(demo, { glass: true, glassStrength: 0.55, quietCenter: false });
+  assert.equal(layout.fade, null, 'glass must not attenuate glyph footprints outside its rounded clip');
+  for (const [x, y] of [[199, 300], [200, 240], [701, 300], [400, 401]]) {
+    assert.equal(layout.sceneryFade(x, y), 1, `open water at ${x},${y} stays unchanged`);
+  }
+});
+
+test('reduced transparency retains the rounded panes without allocating material', () => {
   const layout = createReadingLayout(demo, { glass: true, glassStrength: 0.55 }, { reducedTransparency: true });
-  assert.equal(layout.fade(400, 300), 0);
-  assert.equal(layout.sceneryFade(200, 240), 0);
+  assert.equal(layout.fade, null);
+  assert.equal(layout.panes.length, 1, 'the renderer still clips the sharp sea out of the card');
+  assert.equal(layout.tone.mode, 'clear');
   assert.deepEqual(layout.obstacles(100), []);
 });
 

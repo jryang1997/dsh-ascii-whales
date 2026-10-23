@@ -15,6 +15,8 @@ function harness(options = {}) {
     mainGlyphs: 0, seaGlyphs: 0, blurCopies: 0, paneClips: 0, paneImages: 0,
     cardFills: 0, domQueries: 0, computedStyles: 0 };
   const drawn = [];
+  let exteriorDepth = 0;
+  const clipStack = [];
   const moves = [];
   const fills = [];
   const viewport = { width: options.width ?? 800, height: options.height ?? 600 };
@@ -26,8 +28,9 @@ function harness(options = {}) {
       const width = Math.min(16, 7 + glyph.length * 2);
       return { width, actualBoundingBoxLeft: 0, actualBoundingBoxRight: width, actualBoundingBoxAscent: 10, actualBoundingBoxDescent: 2 };
     },
-    fillText(glyph, x, y) { stats.mainGlyphs++; drawn.push({ glyph, x, y, alpha: this.globalAlpha }); },
-    save() {}, restore() {}, clip() { stats.paneClips++; }, stroke() {},
+    fillText(glyph, x, y) { stats.mainGlyphs++; drawn.push({ glyph, x, y, alpha: this.globalAlpha, exteriorDepth }); },
+    save() { clipStack.push(exteriorDepth); }, restore() { exteriorDepth = clipStack.pop() ?? 0; },
+    clip(rule) { stats.paneClips++; if (rule === 'evenodd') exteriorDepth++; }, stroke() {},
     beginPath() {}, moveTo(x, y) { moves.push({ x, y }); }, lineTo() {}, arcTo() {}, closePath() {},
     fill() { stats.cardFills++; fills.push(this.fillStyle); },
     drawImage() { stats.paneImages++; },
@@ -166,8 +169,7 @@ test('the demo glass holds sharp glyphs out of the injected card and paints its 
   for (let frame = 0; frame < 30; frame++) raf.step();
   const card = demoRectOf(800, 600);
   assert.ok(drawn.length > 50, 'the school still paints around the card');
-  assert.ok(drawn.every(point => !insideRect(point, card)),
-    `sharp glyphs must not show under the demo glass: ${JSON.stringify(drawn.filter(point => insideRect(point, card)).slice(0, 4))}`);
+  assert.ok(drawn.every(point => point.exteriorDepth === 1), 'all sharp sea commands use the demo card exterior clip');
   assert.ok(drawn.some(point => !insideRect(point, card)), 'glyphs remain outside the pane');
   assert.ok(stats.seaGlyphs > 0 && stats.blurCopies > 0, 'the blurred sea is built for the pane');
   // Card body plus four text lines, in that order per frame: the body fill is

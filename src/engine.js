@@ -2,11 +2,12 @@ import { createReadingLayout, demoReadingSnapshot } from './reading-layout.js';
 import { createWhalePainter } from './surface.js';
 import { whalePose, projectParticle, createDepthGrid, resolveDepthGrid, stampSeaWraps, fitCanvas, normalizeConfig, attenuation } from './model.js';
 import { createWhaleSimulation, sceneConfigChanged } from './simulation.js';
-import { glassRoundedPath, glassRoundedSubpath, glassTone, glassSeaFactor, glassSeaBuffer } from './glass.js';
+import { glassRoundedPath, glassRoundedSubpath, glassClipExterior, glassTone, glassSeaFactor, glassSeaBuffer } from './glass.js';
 import { attachSpout } from './spout.js';
 import { drawWater } from './water.js';
 import { createInkPalette } from './shading.js';
 import { drawAtmosphere, shadeAtmosphere } from './atmosphere.js';
+import { measureForeground, clearForeground, observeForeground } from './foreground.js';
 
 // DSH publishes these hooks on the conversation subtree. Every one of them is
 // optional: without them the whales simply paint as before, so an unknown
@@ -264,8 +265,8 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   // blur cost.
   let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
   let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
-  let panes = [], tone = null, readingLayout = null;
-  let raf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+  let panes = [], tone = null, readingLayout = null, foreground = null;
+  let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
   const spout = attachSpout(canvas, () => ({
     enabled: config.spout,
     reduced: reduced.matches,
@@ -419,14 +420,18 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     panes = [];
     tone = null;
     readingLayout = null;
+    foreground = null;
     if (!width || !height || !scene || disposed) return;
     if (demo) { applyReadingSnapshot(demoReadingSnapshot(demo, width, height)); return; }
+    const canvasRect = rectOf(canvas);
+    if (!canvasRect) return;
+    const scroller = pick(SCROLL_SELECTOR, canvasRect)?.element;
+    foreground = measureForeground(scroller, canvasRect, canvas);
+    foregroundObserver?.update(scroller, foreground.regions);
     if (!config.glass && !config.composerAvoid) {
       applyReadingSnapshot({ canvas: { left: 0, top: 0, width, height }, boxes: [] });
       return;
     }
-    const canvasRect = rectOf(canvas);
-    if (!canvasRect) return;
     const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
     const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
     applyReadingSnapshot({ canvas: canvasRect,
@@ -451,6 +456,8 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     // A body crossing the top is the same body entering from the bottom.
     stampSeaWraps(scene, projected, grid);
     shadeAtmosphere(atmosphere, grid, config);
+    ink.save();
+    glassClipExterior(ink, panes, width, height);
     const fade = readingLayout?.fade ?? null;
     const sceneryFade = readingLayout ? readingLayout.sceneryFade
       : (x, y) => attenuation(x, y, width, height, config.quietCenter);
@@ -461,11 +468,10 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     if (config.ripples) drawWater(ink, water, scenery);
     paintGlyphs(ink, fade);
     spout.paint(ink, fade);
-    // The demo card is the preview's stand-in for a DSH card: whale ink is
-    // already held out of it by the fade above, the card body covers the open
-    // sea, the ordinary glass pipeline stacks on the body, and the text lines
-    // stay crisp on top — the same composite the real overlay produces over
-    // the DOM. Avoidance mode skips the material and keeps body plus lines.
+    ink.restore();
+    // The demo card is the preview's stand-in for a DSH card: sharp sea is
+    // clipped at its rounded edge, the body covers the open sea, the ordinary
+    // glass pipeline stacks on the body, and text lines stay crisp on top.
     if (demo && (config.glass || config.composerAvoid)) {
       const card = demoCardRect();
       if (card) {
@@ -476,6 +482,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       return;
     }
     paintGlassMaterial();
+    clearForeground(ink, foreground, width, height);
   }
 
   /**
@@ -674,6 +681,17 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     if (reduced.matches) sync();
   }
 
+  // Media layout can change while reduced motion has stopped the main loop.
+  // Coalesce load/resize/mutation bursts into one static redraw without advancing it.
+  function onForegroundChange() {
+    measuredAt = -Infinity;
+    if (disposed || document.hidden || !reduced.matches || foregroundRaf) return;
+    foregroundRaf = requestAnimationFrame(() => {
+      foregroundRaf = 0;
+      if (!disposed && !document.hidden) { draw(); lastPaint = performance.now(); }
+    });
+  }
+
   function resize() {
     const rect = canvas.getBoundingClientRect();
     const displayWidth = Math.floor(rect.width), displayHeight = Math.floor(rect.height);
@@ -700,6 +718,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
 
   const observer = new ResizeObserver(resize);
   const themeObserver = new MutationObserver(sync);
+  const foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
   observer.observe(canvas);
   themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
   document.addEventListener('visibilitychange', sync);
@@ -713,8 +732,11 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     simulation.dispose();
     disposed = true;
     cancelAnimationFrame(raf);
+    cancelAnimationFrame(foregroundRaf);
+    foregroundRaf = 0;
     raf = 0;
     observer.disconnect();
+    foregroundObserver?.dispose();
     themeObserver.disconnect();
     document.removeEventListener('visibilitychange', sync);
     reduced.removeEventListener('change', sync);
@@ -732,6 +754,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     panes = [];
     tone = null;
     readingLayout = null;
+    foreground = null;
     canvas.width = canvas.height = 1;
   }
   return { update, dispose };

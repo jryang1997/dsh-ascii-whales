@@ -1927,6 +1927,14 @@
     ctx.arcTo(x, y, x + radius, y, radius);
     ctx.closePath();
   }
+  function glassClipExterior(ctx, panes, width, height) {
+    for (const pane of panes) {
+      ctx.beginPath();
+      glassRoundedSubpath(ctx, { x: 0, y: 0, width, height, radius: 0 });
+      glassRoundedSubpath(ctx, pane);
+      ctx.clip("evenodd");
+    }
+  }
   function glassRoundedPath(ctx, rect) {
     ctx.beginPath();
     glassRoundedSubpath(ctx, rect);
@@ -1987,19 +1995,6 @@
       height: Math.ceil(sourceHeight / f) + pad * 2
     };
   }
-  function glassDistance(rect, x, y) {
-    const radius = Math.max(0, Math.min(rect.radius, rect.width / 2, rect.height / 2));
-    const halfWidth = rect.width / 2 - radius, halfHeight = rect.height / 2 - radius;
-    const qx = Math.abs(x - (rect.x + rect.width / 2)) - halfWidth;
-    const qy = Math.abs(y - (rect.y + rect.height / 2)) - halfHeight;
-    return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - radius;
-  }
-  function glassEdgeFade(rect, x, y, feather = 26) {
-    const inside = -glassDistance(rect, x, y);
-    if (inside >= 0) return 0;
-    const t = glassClamp(-inside / Math.max(1, feather), 0, 1);
-    return t * t * (3 - 2 * t);
-  }
 
   // src/reading-layout.js
   function readingExpandedRect(canvas, card, margin) {
@@ -2013,24 +2008,13 @@
     const { canvas, boxes = [], composer = null } = snapshot;
     const panes = config.glass ? glassContentPanes({ canvas, boxes, max: 16 }) : [];
     const tone = config.glass ? glassContentTone(config.glassStrength, material) : null;
-    const visiblePanes = tone ? panes : [];
     const avoidRect = config.composerAvoid && composer ? readingExpandedRect(canvas, composer, 8) : null;
-    const fade = !visiblePanes.length && !avoidRect ? null : (x, y) => {
-      if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width && y > avoidRect.y && y < avoidRect.y + avoidRect.height) return 0;
-      let value = 1;
-      for (const pane of visiblePanes) {
-        value = Math.min(value, glassEdgeFade(pane, x, y, pane.feather ?? tone?.feather ?? 10));
-      }
-      return value;
-    };
+    const fade = !avoidRect ? null : (x, y) => x > avoidRect.x && x < avoidRect.x + avoidRect.width && y > avoidRect.y && y < avoidRect.y + avoidRect.height ? 0 : 1;
     return {
       panes,
       tone,
       fade,
       sceneryFade(x, y) {
-        for (const pane of visiblePanes) {
-          if (x >= pane.x && x <= pane.x + pane.width && y >= pane.y && y <= pane.y + pane.height) return 0;
-        }
         return attenuation(x, y, canvas.width, canvas.height, config.quietCenter) * (fade ? fade(x, y) : 1);
       },
       obstacles(largestRadius) {
@@ -3336,6 +3320,149 @@
     return { paint, detach };
   }
 
+  // src/foreground.js
+  var MEDIA_TAGS = /* @__PURE__ */ new Set(["IMG", "VIDEO", "IFRAME", "OBJECT", "EMBED", "CANVAS"]);
+  var MAX_VISIT = 6e3;
+  var MAX_STYLE = 512;
+  var MAX_REGIONS = 128;
+  function rectOf(element) {
+    try {
+      const rect = element?.getBoundingClientRect();
+      return rect && [rect.left, rect.top, rect.width, rect.height].every(Number.isFinite) && rect.width > 0 && rect.height > 0 ? rect : null;
+    } catch {
+      return null;
+    }
+  }
+  function intersection(a, b) {
+    const left = Math.max(a.left, b.left), top = Math.max(a.top, b.top);
+    const right = Math.min(a.left + a.width, b.left + b.width), bottom = Math.min(a.top + a.height, b.top + b.height);
+    return right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null;
+  }
+  function radiusOf(style, rect) {
+    const values = ["borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius", "borderBottomLeftRadius"].map((key) => style[key] || style.borderRadius || "0").map((value) => {
+      const length = parseFloat(value);
+      return Number.isFinite(length) ? Math.max(0, String(value).includes("%") ? length * Math.min(rect.width, rect.height) / 100 : length) : 0;
+    });
+    return Math.min(...values, rect.width / 2, rect.height / 2);
+  }
+  function measureForeground(root, canvasRect, canvas) {
+    const rootRect = rectOf(root), clip = rootRect && intersection(rootRect, canvasRect);
+    const regions = [];
+    if (!clip) return { regions, clip: null };
+    const styles = /* @__PURE__ */ new Map();
+    let reads = 0;
+    const styleOf = (element) => {
+      if (styles.has(element)) return styles.get(element);
+      if (reads++ >= MAX_STYLE) return null;
+      let style = null;
+      try {
+        style = getComputedStyle(element);
+      } catch {
+      }
+      styles.set(element, style);
+      return style;
+    };
+    const visible = (element) => {
+      for (let ancestor = element, depth = 0; ancestor && depth < 64; ancestor = ancestor.parentElement, depth++) {
+        if (ancestor.hidden || ancestor.isConnected === false) return false;
+        const style = styleOf(ancestor);
+        if (!style || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || style.contentVisibility === "hidden" || Number(style.opacity) === 0) return false;
+        if (ancestor === root) return true;
+      }
+      return false;
+    };
+    const queue = [root];
+    for (let index = 0; index < queue.length && index < MAX_VISIT && regions.length < MAX_REGIONS; index++) {
+      const element = queue[index];
+      if (!element || element === canvas || element.hidden || element.isConnected === false || element.style?.display === "none") continue;
+      const tag = String(element.tagName || "").toUpperCase();
+      if (MEDIA_TAGS.has(tag)) {
+        const rect = rectOf(element);
+        if (rect && intersection(rect, clip) && visible(element)) {
+          regions.push({
+            x: rect.left - canvasRect.left,
+            y: rect.top - canvasRect.top,
+            width: rect.width,
+            height: rect.height,
+            radius: radiusOf(styleOf(element), rect),
+            element
+          });
+        }
+        continue;
+      }
+      if (element.children) for (const child of element.children) {
+        if (queue.length >= MAX_VISIT) break;
+        queue.push(child);
+      }
+    }
+    return { regions, clip: {
+      x: clip.left - canvasRect.left,
+      y: clip.top - canvasRect.top,
+      width: clip.width,
+      height: clip.height,
+      radius: 0
+    } };
+  }
+  function observeForeground(canvas, invalidate) {
+    let root = null, resized = /* @__PURE__ */ new Set();
+    const events = ["load", "loadedmetadata", "error"];
+    let resizeObserver = new ResizeObserver(invalidate);
+    const mutationObserver = new MutationObserver((records) => {
+      if (!records || records.some((record) => record.target !== canvas)) invalidate();
+    });
+    function detachRoot() {
+      for (const type of events) root?.removeEventListener?.(type, invalidate, true);
+      mutationObserver.disconnect();
+    }
+    return {
+      update(nextRoot, regions) {
+        if (nextRoot !== root) {
+          detachRoot();
+          root = nextRoot || null;
+          for (const type of events) root?.addEventListener?.(type, invalidate, true);
+          if (root) mutationObserver.observe(root, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["src", "srcset", "sizes", "width", "height", "class", "style", "hidden", "open", "poster"]
+          });
+        }
+        const next = new Set(root ? [root, ...regions.map((region) => region.element)] : []);
+        const removed = [...resized].filter((element) => !next.has(element));
+        if (removed.length && typeof resizeObserver.unobserve !== "function") {
+          resizeObserver.disconnect();
+          resizeObserver = new ResizeObserver(invalidate);
+          resized.clear();
+        } else for (const element of removed) {
+          resizeObserver.unobserve(element);
+          resized.delete(element);
+        }
+        for (const element of next) if (!resized.has(element)) {
+          resizeObserver.observe(element);
+          resized.add(element);
+        }
+      },
+      dispose() {
+        detachRoot();
+        resizeObserver.disconnect();
+        resized.clear();
+        root = null;
+      }
+    };
+  }
+  function clearForeground(target, foreground, width, height) {
+    if (!foreground?.regions.length || !foreground.clip) return;
+    target.save();
+    target.beginPath();
+    glassRoundedSubpath(target, foreground.clip);
+    target.clip();
+    target.beginPath();
+    for (const region of foreground.regions) glassRoundedSubpath(target, region);
+    target.clip();
+    target.clearRect(0, 0, width, height);
+    target.restore();
+  }
+
   // src/engine.js
   var SCROLL_SELECTOR = "[data-conversation-scroll]";
   var COMPOSER_CARD_SELECTOR = "[data-composer-card]";
@@ -3412,7 +3539,7 @@
       live: anyChanged(LIVE_KEYS, before, after)
     };
   }
-  function rectOf(element) {
+  function rectOf2(element) {
     if (!element) return null;
     const rect = element.getBoundingClientRect();
     return rect.width > 1 && rect.height > 1 ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null;
@@ -3420,7 +3547,7 @@
   function pick(selector, canvasRect) {
     let best = null, bestArea = 0;
     for (const element of document.querySelectorAll(selector)) {
-      const rect = rectOf(element);
+      const rect = rectOf2(element);
       if (!rect) continue;
       const overlap = Math.max(0, Math.min(rect.left + rect.width, canvasRect.left + canvasRect.width) - Math.max(rect.left, canvasRect.left));
       const area = overlap * Math.min(rect.height, canvasRect.height);
@@ -3562,8 +3689,8 @@
     const viewport = options.viewport;
     let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
     let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
-    let panes = [], tone = null, readingLayout = null;
-    let raf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+    let panes = [], tone = null, readingLayout = null, foreground = null;
+    let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
     const spout = attachSpout(canvas, () => ({
       enabled: config.spout,
       reduced: reduced.matches,
@@ -3692,17 +3819,21 @@
       panes = [];
       tone = null;
       readingLayout = null;
+      foreground = null;
       if (!width || !height || !scene || disposed) return;
       if (demo) {
         applyReadingSnapshot(demoReadingSnapshot(demo, width, height));
         return;
       }
+      const canvasRect = rectOf2(canvas);
+      if (!canvasRect) return;
+      const scroller = pick(SCROLL_SELECTOR, canvasRect)?.element;
+      foreground = measureForeground(scroller, canvasRect, canvas);
+      foregroundObserver?.update(scroller, foreground.regions);
       if (!config.glass && !config.composerAvoid) {
         applyReadingSnapshot({ canvas: { left: 0, top: 0, width, height }, boxes: [] });
         return;
       }
-      const canvasRect = rectOf(canvas);
-      if (!canvasRect) return;
       const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
       const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
       applyReadingSnapshot({
@@ -3727,6 +3858,8 @@
       resolveDepthGrid(projected, grid, scene.triangles, scene.decals);
       stampSeaWraps(scene, projected, grid);
       shadeAtmosphere(atmosphere, grid, config);
+      ink.save();
+      glassClipExterior(ink, panes, width, height);
       const fade = readingLayout?.fade ?? null;
       const sceneryFade = readingLayout ? readingLayout.sceneryFade : (x, y) => attenuation(x, y, width, height, config.quietCenter);
       const scenery = {
@@ -3749,6 +3882,7 @@
       if (config.ripples) drawWater(ink, water, scenery);
       paintGlyphs(ink, fade);
       spout.paint(ink, fade);
+      ink.restore();
       if (demo && (config.glass || config.composerAvoid)) {
         const card = demoCardRect();
         if (card) {
@@ -3759,6 +3893,7 @@
         return;
       }
       paintGlassMaterial();
+      clearForeground(ink, foreground, width, height);
     }
     function paintPaneSeaUnion(list, material) {
       if (!list.length) return;
@@ -3888,6 +4023,17 @@
       measuredAt = -Infinity;
       if (reduced.matches) sync();
     }
+    function onForegroundChange() {
+      measuredAt = -Infinity;
+      if (disposed || document.hidden || !reduced.matches || foregroundRaf) return;
+      foregroundRaf = requestAnimationFrame(() => {
+        foregroundRaf = 0;
+        if (!disposed && !document.hidden) {
+          draw();
+          lastPaint = performance.now();
+        }
+      });
+    }
     function resize() {
       const rect = canvas.getBoundingClientRect();
       const displayWidth = Math.floor(rect.width), displayHeight = Math.floor(rect.height);
@@ -3916,6 +4062,7 @@
     }
     const observer = new ResizeObserver(resize);
     const themeObserver = new MutationObserver(sync);
+    const foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
     observer.observe(canvas);
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
     document.addEventListener("visibilitychange", sync);
@@ -3929,8 +4076,11 @@
       simulation.dispose();
       disposed = true;
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(foregroundRaf);
+      foregroundRaf = 0;
       raf = 0;
       observer.disconnect();
+      foregroundObserver?.dispose();
       themeObserver.disconnect();
       document.removeEventListener("visibilitychange", sync);
       reduced.removeEventListener("change", sync);
@@ -3948,6 +4098,7 @@
       panes = [];
       tone = null;
       readingLayout = null;
+      foreground = null;
       canvas.width = canvas.height = 1;
     }
     return { update, dispose };
