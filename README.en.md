@@ -23,10 +23,10 @@
 Five whale species cruise, turn, and glide through the conversation page, seen from directly above. Their bodies consist of your text or ASCII characters chosen by shading. Whales are drawn locally, without image assets or external services.
 
 <p align="center">
-  <img src="./docs/cruise.gif" width="760" alt="Three whales swimming past conversation cards, tails beating up and down">
+  <img src="./docs/cruise.gif" width="960" alt="Glyph whales cruising around the input box on an empty DeepSeek Harness page">
 </p>
 
-<p align="center"><sub>Cruising on the conversation page. Opacity is higher than the default 0.6 so the motion is easier to see. The cards wear the content-box glass.</sub></p>
+<p align="center"><sub>An empty conversation page in the desktop window. The whales swim around the input box. This is the running app.</sub></p>
 
 <p align="center">
   <img src="./docs/modes.png" width="960" alt="Four views of the same blue whale: glyphs or colored cells, each with custom text or ASCII">
@@ -40,7 +40,7 @@ Five whale species cruise, turn, and glide through the conversation page, seen f
 2. Install the file through the DSH plugin manager.
 3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
-The current published package is [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). The pictures below come from the real renderer, not a recording of the desktop window. The clips use a higher opacity than the default, and the fully hidden part of a dive is shortened.
+The current published package is [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). The clip at the top is a recording of the desktop window. The dive and fluke clips still come from the real renderer, and the fully hidden part of a dive is shortened.
 
 ## Features
 

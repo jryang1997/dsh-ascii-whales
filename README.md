@@ -23,10 +23,10 @@
 从海面正上方看，五种鲸鱼用文字和字格组成身体，缓缓摆尾、转向、滑行。鱼身可以使用你自己的文字，也可以按明暗填入 ASCII 字符。鲸体在本地绘制，无需图片素材或外部服务。
 
 <p align="center">
-  <img src="./docs/cruise.gif" width="760" alt="三头鲸从对话卡片旁边游过，尾鳍上下拍动">
+  <img src="./docs/cruise.gif" width="960" alt="DeepSeek Harness 空白对话页上，文字鲸鱼围着输入框巡游">
 </p>
 
-<p align="center"><sub>对话页上的巡游。浓度比默认的 0.6 高一些，方便看清。卡片上盖着内容框毛玻璃。</sub></p>
+<p align="center"><sub>桌面窗口里的空白对话页。鲸鱼围着输入框游，这是实际运行的画面。</sub></p>
 
 <p align="center">
   <img src="./docs/modes.png" width="960" alt="同一头蓝鲸的四种组合：纯字符或彩色字格，搭配自定义文字或 ASCII">
@@ -40,7 +40,7 @@
 2. 在 DSH 插件管理器中安装该文件。
 3. 打开 **插件 → 文字蓝鲸**，调整选项后点击 **保存**。
 
-目前发布的安装包为 [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0)。0.10.0 之后的变化见[更新日志](./CHANGELOG.md)。下面的画面用正式渲染器画出，不是桌面窗口的录屏。动图里的浓度高于默认，完全沉在水下的几秒被缩短了。
+目前发布的安装包为 [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0)。0.10.0 之后的变化见[更新日志](./CHANGELOG.md)。最上面一段是桌面窗口的录屏。下潜和拍尾仍用正式渲染器画出，完全沉在水下的几秒被缩短了。
 
 ## 能做什么
 
