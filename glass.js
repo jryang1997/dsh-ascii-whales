@@ -1,11 +1,6 @@
 // Frosted glass over every opaque content box in the conversation, plus the
-// input card. Everything here is pure geometry, tone and buffer arithmetic so
-// the tests can drive it without a DOM or a Canvas; engine.js measures the
-// boxes and paints the result.
-//
-// build.mjs concatenates the renderer modules into one factory, so no top-level
-// name may collide with model.js (which owns `clamp`, `mix`, `smooth`, `noise`
-// and the other short helpers). Every helper here is prefixed with `glass`.
+// input card. Pure geometry, tone and buffer arithmetic; reading-layout.js
+// owns layout policy and engine.js paints the result.
 
 // A pane equal to its box: only boxes too small to hold readable text are
 // dropped, so the glass can never sit inside the box it covers.

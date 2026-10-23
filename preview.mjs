@@ -1,10 +1,6 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { assembleBrowser, writeArtifact } from './browser-build.mjs';
 const root = new URL('./', import.meta.url);
-// Keep this list in the same order as build.mjs: the preview inlines the whole
-// renderer, so any module engine.js imports (glass, spout, …) must be here too.
-const names = ['species.js', 'rig.js', 'shading.js', 'atmosphere.js', 'water.js', 'motion.js', 'model.js', 'surface.js', 'glass.js', 'spout.js', 'engine.js'];
-const strip = text => text.replace(/^import .*;\r?\n/gm, '').replace(/^export \{.*\} from .*;\r?\n/gm, '').replace(/^export /gm, '');
-const source = (await Promise.all(names.map(name => readFile(new URL(name, root), 'utf8')))).map(strip).join('\n');
+const source = (await assembleBrowser('preview-client.js')).replace(/<\/script/gi, '<\\/script');
 const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>文字鲸鱼 · 彩色字格与 ASCII</title>
 <style>
 :root{font:14px/1.7 "Microsoft YaHei",sans-serif;color:#234357;background:#f3f6f8}*{box-sizing:border-box}body{margin:0;padding:32px 20px}main{max-width:1180px;margin:auto}h1{font-size:26px;margin:0 0 10px}h2{font-size:18px;margin:0 0 6px}p{color:#627987;margin:0 0 18px}.comparisons{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card,section{background:#fff;border:1px solid #dbe5eb;border-radius:12px;padding:20px}.card canvas{display:block;width:100%;height:270px}.card p{font-size:12px;margin:0}.card h2{font-size:16px}section{margin-top:22px}label{display:inline-flex;align-items:center;gap:7px;margin:0 16px 12px 0}select,input,button{font:inherit;color:inherit;border:1px solid #c7d6df;border-radius:6px;padding:5px 8px;background:#fff}input[type=text]{width:180px}button{cursor:pointer}.stage{position:relative;isolation:isolate;height:650px}.stage canvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}.flow{position:absolute;inset:0 0 156px 0;z-index:1;display:flex;flex-direction:column;gap:16px;padding:24px 10%;overflow:hidden}.msg-card{background:#fff;border:1px solid #dbe5eb;border-radius:20px;padding:18px 22px;box-shadow:0 4px 16px rgba(35,62,86,.06);color:#29475a;font-size:14px}.msg-card h3{font-size:16px;margin:0 0 6px;color:#234357}.msg-card p{margin:0;font-size:13px;line-height:1.7;color:#54707f}.msg-card--wide{width:100%}.msg-card--mid{width:84%;border-radius:24px;border-color:#cfdee8}.msg-card--narrow{width:66%;border-radius:28px;align-self:flex-end;border-color:#d3e2ea}.hint{font-size:12px;margin:12px 0 0}#status{font-size:12px;color:#627987}body.dark{background:#171d25;color:#d1dfeb}body.dark .card,body.dark section{background:#202730;border-color:#384654}body.dark select,body.dark input,body.dark button{background:#293342;color:#d1dfeb;border-color:#45576a}body.dark .msg-card{background:#202730;border-color:#384654;color:#cfdbe5;box-shadow:0 4px 16px rgba(0,0,0,.28)}body.dark .msg-card h3{color:#d1dfeb}body.dark .msg-card p{color:#a9bccb}body.dark output{color:#9fc3dd}
@@ -31,98 +27,7 @@ input[type=range]{width:150px;padding:0;border:0;background:transparent;accent-c
 <p class="hint">鲸鱼大小只改体长：0.55 约半身，1.00 默认，1.55 最大。内容框毛玻璃与鱼群避让二选一：开一个会自动关掉另一个。独立预览不替代实际 DSH 窗口的最终观感。</p></section><p class="hint">原版字格研究见 ASCII-RENDER-NOTES.md，鲸类图片依据见 WHALE-REFERENCES.md。</p></main>
 <script>
 ${source}
-const el=id=>document.getElementById(id);
-const samples=Array.from(document.querySelectorAll('.card canvas'));
-const clampValue=(value,min,max)=>Math.max(min,Math.min(max,value));
-const readNumber=(id,min,max,fallback)=>{const value=Number(el(id).value);return Number.isFinite(value)?clampValue(value,min,max):fallback;};
-const twoDigits=value=>Number(value).toFixed(2);
-let layer=null,paused=false,sampleFrame=0;
-
-/** One config object per change; only its content is handed to the live layer. */
-function readConfig(){
-  return {...DEFAULTS,
-    species:el('species').value,
-    renderStyle:el('renderStyle').value,
-    fillMode:el('fillMode').value,
-    text:el('text').value,
-    count:Math.round(readNumber('count',1,8,3)),
-    whaleSize:readNumber('whaleSize',0.55,1.55,1),
-    // The layer accepts an explicit speed 0 as "frozen": it keeps repainting the
-    // same static frame, so pause never blanks or restarts the school. The
-    // settings page can never send 0 (its slider floor is 0.3).
-    speed:paused?0:readNumber('speed',0.3,2,0.65),
-    opacity:0.8,
-    glass:el('glass').checked,
-    quietCenter:false,
-    composerAvoid:el('composerAvoid').checked,
-  };
-}
-
-function syncDom(config){
-  const dark=el('dark').checked;
-  document.body.classList.toggle('dark',dark);
-  document.body.toggleAttribute('data-ds-dark-theme',dark);
-  el('text').disabled=el('fillMode').value==='ascii';
-  el('countOut').value=String(config.count);
-  el('whaleSizeOut').value=twoDigits(config.whaleSize);
-  el('speedOut').value=twoDigits(el('speed').value);
-  el('pause').textContent=paused?'播放':'暂停';
-  el('status').textContent=paused?'已暂停'
-    :config.composerAvoid?'鱼群避让开'
-    :config.glass?'内容框毛玻璃开'
-    :'上下摆尾与滑行';
-}
-
-function drawSamples(){
-  const dark=el('dark').checked,size=readNumber('whaleSize',0.55,1.55,1),ratio=Math.min(2,devicePixelRatio||1);
-  for(const canvas of samples)drawWhaleSample(canvas,{...DEFAULTS,species:'blue',renderStyle:canvas.dataset.style,
-    fillMode:canvas.dataset.fill,text:'探索未至之境',glyphSize:9,opacity:0.85,whaleSize:size},{height:270,ratio,dark});
-}
-/** Drag events outpace the four samples, so their redraw rides one frame. */
-function scheduleSamples(){if(sampleFrame)return;sampleFrame=requestAnimationFrame(()=>{sampleFrame=0;drawSamples();});}
-
-/** Controls only push a config into the existing layer; the canvas never remounts. */
-function apply(){const config=readConfig();syncDom(config);if(layer)layer.update(config);}
-function boot(){layer=createWhaleLayer(el('live'),readConfig());}
-function disposeLayer(){if(layer){layer.dispose();layer=null;}}
-
-const controls=['renderStyle','fillMode','text','species','count','whaleSize','speed'];
-for(const id of controls){el(id).addEventListener('input',apply);el(id).addEventListener('change',apply);}
-el('whaleSize').addEventListener('input',scheduleSamples);
-el('dark').addEventListener('change',()=>{apply();scheduleSamples();});
-el('pause').addEventListener('click',()=>{paused=!paused;apply();});
-/** Content glass and input-box avoidance are alternatives, like the settings page. */
-const EXCLUSIVE={glass:'composerAvoid',composerAvoid:'glass'};
-for(const id of ['glass','composerAvoid']){
-  el(id).addEventListener('change',()=>{
-    const opposite=EXCLUSIVE[id];
-    if(opposite&&el(id).checked)el(opposite).checked=false;
-    apply();
-  });
-}
-
-const sampleObserver=new ResizeObserver(()=>scheduleSamples());
-for(const canvas of samples)sampleObserver.observe(canvas);
-syncDom(readConfig());
-drawSamples();
-boot();
-
-window.__previewTest={
-  config:()=>readConfig(),
-  apply,
-  size:value=>{el('whaleSize').value=String(value);apply();drawSamples();},
-  layerAlive:()=>Boolean(layer),
-  /** Toggle an option; the exclusive partner switches off, like the settings page. */
-  option(which,on){
-    const id=which==='avoid'?'composerAvoid':'glass';
-    el(id).checked=Boolean(on);
-    if(on)el(EXCLUSIVE[id]).checked=false;
-    apply();
-  },
-};
-window.addEventListener('pagehide',()=>{disposeLayer();sampleObserver.disconnect();if(sampleFrame)cancelAnimationFrame(sampleFrame);sampleFrame=0;});
-window.addEventListener('pageshow',event=>{if(event.persisted){for(const canvas of samples)sampleObserver.observe(canvas);drawSamples();boot();}});
-document.documentElement.dataset.previewReady='true';
 </script></html>`;
-await writeFile(new URL('whale-preview.html', root), html, 'utf8');
-console.log('Built four-style comparison and a live preview that updates one whale layer.');
+const check = process.argv.includes('--check');
+await writeArtifact(new URL('whale-preview.html', root), html, { check });
+console.log(check ? 'Preview artifact matches its sources.' : 'Built four-style comparison and a live preview that updates one whale layer.');

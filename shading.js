@@ -1,4 +1,3 @@
-// Keep these names distinct when the renderer modules are concatenated.
 const GLYPH_INK_LIGHT_LEVELS = 32;
 const GLYPH_INK_DEPTH_LEVELS = 16;
 const GLYPH_INK_NEAR_DEPTH = 0.14;

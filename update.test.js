@@ -4,6 +4,7 @@ import { FIELDS, DEFAULTS, normalizeConfig, configSignature, createScene, resize
 import { adoptSceneState } from './motion.js';
 import { createWhaleLayer, diffWhaleConfig, mountWhales } from './engine.js';
 import { whaleSpecies } from './species.js';
+import { createWhaleSimulation } from './simulation.js';
 
 const close = (a, b, epsilon = 1e-9) => assert.ok(Math.abs(a - b) <= epsilon, `${a} differs from ${b}`);
 const baseline = () => normalizeConfig(DEFAULTS);
@@ -65,6 +66,18 @@ test('every field is classified into exactly one rebuild group, and equal values
   }
   // A missing config is treated as "everything unknown" rather than throwing.
   assert.deepEqual(diffWhaleConfig(undefined, base), { scene: true, metrics: true, palette: true, glass: true, composer: true, live: true });
+});
+
+test('simulation update reports actual scene replacement for structural edits and retains it for live edits', () => {
+  for (const key of Object.keys(FIELDS)) {
+    const simulation = createWhaleSimulation(baseOf(key), { seed: 42 });
+    const previous = simulation.scene;
+    const rebuilt = simulation.update(variantOf(key));
+    assert.equal(rebuilt, GROUP_OF.scene.includes(key), `${key}: replacement result`);
+    assert.equal(simulation.scene === previous, !rebuilt, `${key}: exposed render scene`);
+    assert.equal(simulation.update(variantOf(key)), false, `${key}: unchanged update`);
+    simulation.dispose();
+  }
 });
 
 test('the default whale size reproduces the 0.8.0 particle counts exactly', () => {

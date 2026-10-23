@@ -1,7 +1,5 @@
 import { attenuation, projectParticle } from './model.js';
 
-// Helpers stay `spout`-prefixed: build.mjs strips `export` and concatenates this
-// file into the same scope as model.js, which already owns clamp/mix/smooth/noise.
 const SPOUT_LIMIT = 3;
 const SPOUT_BLOCK_TAGS = new Set(['button', 'input', 'textarea', 'a', 'select', 'label', 'summary']);
 const SPOUT_BLOCK_ROLES = new Set(['button', 'slider', 'textbox']);

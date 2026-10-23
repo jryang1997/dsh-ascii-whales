@@ -1,4 +1,5 @@
-import { FIELDS, DEFAULTS, normalizeConfig, configSignature } from './model.js';
+import { FIELDS, normalizeConfig, configSignature } from './model.js';
+import { createConfigEditor } from './config-editor.js';
 import { createWhaleLayer } from './engine.js';
 
 /** The preview always shows the school, whatever the saved switches say. */
@@ -134,70 +135,36 @@ export function registerWhales(ctx, React, dictionaries) {
     } }, h(Canvas, { config }));
   }
 
-  function editorFrom(snapshot) {
-    const base = normalizeConfig(snapshot.value);
-    return { base, draft: { ...base }, revision: snapshot.revision };
-  }
-  const isDirty = editor => editor && Object.entries(FIELDS).some(([key, field]) => {
-    const value = editor.draft[key];
-    return field.kind === 'number' ? value === '' || Number(value) !== editor.base[key] : value !== editor.base[key];
-  });
-
   function Settings() {
     const snapshot = useForm();
     React.useSyncExternalStore(localeSubscribe, localeSnapshot, localeSnapshot);
-    const [editor, setEditor] = React.useState(() => snapshot.status === 'ready' ? editorFrom(snapshot) : null);
+    const [editor, setEditor] = React.useState(() => snapshot.status === 'ready' ? createConfigEditor(snapshot) : null);
     const [saving, setSaving] = React.useState(false);
     const [notice, setNotice] = React.useState('');
-    const dirty = isDirty(editor);
+    const dirty = editor?.dirty ?? false;
     React.useEffect(() => {
-      if (snapshot.status === 'ready' && !dirty) setEditor(editorFrom(snapshot));
+      if (snapshot.status === 'ready' && !dirty) setEditor(createConfigEditor(snapshot));
     }, [snapshot, dirty]);
     const prefix = React.useId();
     if (snapshot.status !== 'ready' || !editor) return h('p', { role: 'status' }, t(snapshot.status === 'loading' ? 'loading' : 'unavailable'));
     const disabled = !snapshot.writable || saving;
-    // The content glass and the input-box avoidance are alternatives: glass already
-    // blurs what is behind every box, so avoiding the input box as well would only
-    // squeeze the school for no visual gain. Turning one on turns the other off in
-    // the same draft, and the save below submits both keys through the ordinary ops
-    // path (only the keys that really changed).
-    const EXCLUSIVE = { glass: 'composerAvoid', composerAvoid: 'glass' };
+    // The editor owns draft rules and the revision-aware persistence protocol.
     function update(key, value) {
-      setEditor(current => {
-        const draft = { ...current.draft, [key]: value };
-        const opposite = EXCLUSIVE[key];
-        if (opposite && value === true) draft[opposite] = false;
-        return { ...current, draft };
-      });
+      setEditor(current => current.change(key, value));
       setNotice('');
     }
     async function save(event) {
       event.preventDefault();
       if (disabled || !dirty) return;
-      const values = { ...editor.draft };
-      for (const [key, f] of Object.entries(FIELDS)) {
-        if (f.kind === 'number') {
-          const value = Number(values[key]);
-          if (values[key] === '' || !Number.isFinite(value) || value < f.min || value > f.max || (f.step === 1 && !Number.isInteger(value))) {
-            setNotice('invalid');
-            return;
-          }
-          values[key] = value;
-        }
-      }
-      const ops = Object.keys(FIELDS).filter(k => values[k] !== editor.base[k]).map(k => ({ op: 'set', path: [k], value: values[k] }));
-      if (!ops.length) return;
       setSaving(true);
       setNotice('');
       try {
-        if (await form.mutate(ops, editor.revision)) {
-          setEditor(editorFrom(form.getSnapshot()));
-          setNotice('saved');
-        } else setNotice('conflict');
-      } catch { setNotice('failed'); }
-      finally { setSaving(false); }
+        const result = await editor.save(form);
+        setEditor(result.editor);
+        setNotice(result.notice);
+      } finally { setSaving(false); }
     }
-    function discard() { setEditor(editorFrom(form.getSnapshot())); setNotice(''); }
+    function discard() { setEditor(createConfigEditor(form.getSnapshot())); setNotice(''); }
     // Two columns: the sticky live preview on the left, the scrolling fields on
     // the right. The whole fields column (read-only notice, rows, actions and
     // the save notice) moves as one block; only the preview stays put.
@@ -260,7 +227,7 @@ export function registerWhales(ctx, React, dictionaries) {
           }),
           h('div', { className: 'aw-actions' },
             h('button', { type: 'submit', disabled: disabled || !dirty, className: 'aw-save' }, t(saving ? 'saving' : 'save')),
-            h('button', { type: 'button', disabled, onClick: () => { setEditor(e => ({ ...e, draft: { ...DEFAULTS } })); setNotice(''); } }, t('reset')),
+            h('button', { type: 'button', disabled, onClick: () => { setEditor(e => e.reset()); setNotice(''); } }, t('reset')),
             h('button', { type: 'button', disabled: saving, onClick: discard }, t('discard'))),
           notice && h('p', { role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice)))));
   }

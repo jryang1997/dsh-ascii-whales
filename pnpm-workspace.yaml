@@ -1,0 +1,3 @@
+# esbuild uses its platform-specific optional package; no dependency build scripts run.
+allowBuilds:
+  esbuild: false

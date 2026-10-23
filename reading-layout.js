@@ -1,0 +1,57 @@
+import { glassContentPanes, glassContentTone, glassEdgeFade } from './glass.js';
+import { attenuation } from './model.js';
+
+function readingExpandedRect(canvas, card, margin) {
+  const x = Math.max(0, card.left - canvas.left - margin);
+  const y = Math.max(0, card.top - canvas.top - margin);
+  const right = Math.min(canvas.width, card.left - canvas.left + card.width + margin);
+  const bottom = Math.min(canvas.height, card.top - canvas.top + card.height + margin);
+  return right - x > 0 && bottom - y > 0
+    ? { x, y, width: right - x, height: bottom - y } : null;
+}
+
+/** Both DOM and demo adapters supply page rectangles; policy stays here. */
+export function createReadingLayout(snapshot, config, material = {}) {
+  const { canvas, boxes = [], composer = null } = snapshot;
+  const panes = config.glass ? glassContentPanes({ canvas, boxes, max: 16 }) : [];
+  const tone = config.glass ? glassContentTone(config.glassStrength, material) : null;
+  const visiblePanes = tone ? panes : [];
+  const avoidRect = config.composerAvoid && composer
+    ? readingExpandedRect(canvas, composer, 8) : null;
+  const fade = !visiblePanes.length && !avoidRect ? null : (x, y) => {
+    if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width
+      && y > avoidRect.y && y < avoidRect.y + avoidRect.height) return 0;
+    let value = 1;
+    for (const pane of visiblePanes) {
+      value = Math.min(value, glassEdgeFade(pane, x, y, pane.feather ?? tone?.feather ?? 10));
+    }
+    return value;
+  };
+  return {
+    panes, tone, fade,
+    sceneryFade(x, y) {
+      for (const pane of visiblePanes) {
+        if (x >= pane.x && x <= pane.x + pane.width && y >= pane.y && y <= pane.y + pane.height) return 0;
+      }
+      return attenuation(x, y, canvas.width, canvas.height, config.quietCenter) * (fade ? fade(x, y) : 1);
+    },
+    obstacles(largestRadius) {
+      if (!config.composerAvoid || !composer) return [];
+      const radius = Number.isFinite(largestRadius) ? largestRadius : 0;
+      const obstacle = readingExpandedRect(canvas, composer, Math.max(26, 22 + 0.35 * radius));
+      return obstacle && obstacle.width >= 1 && obstacle.height >= 1 ? [obstacle] : [];
+    },
+  };
+}
+
+/** Ratio-based settings preview adapter, expressed in the same space as DOM. */
+export function demoReadingSnapshot(card, width, height) {
+  const canvas = { left: 0, top: 0, width, height };
+  const composer = card && width > 0 && height > 0
+    && card.width * width >= 1 && card.height * height >= 1 ? {
+    left: card.x * width, top: card.y * height,
+    width: card.width * width, height: card.height * height,
+    radius: Number.isFinite(card.radius) ? card.radius : 0,
+  } : null;
+  return { canvas, boxes: composer ? [composer] : [], composer };
+}

@@ -1,0 +1,8 @@
+# Keep generated text identical on Windows and Linux checkouts.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.tgz binary

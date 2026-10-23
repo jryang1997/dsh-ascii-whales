@@ -1,8 +1,7 @@
 import { whaleSpecies } from './species.js';
 import { deformWhaleParticle, resetWhaleRig, resizeWhaleRig, updateWhaleRig, writeWhaleRigPose } from './rig.js';
 
-// Stateful screen-space swimming. All helpers are prefixed because the release
-// build concatenates this module with the renderer and geometry modules.
+// Stateful screen-space swimming with fixed-step integration.
 const motionTick = 1 / 60;
 // Model y points down into the water; the fog band begins at this plane.
 export const DIVE_WATERLINE = 0.10;

@@ -5,10 +5,6 @@ import { whalePose, projectParticle } from './model.js';
 // Ripples are a top-down read of the surface: one fluke slap sends out a calm
 // ring that swells quickly and then settles. Everything here is pure geometry
 // and deterministic hashes, so tests can drive it without a canvas or a clock.
-//
-// build.mjs concatenates the renderer modules into one factory, so every
-// top-level name carries a `water`/`WATER_` prefix to stay clear of model.js,
-// motion.js and glass.js.
 
 const WATER_BEAT = Math.PI * 2;
 // Below this the fluke is gliding on momentum instead of pushing water, so a

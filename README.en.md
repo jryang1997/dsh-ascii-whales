@@ -145,19 +145,20 @@ The page includes all four rendering combinations and a live group of whales. Ch
 <details>
 <summary>Build, check, and package</summary>
 
-Install dependencies from the project root, then run the commands you need:
+Use the Node version in [.node-version](./.node-version) and the pnpm version pinned in [package.json](./package.json). From the project root:
 
 ```sh
-npm install
-npm run build
-node preview.mjs
-npm run check
-npm test
-node build.mjs --check
-npm pack --ignore-scripts
+pnpm install --frozen-lockfile
+pnpm verify
 ```
 
-`npm run build` generates `client.js` from source. `node preview.mjs` generates the standalone preview. The package name is `@local/dsh-ascii-ocean`, and the Host row id is `ascii-whale-background`.
+After changing browser sources, run `pnpm build` and `node preview.mjs` to update both artifacts, then run `pnpm verify`. Verification checks committed output without rebuilding it, so stale artifacts fail. Test discovery includes only root `*.test.js` files and excludes backups, reference projects, and worktree copies. GitHub Actions runs the same verification on Windows and Linux.
+
+`pnpm check` checks syntax; `pnpm test` runs tests. `pnpm --silent review:snapshot --base <ref>` outputs a JSON review inventory including untracked files. `pnpm --silent agent:probe` checks whether its process can read the entry files. See the [engineering guide](./docs/agents/engineering.md) for native-tool read preflight, review scope, and browser evidence requirements.
+
+Package with `pnpm pack --ignore-scripts`.
+
+`pnpm build` generates [client.js](./client.js) from [browser-entry.js](./browser-entry.js). `node preview.mjs` generates the standalone preview from [preview-client.js](./preview-client.js). Both entries use [browser-build.mjs](./browser-build.mjs) and the esbuild development dependency to resolve imports and isolate file scopes; the installed plugin does not need esbuild. Both generators support `--check` to verify source consistency. The package name is `@local/dsh-ascii-ocean`, and the Host row id is `ascii-whale-background`.
 
 | File | Purpose |
 | --- | --- |
@@ -169,6 +170,10 @@ npm pack --ignore-scripts
 | [surface.js](./surface.js) | Character selection, palettes, and cell drawing |
 | [glass.js](./glass.js) | Reading-pane and input-box geometry and materials |
 | [engine.js](./engine.js) | Canvas drawing and updates in place |
+| [reading-layout.js](./reading-layout.js) | Shared glass, masks, and avoidance rules for conversation and demo cards |
+| [simulation.js](./simulation.js) | Scene adoption, resizing, and advancement of motion and sea effects |
+| [config-editor.js](./config-editor.js) | Draft rules, validation, differential saves, and revision conflicts |
+| [browser-build.mjs](./browser-build.mjs) | Shared browser artifact assembly and consistency checks |
 | [settings.js](./settings.js) | Native DSH settings page |
 
 </details>

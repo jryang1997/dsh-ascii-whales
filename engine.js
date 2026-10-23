@@ -1,11 +1,12 @@
+import { createReadingLayout, demoReadingSnapshot } from './reading-layout.js';
 import { createWhalePainter } from './surface.js';
-import { createScene, resizeScene, stepScene, whalePose, projectParticle, createDepthGrid, resolveDepthGrid, stampSeaWraps, fitCanvas, normalizeConfig, attenuation } from './model.js';
-import { adoptSceneState, setSceneObstacles } from './motion.js';
-import { glassContentPanes, glassContentTone, glassRoundedPath, glassRoundedSubpath, glassTone, glassSeaFactor, glassSeaBuffer, glassEdgeFade } from './glass.js';
+import { whalePose, projectParticle, createDepthGrid, resolveDepthGrid, stampSeaWraps, fitCanvas, normalizeConfig, attenuation } from './model.js';
+import { createWhaleSimulation, sceneConfigChanged } from './simulation.js';
+import { glassRoundedPath, glassRoundedSubpath, glassTone, glassSeaFactor, glassSeaBuffer } from './glass.js';
 import { attachSpout } from './spout.js';
-import { createWaterField, resetWaterField, stepWater, drawWater } from './water.js';
+import { drawWater } from './water.js';
 import { createInkPalette } from './shading.js';
-import { createAtmosphereField, resizeAtmosphereField, stepAtmosphere, drawAtmosphere, shadeAtmosphere } from './atmosphere.js';
+import { drawAtmosphere, shadeAtmosphere } from './atmosphere.js';
 
 // DSH publishes these hooks on the conversation subtree. Every one of them is
 // optional: without them the whales simply paint as before, so an unknown
@@ -20,7 +21,6 @@ const MEASURE_INTERVAL = 400;
 
 // Which of the conversation's boxes get their own pane of glass. Only opaque,
 // rounded, card-sized boxes are candidates; the input card is always one.
-const CONTENT_MAX_BOXES = 16;
 const CONTENT_MAX_SCAN = 600;
 const CONTENT_MIN_AREA = 2000;
 const CONTENT_MAX_AREA_RATIO = 0.55;
@@ -41,7 +41,6 @@ const DEMO_LINE_HEIGHT = 7;
 // Which option belongs to which kind of work. A group only rebuilds its own
 // part; `live` options are read straight from the config while painting, so
 // changing one needs nothing more than the next frame.
-const SCENE_KEYS = Object.freeze(['count', 'text', 'species', 'whaleSize']);
 const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength']);
@@ -63,7 +62,7 @@ const noChange = changes => !changes.scene && !changes.metrics && !changes.palet
 export function diffWhaleConfig(previous, next) {
   const before = previous || {}, after = next || {};
   return {
-    scene: anyChanged(SCENE_KEYS, before, after),
+    scene: sceneConfigChanged(before, after),
     metrics: anyChanged(METRIC_KEYS, before, after),
     palette: anyChanged(PALETTE_KEYS, before, after),
     glass: anyChanged(GLASS_KEYS, before, after),
@@ -177,24 +176,6 @@ function collectContentBoxes(canvasRect, composerHit) {
 }
 
 /**
- * The card plus a margin, in canvas coordinates, as a motion obstacle.
- *
- * The margin is what keeps bodies from merely touching the glass: it grows with
- * the largest whale in the school (so a bigger school keeps proportionally more
- * room) and never shrinks below 26px. A card entirely off the sea yields no
- * obstacle at all.
- */
-function composerObstacle(canvasRect, cardRect, largestRadius) {
-  const margin = Math.max(26, 22 + 0.35 * (Number.isFinite(largestRadius) ? largestRadius : 0));
-  const left = Math.max(0, cardRect.left - canvasRect.left - margin);
-  const top = Math.max(0, cardRect.top - canvasRect.top - margin);
-  const right = Math.min(canvasRect.width, cardRect.left - canvasRect.left + cardRect.width + margin);
-  const bottom = Math.min(canvasRect.height, cardRect.top - canvasRect.top + cardRect.height + margin);
-  return right - left >= 1 && bottom - top >= 1
-    ? { x: left, y: top, width: right - left, height: bottom - top } : null;
-}
-
-/**
  * Normalize like the settings form, but keep an explicit `speed: 0`.
  *
  * The settings range starts at 0.3, so the form can never produce a zero. The
@@ -228,17 +209,15 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   // Optional preview injection: `demoCard` places one card by canvas ratios
   // (0..1) with a pixel radius. With it, measure() never reads the DOM — the
   // settings preview has no conversation hooks to find, yet the glass and
-  // avoidance options still need a card to act on. Without it every path below
-  // is byte-for-byte the default one; Overlay and the standalone preview never
-  // pass a third argument.
+  // avoidance options still need a card to act on. Overlay and the standalone
+  // preview use the DOM adapter instead.
   const demo = options.demoCard || null;
   const scenerySeed = Math.floor(Math.random() * 0x100000000) >>> 0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
-  let scene = createScene(config.count, config.text, config.species, config.whaleSize);
-  scene.diveSeed = scenerySeed;
-  const water = createWaterField();
-  const atmosphere = createAtmosphereField({ seed: scenerySeed });
+  const simulation = createWhaleSimulation(config, { seed: scenerySeed });
+  let scene = simulation.scene;
+  const { water, atmosphere } = simulation;
   let sceneryPalette = createInkPalette(config.color);
   let poses = scene.whales.map(() => ({}));
   let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
@@ -255,8 +234,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   // blur cost.
   let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
   let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
-  let panes = [], tone = null, composerCard = null;
-  let avoidRect = null;
+  let panes = [], tone = null, readingLayout = null;
   let raf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
   const spout = attachSpout(canvas, () => ({
     enabled: config.spout,
@@ -374,53 +352,24 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
    */
   function applySceneObstacles() {
     if (!scene) return;
-    const obstacles = [];
-    if (config.composerAvoid && composerCard) {
-      let largest = 0;
-      for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
-      const obstacle = composerObstacle(composerCard.canvas, composerCard.card, largest);
-      if (obstacle) obstacles.push(obstacle);
-    }
-    setSceneObstacles(scene, obstacles);
+    let largest = 0;
+    for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
+    simulation.setObstacles(readingLayout ? readingLayout.obstacles(largest) : []);
   }
 
   /** The demo card as a pixel rectangle for the current canvas size. */
   function demoCardRect() {
     if (!demo || !width || !height) return null;
-    const left = demo.x * width, top = demo.y * height;
-    const cardWidth = demo.width * width, cardHeight = demo.height * height;
-    if (!(cardWidth >= 1) || !(cardHeight >= 1)) return null;
-    return { left, top, width: cardWidth, height: cardHeight,
-      radius: Number.isFinite(demo.radius) ? demo.radius : 0 };
+    return demoReadingSnapshot(demo, width, height).composer;
   }
 
-  /**
-   * Preview measurement: the injected ratios replace every DOM read. The card
-   * is both the one glass pane and the avoidance target, so those two options
-   * show their real effect inside the settings preview; with both off the sea
-   * is simply open water and nothing is painted for the card. Resizes need no
-   * extra bookkeeping: every resize invalidates the measurement, and the ratios
-   * are re-applied to the new canvas size.
-   */
-  function measureDemoCard() {
-    const card = demoCardRect();
-    if (card && config.glass) {
-      panes = glassContentPanes({ canvas: { left: 0, top: 0, width, height }, boxes: [card], max: 1 });
-      tone = glassContentTone(config.glassStrength,
-        { dark: document.body.hasAttribute('data-ds-dark-theme'), reducedTransparency: reducedTransparency.matches });
-    }
-    if (card && config.composerAvoid) {
-      // Same shapes as the real composer: the margin obstacle steers the
-      // school, and the 8px rectangle guarantees no ink on the card even from
-      // a transiently bent fluke.
-      composerCard = { card, canvas: { left: 0, top: 0, width, height } };
-      const left = Math.max(0, card.left - 8);
-      const top = Math.max(0, card.top - 8);
-      const right = Math.min(width, card.left + card.width + 8);
-      const bottom = Math.min(height, card.top + card.height + 8);
-      avoidRect = right - left > 0 && bottom - top > 0
-        ? { x: left, y: top, width: right - left, height: bottom - top } : null;
-    }
+  /** Apply the shared policy to either a DOM or a ratio-based snapshot. */
+  function applyReadingSnapshot(snapshot) {
+    readingLayout = createReadingLayout(snapshot, config, {
+      dark: document.body.hasAttribute('data-ds-dark-theme'),
+      reducedTransparency: reducedTransparency.matches,
+    });
+    ({ panes, tone } = readingLayout);
     applySceneObstacles();
   }
 
@@ -436,41 +385,20 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     measuredAt = performance.now();
     panes = [];
     tone = null;
-    composerCard = null;
-    avoidRect = null;
+    readingLayout = null;
     if (!width || !height || !scene || disposed) return;
-    if (demo) { measureDemoCard(); return; }
+    if (demo) { applyReadingSnapshot(demoReadingSnapshot(demo, width, height)); return; }
     if (!config.glass && !config.composerAvoid) {
-      applySceneObstacles();
+      applyReadingSnapshot({ canvas: { left: 0, top: 0, width, height }, boxes: [] });
       return;
     }
     const canvasRect = rectOf(canvas);
     if (!canvasRect) return;
-    const dark = document.body.hasAttribute('data-ds-dark-theme');
-    const material = { dark, reducedTransparency: reducedTransparency.matches };
-    // The input card is both a content box and the avoidance target; the card
-    // hook wins over its sticky seat wrapper.
     const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
     const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
-    if (composer) composerCard = { card: composer.rect, canvas: canvasRect };
-    if (config.glass) {
-      const boxes = collectContentBoxes(canvasRect, cardHit);
-      panes = glassContentPanes({ canvas: canvasRect, boxes, max: CONTENT_MAX_BOXES });
-      // 'clear' (reduced transparency) keeps the panes for the glyph hold-out but
-      // paints no material, so the boxes stay free of the sea either way.
-      tone = glassContentTone(config.glassStrength, material);
-    }
-    if (config.composerAvoid && composer) {
-      // This canvas paints above the input card, so whale ink must never land on
-      // it: avoidance keeps the bodies away, and this rectangle is the guarantee
-      // for a transiently bent fluke. Eight pixels cover a glyph cell's edge.
-      const left = Math.max(0, composer.rect.left - canvasRect.left - 8);
-      const top = Math.max(0, composer.rect.top - canvasRect.top - 8);
-      const right = Math.min(canvasRect.width, composer.rect.left - canvasRect.left + composer.rect.width + 8);
-      const bottom = Math.min(canvasRect.height, composer.rect.top - canvasRect.top + composer.rect.height + 8);
-      avoidRect = right - left > 0 && bottom - top > 0 ? { x: left, y: top, width: right - left, height: bottom - top } : null;
-    }
-    applySceneObstacles();
+    applyReadingSnapshot({ canvas: canvasRect,
+      boxes: config.glass ? collectContentBoxes(canvasRect, cardHit) : [],
+      composer: composer ? composer.rect : null });
   }
 
   function draw() {
@@ -490,30 +418,9 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     // A body crossing the top is the same body entering from the bottom.
     stampSeaWraps(scene, projected, grid);
     shadeAtmosphere(atmosphere, grid, config);
-    // Reduced transparency withholds the material, not the readability work: the
-    // panes still hold the glyphs out, they just paint no glass over the words.
-    const visiblePanes = tone ? panes : [];
-    const openWater = !visiblePanes.length && !avoidRect;
-    const featherOf = pane => pane.feather ?? (tone ? tone.feather : 10) ?? 10;
-    // Glyphs hold out of every pane across that pane's own feather, so no whale
-    // is cut by a line; the ramp keeps the body readable right up to the glass.
-    const fade = openWater ? null : (x, y) => {
-      // The input card is opaque to whale ink when avoidance is on (see avoidRect).
-      if (avoidRect && x > avoidRect.x && x < avoidRect.x + avoidRect.width
-        && y > avoidRect.y && y < avoidRect.y + avoidRect.height) return 0;
-      let fade = 1;
-      for (const pane of visiblePanes) fade = Math.min(fade, glassEdgeFade(pane, x, y, featherOf(pane)));
-      return fade;
-    };
-    const sceneryFade = (x, y) => {
-      // Weather remains outside the entire reading card, including the small
-      // corners beyond its rounded material. Scattered shadow dots must not
-      // drift into that text container while a whale-only scene happens to miss it.
-      for (const pane of visiblePanes) {
-        if (x >= pane.x && x <= pane.x + pane.width && y >= pane.y && y <= pane.y + pane.height) return 0;
-      }
-      return attenuation(x, y, width, height, config.quietCenter) * (fade ? fade(x, y) : 1);
-    };
+    const fade = readingLayout?.fade ?? null;
+    const sceneryFade = readingLayout ? readingLayout.sceneryFade
+      : (x, y) => attenuation(x, y, width, height, config.quietCenter);
     const scenery = { width, height, ratio, font: painter.font, palette: sceneryPalette,
       cellWidth: grid.cellWidth, cellHeight: grid.cellHeight, opacity: config.opacity, fade: sceneryFade };
     drawAtmosphere(ink, atmosphere, { ...scenery, wind: config.wind, clouds: config.clouds,
@@ -652,10 +559,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     raf = 0;
     if (disposed || document.hidden || reduced.matches || !width || !height || !scene) return;
     if (previous !== null) {
-      const startedAt = scene.time;
-      stepScene(scene, Math.min(0.1, (now - previous) / 1000), config.speed);
-      if (config.ripples) stepWater(water, scene, scene.time - startedAt);
-      stepAtmosphere(atmosphere, scene.time - startedAt);
+      simulation.advance(Math.min(0.1, (now - previous) / 1000));
     }
     previous = now;
     if (now - lastPaint >= 1000 / 30) { draw(); lastPaint = now; }
@@ -691,22 +595,11 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     if (noChange(changes)) return;
     // The draw loop and the painter share this object, so live options such as
     // opacity and speed apply from the next frame without any rebuild.
-    const previousRipples = config.ripples;
+    const sceneRebuilt = simulation.update(next);
     Object.assign(config, next);
 
-    if (changes.scene) {
-      const previousScene = scene;
-      const replacement = createScene(config.count, config.text, config.species, config.whaleSize);
-      replacement.diveSeed = scenerySeed;
-      // Give the replacement the discarded scene's coordinate space before the
-      // hand-over, so the adopted positions are valid as they are and never get
-      // rescaled. Deriving it from the scene (not from the canvas) also covers
-      // the short window where the canvas has not been laid out yet.
-      const spaceWidth = previousScene.width > 0 ? previousScene.width : (width || 1600);
-      const spaceHeight = previousScene.height > 0 ? previousScene.height : (height || 900);
-      resizeScene(replacement, spaceWidth, spaceHeight);
-      adoptSceneState(previousScene, replacement);
-      scene = replacement;
+    if (sceneRebuilt) {
+      scene = simulation.scene;
       poses = scene.whales.map(() => ({}));
       projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
       // A new scene starts without obstacles: put the already-measured card
@@ -715,7 +608,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     }
     // A scene change also brings a new glyph alphabet (the user's body text), so
     // the painter is rebuilt for it as well — not only for font and style.
-    if (changes.scene || changes.metrics) {
+    if (sceneRebuilt || changes.metrics) {
       painter = createWhalePainter(scene, config);
       metrics = measureGlyphs();
       if (width && height) grid = createDepthGrid(width, height, config.glyphSize, metrics);
@@ -729,7 +622,6 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       if (width && height) measure();
     }
 
-    if (previousRipples !== config.ripples || changes.scene) resetWaterField(water);
     if (changes.palette) sceneryPalette = createInkPalette(config.color);
     if (viewport) resize();
 
@@ -768,9 +660,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     canvas.width = pixels.width; canvas.height = pixels.height;
     ink.setTransform(ratio, 0, 0, ratio, offsetX, offsetY);
     grid = createDepthGrid(width, height, config.glyphSize, metrics);
-    resizeScene(scene, width, height);
-    resizeAtmosphereField(atmosphere, width, height);
-    if (width > 0 && height > 0) resetWaterField(water);
+    simulation.resize(width, height);
     measuredAt = -Infinity;
     sync();
   }
@@ -787,7 +677,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   resize();
   function dispose() {
     spout.detach();
-    resetWaterField(water);
+    simulation.dispose();
     disposed = true;
     cancelAnimationFrame(raf);
     raf = 0;
@@ -808,8 +698,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     seaPad = 0;
     panes = [];
     tone = null;
-    composerCard = null;
-    avoidRect = null;
+    readingLayout = null;
     canvas.width = canvas.height = 1;
   }
   return { update, dispose };

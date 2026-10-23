@@ -145,19 +145,20 @@
 <details>
 <summary>构建、检查与打包</summary>
 
-在项目根目录安装依赖，然后运行所需命令：
+使用 [.node-version](./.node-version) 指定的 Node，以及 [package.json](./package.json) 中固定的 pnpm 版本。在项目根目录运行：
 
 ```sh
-npm install
-npm run build
-node preview.mjs
-npm run check
-npm test
-node build.mjs --check
-npm pack --ignore-scripts
+pnpm install --frozen-lockfile
+pnpm verify
 ```
 
-`npm run build` 从源码生成 `client.js`，`node preview.mjs` 生成独立预览页。包名为 `@local/dsh-ascii-ocean`，Host 行 id 为 `ascii-whale-background`。
+修改浏览器源码后，先用 `pnpm build` 和 `node preview.mjs` 更新两个生成产物，再运行 `pnpm verify`。验证只检查、不重建，过期产物会直接失败。测试只发现根目录 `*.test.js`，不会运行临时备份、参考项目或 worktree 副本。GitHub Actions 在 Windows 与 Linux 执行同一验证入口。
+
+`pnpm check` 仅查语法，`pnpm test` 仅跑测试。`pnpm --silent review:snapshot --base <ref>` 输出包含新增文件的 JSON 审查清单；`pnpm --silent agent:probe` 探测当前命令进程能否读取入口文件。派单前的原生工具读取预检、审查范围与浏览器证据要求见 [工程说明](./docs/agents/engineering.md)。
+
+打包使用 `pnpm pack --ignore-scripts`。
+
+`pnpm build` 从 [browser-entry.js](./browser-entry.js) 生成 [client.js](./client.js)，`node preview.mjs` 从 [preview-client.js](./preview-client.js) 生成独立预览页。两个入口共用 [browser-build.mjs](./browser-build.mjs) 和开发依赖 esbuild，自动解析依赖并隔离文件作用域；正式插件运行不依赖 esbuild。两种产物都支持 `--check` 检查是否与源码一致。包名为 `@local/dsh-ascii-ocean`，Host 行 id 为 `ascii-whale-background`。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -169,6 +170,10 @@ npm pack --ignore-scripts
 | [surface.js](./surface.js) | 字符选择、色表与字格绘制 |
 | [glass.js](./glass.js) | 阅读区与输入框的面板几何及材质 |
 | [engine.js](./engine.js) | Canvas 绘制与原地更新 |
+| [reading-layout.js](./reading-layout.js) | 真实对话与演示卡片共用的玻璃、遮罩和避让规则 |
+| [simulation.js](./simulation.js) | 鲸群状态接续、尺寸变化以及动作与海面效果的推进顺序 |
+| [config-editor.js](./config-editor.js) | 草稿互斥、校验、差量保存和版本冲突处理 |
+| [browser-build.mjs](./browser-build.mjs) | 两种浏览器产物的依赖组装与一致性检查 |
 | [settings.js](./settings.js) | DSH 原生设置页 |
 
 </details>

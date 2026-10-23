@@ -238,7 +238,9 @@ test('manifest ships the glyph-whale runtime and matching configuration locales 
   assert.equal(manifest.version, '0.14.0');
   assert.equal(manifest.dependencies['@deepseek-ai/schemastery'], '3.18.5');
   assert.equal(manifest.dsh.client.platform, 'web');
-  assert.deepEqual(Object.keys(manifest.scripts).sort(), ['build', 'check', 'test']);
+  for (const hook of ['preinstall', 'install', 'postinstall', 'prepare']) {
+    assert.equal(manifest.scripts[hook], undefined, `${hook} must not run on plugin installation`);
+  }
   assert.deepEqual(Object.keys(engine), ['createWhaleLayer', 'diffWhaleConfig', 'mountWhales']);
   for (const name of manifest.files.filter(name => !name.includes('*'))) assert.ok((await stat(new URL(name, root))).isFile());
   // Every module the shipped runtime imports must itself ship, or the installed
@@ -269,11 +271,8 @@ test('manifest ships the glyph-whale runtime and matching configuration locales 
   assert.ok(Buffer.byteLength(icon) < 256 * 1024);
   assert.doesNotMatch(icon, /(?:<script|<image|href=)/);
   const client = await read('client.js');
-  assert.match(client, /id: '@local\/dsh-ascii-ocean'/);
   assert.doesNotMatch(client, /^import |^export |require\(['"]@deepseek-ai\//m);
-  const host = await read('index.js'), settings = await read('settings.js'), patch = await read('cordis.patch.yml');
-  assert.match(host, /Object\.entries\(FIELDS\)/);
-  assert.match(settings, /configForms\.get\('ascii-whale-background'\)/);
+  const patch = await read('cordis.patch.yml');
   assert.match(patch, /ascii-whale-background/);
 });
 
