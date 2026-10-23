@@ -730,12 +730,12 @@
     const wrapped = value % size;
     return wrapped < 0 ? wrapped + size : wrapped;
   }
-  function motionTorusDelta(delta, size) {
-    if (!(size > 0) || !Number.isFinite(delta)) return delta;
+  function motionTorusDelta(delta2, size) {
+    if (!(size > 0) || !Number.isFinite(delta2)) return delta2;
     const half = size * 0.5;
-    if (delta > half) return delta - size;
-    if (delta < -half) return delta + size;
-    return delta;
+    if (delta2 > half) return delta2 - size;
+    if (delta2 < -half) return delta2 + size;
+    return delta2;
   }
   function motionShiftWhale(whale, dx, dy) {
     if (!dx && !dy) return;
@@ -1187,9 +1187,9 @@
     }
     t -= under;
     const u = t / exit;
-    const pitch = u < 0.32 ? -0.5 * diveSmoothstep(u / 0.32) : -0.5 * (1 - diveSmoothstep((u - 0.32) / 0.68));
-    const depth = u < 0.58 ? 1.2 - 1.3 * diveSmoothstep(u / 0.58) : -0.1 * (1 - diveSmoothstep((u - 0.58) / 0.42));
-    const arch = 0.08 * diveSmoothstep(u / 0.3) * (1 - diveSmoothstep((u - 0.4) / 0.6));
+    const pitch = u < 0.22 ? -0.58 * diveSmoothstep(u / 0.22) : u < 0.48 ? -0.58 : -0.58 * (1 - diveSmoothstep((u - 0.48) / 0.52));
+    const depth = u < 0.24 ? 1.2 - 0.58 * diveSmoothstep(u / 0.24) : u < 0.48 ? 0.62 - 0.04 * diveSmoothstep((u - 0.24) / 0.24) : u < 0.76 ? 0.58 - 0.68 * diveSmoothstep((u - 0.48) / 0.28) : -0.1 * (1 - diveSmoothstep((u - 0.76) / 0.24));
+    const arch = 0;
     const submergence = u < 0.65 ? 1 - 0.8 * diveSmoothstep(u / 0.65) : 0.2 * (1 - diveSmoothstep((u - 0.65) / 0.35));
     return { submergence, pitch, noseFirst: submergence > 0, depth, tailKick: 0, arch };
   }
@@ -1213,7 +1213,7 @@
     const phase = motionFinite(whale.phase, 0), state = whale._motion;
     if (state) motionEnsureDive(state);
     const age = state ? state.age : motionFinite(elapsed, 0) * motionFinite(speed, 1);
-    const heading = motionFinite(whale.heading, 0), turn = motionFinite(whale.turn, 0);
+    const heading = motionFinite(whale.heading, 0), turn2 = motionFinite(whale.turn, 0);
     const depth = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5) + Math.sin(age * 0.07 + phase) * 0.025;
     const focal = motionLimit(width * 0.95, 520, 1800);
     const yaw = 0, pitch = Math.PI / 2, roll = heading;
@@ -1232,7 +1232,7 @@
       roll,
       heading,
       length,
-      turn,
+      turn: turn2,
       wave: state ? state.wave : age * 1.8 + phase,
       submergence: state ? state.submergence : 0,
       divePitch: state ? state.pitch : 0,
@@ -2154,6 +2154,192 @@
     return { font, alphabet, square: tiles || ascii, paint };
   }
 
+  // src/wake.js
+  var WAKE_MAX_PACKETS = 96;
+  var WAKE_MAX_GLYPHS = 1200;
+  var finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
+  var clamp2 = (value, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, value));
+  var smooth2 = (value) => {
+    const t = clamp2(value);
+    return t * t * (3 - 2 * t);
+  };
+  var wrap = (value, span) => (value % span + span) % span;
+  var delta = (value, span) => value - Math.round(value / span) * span;
+  var turn = (value) => Math.atan2(Math.sin(value), Math.cos(value));
+  function identity(whale, index) {
+    return Number.isFinite(whale.id) || typeof whale.id === "string" ? whale.id : -1 - index;
+  }
+  function seedAt(key, sequence) {
+    const text = String(key);
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+    hash = Math.imul(hash ^ sequence, 1274126177);
+    return ((hash ^ hash >>> 16) >>> 0) / 4294967296;
+  }
+  function trailingFrame(whale) {
+    const nodes = whale.rig?.nodes;
+    if (nodes && nodes.length >= 4) {
+      const end = nodes.length - 2, x = nodes[end], y = nodes[end + 1];
+      const dx = nodes[end - 2] - x, dy = nodes[end - 1] - y;
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(dx) && Number.isFinite(dy) && Math.hypot(dx, dy) > 1e-3) return { x, y, angle: Math.atan2(dy, dx) };
+    }
+    const angle = finite(whale.heading), length = Math.max(0, finite(whale.length));
+    return {
+      x: whale.x - Math.cos(angle) * length * 0.54,
+      y: whale.y - Math.sin(angle) * length * 0.54,
+      angle
+    };
+  }
+  function createWakeField() {
+    return { packets: [], tracks: /* @__PURE__ */ new Map(), width: 0, height: 0 };
+  }
+  function resetWakeField(field) {
+    if (!field || typeof field !== "object") return field;
+    if (Array.isArray(field.packets)) field.packets.length = 0;
+    else field.packets = [];
+    if (field.tracks instanceof Map) field.tracks.clear();
+    else field.tracks = /* @__PURE__ */ new Map();
+    field.width = field.height = 0;
+    return field;
+  }
+  function stepWake(field, scene, elapsed, options = {}) {
+    const dt = finite(elapsed);
+    if (!field || typeof field !== "object" || !(dt > 0)) return field;
+    if (!Array.isArray(field.packets) || !(field.tracks instanceof Map)) resetWakeField(field);
+    const width = finite(scene?.width), height = finite(scene?.height);
+    if (width > 0 && height > 0 && field.width > 0 && (field.width !== width || field.height !== height)) resetWakeField(field);
+    for (let i = field.packets.length - 1; i >= 0; i--) {
+      const packet = field.packets[i];
+      if (!packet || !Number.isFinite(packet.age) || !Number.isFinite(packet.life) || !Number.isFinite(packet.x) || !Number.isFinite(packet.y) || (packet.age += dt) >= packet.life) field.packets.splice(i, 1);
+    }
+    if (!(width > 0 && height > 0)) {
+      field.tracks.clear();
+      return field;
+    }
+    field.width = width;
+    field.height = height;
+    const limit = Math.floor(clamp2(finite(options?.maxWakePackets, WAKE_MAX_PACKETS), 0, WAKE_MAX_PACKETS));
+    while (field.packets.length > limit) field.packets.shift();
+    const whales = Array.isArray(scene?.whales) ? scene.whales : [];
+    const live = /* @__PURE__ */ new Set();
+    for (let i = 0; i < whales.length; i++) {
+      const whale = whales[i];
+      if (!whale || !Number.isFinite(whale.x) || !Number.isFinite(whale.y)) continue;
+      const key = identity(whale, i), tail = trailingFrame(whale), motion = whale._motion;
+      live.add(key);
+      const previous = field.tracks.get(key);
+      const radius = clamp2(finite(whale.bodyRadius, finite(whale.length, 120) * 0.08), 4, 90);
+      const current = {
+        x: whale.x,
+        y: whale.y,
+        tailX: tail.x,
+        tailY: tail.y,
+        angle: tail.angle,
+        radius,
+        distance: 0,
+        sequence: previous?.sequence ?? 0
+      };
+      field.tracks.set(key, current);
+      const submergence = clamp2(finite(motion?.submergence));
+      const diving = motion?.dive && Number.isFinite(motion.dive.startedAt);
+      if (!previous || dt > 0.5 || diving || submergence >= 0.12 || previous.radius !== radius) continue;
+      const dx = delta(whale.x - previous.x, width), dy = delta(whale.y - previous.y, height);
+      const distance = Math.hypot(dx, dy);
+      const tailDX = delta(tail.x - previous.tailX, width), tailDY = delta(tail.y - previous.tailY, height);
+      const pace = Math.max(1, Math.abs(finite(whale.speed)), Math.abs(finite(motion?.cruise)));
+      if (distance > Math.max(3, pace * dt * 2.5) || Math.hypot(tailDX, tailDY) > Math.max(6, distance * 4 + radius * 0.3)) continue;
+      if (distance < 1e-4) {
+        current.distance = previous.distance;
+        continue;
+      }
+      const speed = distance / dt;
+      if (speed < 0.5) continue;
+      const spacing = clamp2(radius * 0.65, 10, 24), total = previous.distance + distance;
+      const count = Math.floor(total / spacing);
+      current.distance = total % spacing;
+      const strength = (1 - smooth2(submergence / 0.12)) * (0.28 + 0.72 * clamp2(speed / Math.max(12, radius * 0.8)));
+      for (let emitted = Math.max(0, count - 4); emitted < count && limit > 0; emitted++) {
+        const t = clamp2((spacing * (emitted + 1) - previous.distance) / distance);
+        const seed = seedAt(key, ++current.sequence);
+        while (field.packets.length >= limit) field.packets.shift();
+        field.packets.push({
+          x: wrap(previous.tailX + tailDX * t, width),
+          y: wrap(previous.tailY + tailDY * t, height),
+          angle: previous.angle + turn(tail.angle - previous.angle) * t,
+          age: dt * (1 - t),
+          life: 5.8 + seed * 1.4,
+          radius,
+          span: spacing * 2.4,
+          speed,
+          strength,
+          seed
+        });
+      }
+    }
+    for (const key of field.tracks.keys()) if (!live.has(key)) field.tracks.delete(key);
+    return field;
+  }
+  function visitWakePoints(field, options, paint) {
+    const packets = field?.packets;
+    if (!Array.isArray(packets) || typeof paint !== "function") return 0;
+    const width = finite(options?.width, field.width), height = finite(options?.height, field.height);
+    if (!(width > 0 && height > 0)) return 0;
+    const cell = Math.max(2, (finite(options?.cellWidth, 11) + finite(options?.cellHeight, 13)) * 0.5);
+    const limit = Math.floor(clamp2(finite(options?.maxWakeGlyphs, WAKE_MAX_GLYPHS), 0, WAKE_MAX_GLYPHS));
+    let drawn = 0;
+    const emit = (x, y, glyph, alpha, light) => {
+      if (drawn < limit && paint(wrap(x, width), wrap(y, height), glyph, alpha, light)) drawn++;
+    };
+    for (let p = Math.min(packets.length, WAKE_MAX_PACKETS) - 1; p >= 0 && drawn < limit; p--) {
+      const packet = packets[p];
+      if (!packet || ![
+        packet.x,
+        packet.y,
+        packet.angle,
+        packet.age,
+        packet.life,
+        packet.radius,
+        packet.span,
+        packet.speed,
+        packet.strength,
+        packet.seed
+      ].every(Number.isFinite)) continue;
+      const progress = clamp2(packet.age / Math.max(1e-3, packet.life));
+      const alpha = clamp2(packet.strength) * (1 - progress) ** 1.5 * (0.35 + 0.65 * smooth2(packet.age / 0.25));
+      if (!(alpha > 0.015)) continue;
+      const fx = Math.cos(packet.angle), fy = Math.sin(packet.angle), nx = -fy, ny = fx;
+      const spread = packet.age * (packet.radius * 0.28 + packet.speed * 0.14);
+      const samples = Math.floor(clamp2(Math.ceil(packet.span / (cell * 0.8)), 4, 12));
+      for (const side of [-1, 1]) for (let i = 0; i < samples && drawn < limit; i++) {
+        if ((i + Math.floor(packet.seed * 17)) % 7 === 0) continue;
+        const u = i / (samples - 1), along = (0.5 - u) * packet.span;
+        const lateral = side * (packet.radius * (0.26 + 0.4 * u) + spread + Math.sin(u * Math.PI) * packet.radius * 0.18);
+        const tangentX = -fx * packet.span + nx * side * packet.radius * (0.4 + Math.cos(u * Math.PI) * 0.18 * Math.PI);
+        const tangentY = -fy * packet.span + ny * side * packet.radius * (0.4 + Math.cos(u * Math.PI) * 0.18 * Math.PI);
+        const glyph = Math.abs(tangentY) < Math.abs(tangentX) * 0.45 ? i % 3 === 0 ? "~" : "-" : Math.abs(tangentX) < Math.abs(tangentY) * 0.35 ? ":" : tangentX * tangentY > 0 ? "\\" : "/";
+        emit(
+          packet.x + fx * along + nx * lateral,
+          packet.y + fy * along + ny * lateral,
+          glyph,
+          alpha * (0.55 + 0.3 * Math.sin(u * Math.PI)),
+          0.28 + packet.seed * 0.1
+        );
+      }
+      for (let i = 0; i < 2 && drawn < limit; i++) {
+        const along = -packet.span * (0.15 + i * 0.24);
+        const lateral = (packet.seed - 0.5) * packet.radius * 0.35;
+        emit(
+          packet.x + fx * along + nx * lateral,
+          packet.y + fy * along + ny * lateral,
+          i ? "'" : ".",
+          alpha * 0.24,
+          0.46
+        );
+      }
+    }
+    return drawn;
+  }
+
   // src/water.js
   var WATER_BEAT = Math.PI * 2;
   var WATER_ACTIVE_STROKE = 0.42;
@@ -2268,7 +2454,7 @@
     return progress >= 1 ? end : start + (end - start) * growth;
   }
   function createWaterField() {
-    return { ripples: [], beats: /* @__PURE__ */ new Map() };
+    return { ripples: [], beats: /* @__PURE__ */ new Map(), wake: createWakeField() };
   }
   function resetWaterField(field) {
     if (!field || typeof field !== "object") return field;
@@ -2276,16 +2462,20 @@
     else field.ripples = [];
     if (field.beats instanceof Map) field.beats.clear();
     else field.beats = /* @__PURE__ */ new Map();
+    if (field.wake) resetWakeField(field.wake);
+    else field.wake = createWakeField();
     return field;
   }
-  function stepWater(field, scene, delta, options = {}) {
+  function stepWater(field, scene, delta2, options = {}) {
     if (!field || typeof field !== "object") return field;
     if (!Array.isArray(field.ripples)) field.ripples = [];
     if (!(field.beats instanceof Map)) field.beats = /* @__PURE__ */ new Map();
     const ripples = field.ripples, beats = field.beats;
-    const step = waterFinite(delta, 0);
+    const step = waterFinite(delta2, 0);
     const settings = options && typeof options === "object" ? options : {};
     const maxRipples = Math.max(0, Math.floor(waterFinite(settings.maxRipples, WATER_MAX_RIPPLES)));
+    if (!field.wake) field.wake = createWakeField();
+    stepWake(field.wake, scene, step, settings);
     if (step > 0) {
       for (let i = 0; i < ripples.length; i++) {
         const ripple = ripples[i];
@@ -2363,8 +2553,8 @@
   }
   function drawWater(target, field, options = {}) {
     if (!target || typeof target.fillText !== "function") return 0;
-    const ripples = field && Array.isArray(field.ripples) ? field.ripples : null;
-    if (!ripples || !ripples.length) return 0;
+    const ripples = field && Array.isArray(field.ripples) ? field.ripples : [];
+    if (!ripples.length && !field?.wake?.packets?.length) return 0;
     const settings = options && typeof options === "object" ? options : {};
     const width = waterFinite(settings.width, 0);
     const height = waterFinite(settings.height, 0);
@@ -2408,6 +2598,7 @@
       target.globalAlpha = value;
       target.fillText(glyph, centreX, centreY, Math.max(1, cellWidth * 1.1));
       drawn++;
+      return true;
     };
     for (let r = 0; r < ripples.length; r++) {
       const ripple = ripples[r];
@@ -2487,13 +2678,19 @@
         }
       }
     }
+    const wakeCells = /* @__PURE__ */ new Set();
+    visitWakePoints(field?.wake, settings, (x, y, glyph, alpha, light) => paintPoint(x, y, glyph, opacity * 0.9 * alpha, light, wakeCells));
     target.globalAlpha = 1;
     return drawn;
   }
 
   // src/atmosphere.js
   var ATMOS_MAX_WIND = 192;
-  var ATMOS_MAX_CLOUD = 1100;
+  var ATMOS_CLOUD_TEXELS = 8192;
+  var ATMOS_MASK_TILES = 6144;
+  var ATMOS_MASK_PIXELS = 2097152;
+  var ATMOS_MASK_LEVELS = 32;
+  var atmosCloudBuffers = /* @__PURE__ */ new WeakMap();
   var atmosFinite = (value, fallback) => Number.isFinite(value) ? value : fallback;
   var atmosClamp = (value, lo = 0, hi = 1) => value < lo ? lo : value > hi ? hi : value;
   var atmosSmooth = (value) => {
@@ -2547,8 +2744,8 @@
     field.height = Math.max(0, atmosFinite(height, 0));
     return field;
   }
-  function stepAtmosphere(field, delta) {
-    if (field && Number.isFinite(delta) && delta > 0) field.time += delta;
+  function stepAtmosphere(field, delta2) {
+    if (field && Number.isFinite(delta2) && delta2 > 0) field.time += delta2;
     return field;
   }
   function atmosphereCloudAt(field, x, y) {
@@ -2584,6 +2781,131 @@
       grid.atmosphereLights[cell] = Math.max(0, grid.lights[cell] - 0.1 * atmosphereCloudAt(field, grid.centersX[cell], grid.centersY[cell]));
     }
   }
+  function atmosRasterSize(width, height, budget, minimum = 1) {
+    const scale = Math.max(minimum, width / 192, height / 128, Math.sqrt(width * height / budget));
+    return { columns: Math.max(1, Math.floor(width / scale)), rows: Math.max(1, Math.floor(height / scale)) };
+  }
+  function atmosCloudBuffer(target, field, width, height, ink) {
+    if (typeof target.drawImage !== "function") return null;
+    let buffer = atmosCloudBuffers.get(field);
+    if (!buffer) {
+      try {
+        const document2 = target.canvas?.ownerDocument || globalThis.document;
+        const canvas2 = document2?.createElement ? document2.createElement("canvas") : typeof OffscreenCanvas === "function" ? new OffscreenCanvas(1, 1) : null;
+        const context2 = canvas2?.getContext("2d");
+        if (!context2 || typeof context2.fillRect !== "function") return null;
+        buffer = { canvas: canvas2, context: context2 };
+        atmosCloudBuffers.set(field, buffer);
+      } catch {
+        return null;
+      }
+    }
+    const { columns, rows } = atmosRasterSize(width, height, ATMOS_CLOUD_TEXELS);
+    if (buffer.time === field.time && buffer.width === width && buffer.height === height && buffer.fieldWidth === field.width && buffer.fieldHeight === field.height && buffer.ink === ink) return buffer;
+    const { canvas, context } = buffer;
+    if (canvas.width !== columns) canvas.width = columns;
+    if (canvas.height !== rows) canvas.height = rows;
+    context.clearRect(0, 0, columns, rows);
+    context.fillStyle = ink;
+    for (let row = 0; row < rows; row++) for (let col = 0; col < columns; col++) {
+      const shadow = atmosphereCloudAt(field, (col + 0.5) * width / columns, (row + 0.5) * height / rows);
+      if (!(shadow > 1e-3)) continue;
+      context.globalAlpha = shadow;
+      context.fillRect(col, row, 1, 1);
+    }
+    context.globalAlpha = 1;
+    Object.assign(buffer, { time: field.time, width, height, fieldWidth: field.width, fieldHeight: field.height, ink });
+    return buffer;
+  }
+  function atmosMaskRuns(buffer, fade, width, height, pixelsX, pixelsY, columns, rows) {
+    const cached = buffer.maskRuns;
+    if (cached && cached.fade === fade && cached.width === width && cached.height === height && cached.pixelsX === pixelsX && cached.pixelsY === pixelsY && cached.columns === columns && cached.rows === rows) return cached.runs;
+    const runs = [];
+    for (let row = 0; row < rows; row++) {
+      const top = Math.floor(row * pixelsY / rows), bottom = Math.floor((row + 1) * pixelsY / rows);
+      let start = 0, previous = 0;
+      for (let col = 0; col <= columns; col++) {
+        let rank = 0;
+        if (col < columns) {
+          const left = Math.floor(col * pixelsX / columns), right = Math.floor((col + 1) * pixelsX / columns);
+          let mask = 1;
+          for (let iy = 0; iy < 3 && mask > 0; iy++) for (let ix = 0; ix < 3 && mask > 0; ix++) {
+            mask = Math.min(mask, atmosClamp(atmosFinite(fade(
+              (left + (right - left) * ix / 2) * width / pixelsX,
+              (top + (bottom - top) * iy / 2) * height / pixelsY
+            ), 0)));
+          }
+          rank = Math.floor(mask * ATMOS_MASK_LEVELS);
+        }
+        if (rank !== previous) {
+          if (previous > 0) {
+            const left = Math.floor(start * pixelsX / columns), right = Math.floor(col * pixelsX / columns);
+            runs.push(left, top, right - left, bottom - top, previous / ATMOS_MASK_LEVELS);
+          }
+          start = col;
+          previous = rank;
+        }
+      }
+    }
+    buffer.maskRuns = { fade, width, height, pixelsX, pixelsY, columns, rows, runs };
+    return runs;
+  }
+  function atmosDrawClouds(target, field, width, height, opacity, palette, dark, fade) {
+    const buffer = atmosCloudBuffer(
+      target,
+      field,
+      width,
+      height,
+      dark ? "rgb(2, 8, 16)" : palette[glyphInkIndex(0.1, 0.16)]
+    );
+    if (!buffer) return 0;
+    let source = buffer.canvas;
+    if (fade) {
+      if (!buffer.maskCanvas) {
+        try {
+          const document2 = target.canvas?.ownerDocument || globalThis.document;
+          buffer.maskCanvas = document2?.createElement ? document2.createElement("canvas") : typeof OffscreenCanvas === "function" ? new OffscreenCanvas(1, 1) : null;
+          buffer.maskContext = buffer.maskCanvas?.getContext("2d");
+        } catch {
+          return 0;
+        }
+        if (!buffer.maskContext) return 0;
+      }
+      const canvas = buffer.maskCanvas, context = buffer.maskContext;
+      const scale = Math.min(1, 4096 / width, 4096 / height, Math.sqrt(ATMOS_MASK_PIXELS / (width * height)));
+      const pixelsX = Math.max(1, Math.floor(width * scale)), pixelsY = Math.max(1, Math.floor(height * scale));
+      if (canvas.width !== pixelsX) canvas.width = pixelsX;
+      if (canvas.height !== pixelsY) canvas.height = pixelsY;
+      context.clearRect(0, 0, pixelsX, pixelsY);
+      const size = atmosRasterSize(width, height, ATMOS_MASK_TILES, 8);
+      const columns = Math.min(pixelsX, size.columns), rows = Math.min(pixelsY, size.rows);
+      const runs = atmosMaskRuns(buffer, fade, width, height, pixelsX, pixelsY, columns, rows);
+      if (!runs.length) {
+        context.globalAlpha = 1;
+        return 0;
+      }
+      context.fillStyle = "#fff";
+      for (let i = 0; i < runs.length; i += 5) {
+        context.globalAlpha = runs[i + 4];
+        context.fillRect(runs[i], runs[i + 1], runs[i + 2], runs[i + 3]);
+      }
+      context.globalAlpha = 1;
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.globalCompositeOperation = "source-in";
+      context.drawImage(buffer.canvas, 0, 0, pixelsX, pixelsY);
+      context.globalCompositeOperation = "source-over";
+      source = canvas;
+    }
+    const smoothing = target.imageSmoothingEnabled, quality = target.imageSmoothingQuality;
+    target.imageSmoothingEnabled = !fade;
+    target.imageSmoothingQuality = "high";
+    target.globalAlpha = opacity * (dark ? 0.78 : 0.42);
+    target.drawImage(source, 0, 0, width, height);
+    target.imageSmoothingEnabled = smoothing;
+    target.imageSmoothingQuality = quality;
+    return 1;
+  }
   function drawAtmosphere(target, field, options = {}) {
     const result = { wind: 0, clouds: 0 };
     if (!target || typeof target.fillText !== "function" || !field) return result;
@@ -2607,7 +2929,7 @@
       const mask = fade ? atmosClamp(atmosFinite(fade(x, y), 0)) : 1;
       alpha *= mask;
       if (!(alpha > 6e-3)) return;
-      const ink = kind === "clouds" && options.dark ? "rgb(3, 12, 20)" : palette[glyphInkIndex(light, 0.16)];
+      const ink = palette[glyphInkIndex(light, 0.16)];
       if (ink !== fill) {
         target.fillStyle = ink;
         fill = ink;
@@ -2616,27 +2938,16 @@
       target.fillText(glyph, x, y, cellWidth);
       result[kind]++;
     };
-    if (options.clouds) {
-      const spacing = Math.max(cellWidth * 1.4, cellHeight * 1.1, Math.sqrt(width * height / 2200));
-      const columns = Math.ceil(width / spacing), rows = Math.ceil(height / spacing);
-      for (let row = 0; row < rows && result.clouds < ATMOS_MAX_CLOUD; row++) {
-        for (let col = 0; col < columns && result.clouds < ATMOS_MAX_CLOUD; col++) {
-          const key = row * 8192 + col, rank = atmosHash(key, field.seed, 91);
-          const x = (col + 0.5) * spacing, y = (row + 0.5) * spacing;
-          const shadow = atmosphereCloudAt(field, x, y);
-          const density = atmosSmooth((shadow - rank * 0.4) / 0.32);
-          const glyph = rank < 0.34 ? "." : rank < 0.64 ? "'" : ":";
-          paint(
-            glyph,
-            x,
-            y,
-            opacity * 0.24 * density,
-            options.dark ? 0.32 : 0.16,
-            "clouds"
-          );
-        }
-      }
-    }
+    if (options.clouds) result.clouds = atmosDrawClouds(
+      target,
+      field,
+      width,
+      height,
+      opacity,
+      palette,
+      options.dark,
+      fade
+    );
     if (options.wind) {
       const size = Math.min(width, height), angle = -0.14;
       const fx = Math.cos(angle), fy = Math.sin(angle), nx = -fy, ny = fx;
@@ -2717,10 +3028,10 @@
       setObstacles(obstacles) {
         if (!disposed) setSceneObstacles(scene, obstacles);
       },
-      advance(delta) {
+      advance(delta2) {
         if (disposed) return 0;
         const before = scene.time;
-        stepScene(scene, delta, config.speed);
+        stepScene(scene, delta2, config.speed);
         const elapsed = scene.time - before;
         if (config.ripples) stepWater(water, scene, elapsed);
         stepAtmosphere(atmosphere, elapsed);
@@ -3030,12 +3341,53 @@
   var COMPOSER_CARD_SELECTOR = "[data-composer-card]";
   var COMPOSER_SEAT_SELECTOR = "[data-composer-seat]";
   var COMPOSER_RADIUS = 18;
-  var MEASURE_INTERVAL = 400;
+  var MEASURE_INTERVAL = 120;
   var CONTENT_MAX_SCAN = 600;
-  var CONTENT_MIN_AREA = 2e3;
-  var CONTENT_MAX_AREA_RATIO = 0.55;
+  var CONTENT_MAX_VISIT = 6e3;
+  var CONTENT_MIN_AREA = 960;
+  var CONTENT_MAX_WIDTH_RATIO = 0.95;
   var CONTENT_MAX_HEIGHT_RATIO = 0.9;
   var CONTENT_MIN_ALPHA = 0.9;
+  var CONTENT_SKIP_TAGS = /* @__PURE__ */ new Set([
+    "SVG",
+    "PATH",
+    "G",
+    "CIRCLE",
+    "RECT",
+    "LINE",
+    "POLYLINE",
+    "POLYGON",
+    "CODE",
+    "KBD",
+    "SAMP",
+    "VAR",
+    "IMG",
+    "PICTURE",
+    "VIDEO",
+    "AUDIO",
+    "CANVAS",
+    "INPUT",
+    "TEXTAREA",
+    "SELECT",
+    "OPTION",
+    "LABEL",
+    "TIME",
+    "BR",
+    "HR",
+    "WBR",
+    "STRONG",
+    "EM",
+    "B",
+    "I",
+    "U",
+    "S",
+    "SMALL",
+    "SUB",
+    "SUP",
+    "MARK",
+    "A"
+  ]);
+  var CONTENT_LEAF_TAGS = /* @__PURE__ */ new Set(["PRE", "P", "H1", "H2", "H3", "H4", "H5", "H6"]);
   var DEMO_CARD_BODY_DARK = "rgba(24, 26, 31, 0.96)";
   var DEMO_CARD_BODY_LIGHT = "rgba(252, 253, 254, 0.96)";
   var DEMO_LINE_DARK = "rgba(203, 217, 231, 0.34)";
@@ -3107,31 +3459,54 @@
   }
   function collectContentBoxes(canvasRect, composerHit) {
     const boxes = [];
-    const canvasArea = canvasRect.width * canvasRect.height;
     const scroller = pick(SCROLL_SELECTOR, canvasRect);
     if (scroller) {
       const queue = [scroller.element];
-      let checked = 0;
-      while (queue.length && checked < CONTENT_MAX_SCAN) {
+      let visited = 0, styled = 0;
+      while (queue.length && visited < CONTENT_MAX_VISIT && styled < CONTENT_MAX_SCAN) {
         const element = queue.shift();
-        checked++;
-        const children = element.children;
-        if (children) for (const child of children) queue.push(child);
+        visited++;
+        if (!element || element.hidden || typeof element.hasAttribute === "function" && element.hasAttribute("hidden")) continue;
+        const tag = typeof element.tagName === "string" ? element.tagName.toUpperCase() : "";
+        if (CONTENT_SKIP_TAGS.has(tag)) continue;
+        if (element.style?.display === "none") continue;
+        if (element.style?.display === "contents" || element.dataset?.slot !== void 0) {
+          if (element.children) for (const child of element.children) queue.push(child);
+          continue;
+        }
         let rect;
         try {
           rect = element.getBoundingClientRect();
         } catch {
           continue;
         }
-        if (!(rect.width > 0) || !(rect.height > 0)) continue;
+        if (!(rect.width > 0) || !(rect.height > 0)) {
+          let style2;
+          try {
+            style2 = getComputedStyle(element);
+          } catch {
+            continue;
+          }
+          if (style2.display !== "none" && style2.visibility !== "hidden" && !CONTENT_LEAF_TAGS.has(tag) && element.children) {
+            for (const child of element.children) queue.push(child);
+          }
+          continue;
+        }
         if (rect.left + rect.width < canvasRect.left || rect.left > canvasRect.left + canvasRect.width) continue;
         if (rect.top + rect.height < canvasRect.top || rect.top > canvasRect.top + canvasRect.height) continue;
+        if (!CONTENT_LEAF_TAGS.has(tag) && element.children) {
+          for (const child of element.children) queue.push(child);
+        }
+        if (element === scroller.element) continue;
+        const clippedWidth = Math.min(rect.left + rect.width, canvasRect.left + canvasRect.width) - Math.max(rect.left, canvasRect.left);
+        const clippedHeight = Math.min(rect.top + rect.height, canvasRect.top + canvasRect.height) - Math.max(rect.top, canvasRect.top);
+        if (clippedWidth >= canvasRect.width * CONTENT_MAX_WIDTH_RATIO && clippedHeight >= canvasRect.height * CONTENT_MAX_HEIGHT_RATIO) continue;
         const area = rect.width * rect.height;
-        if (!(area >= CONTENT_MIN_AREA) || area > canvasArea * CONTENT_MAX_AREA_RATIO) continue;
-        if (!(rect.height < canvasRect.height * CONTENT_MAX_HEIGHT_RATIO)) continue;
+        if (!(area >= CONTENT_MIN_AREA) || rect.width < 32 || rect.height < 24) continue;
         let style;
         try {
           style = getComputedStyle(element);
+          styled++;
         } catch {
           continue;
         }
@@ -3141,7 +3516,10 @@
         if (alpha === null || alpha < CONTENT_MIN_ALPHA) continue;
         const radius = cornerRadius(style);
         if (!(radius > 0)) continue;
-        boxes.push({ left: rect.left, top: rect.top, width: rect.width, height: rect.height, radius });
+        if (rect.width < 40 && !(rect.height >= 36 && radius >= 16)) continue;
+        const width = Math.max(40, rect.width);
+        const left = rect.left - (width - rect.width) / 2;
+        boxes.push({ left, top: rect.top, width, height: rect.height, radius });
       }
     }
     if (composerHit) {
@@ -3262,7 +3640,10 @@
         dark
       });
       if (config.renderStyle !== "cells") paintSeaSilhouette(seaInk, material);
+      const savedQuietCenter = config.quietCenter;
+      config.quietCenter = false;
       painter.paint(seaInk, grid, poses, width, height, 1, null, dark);
+      config.quietCenter = savedQuietCenter;
       blurredSeaInk.setTransform(1, 0, 0, 1, 0, 0);
       blurredSeaInk.clearRect(0, 0, blurredSea.width, blurredSea.height);
       blurredSeaInk.filter = blurSupport ? `blur(${Math.max(0.4, seaBlurRadius).toFixed(2)}px)` : "none";
@@ -3970,8 +4351,8 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       windHint: "Sparse aligned surface strokes drift with the breeze, appearing and fading gently. On by default.",
       clouds: "Passing cloud shadows",
       cloudsHint: "Soft, slow-moving ASCII shadows cross the sea and slightly shade whale ink while respecting reading areas. On by default.",
-      ripples: "Tail-stroke ripples",
-      ripplesHint: "Active tail strokes send out a brief splash and spreading ripples. Gliding and submerged whales leave the surface quiet.",
+      ripples: "Swimming wakes and splashes",
+      ripplesHint: "Swimming and gliding leave an ASCII wake that spreads and fades along the trail. Strong tail strokes add a brief splash. Submerged whales stop making new wakes.",
       save: "Save",
       saving: "Saving…",
       reset: "Restore defaults",
@@ -4050,8 +4431,8 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       windHint: "少量同向的短波纹随风掠过海面，缓缓出现和散去。默认开启。",
       clouds: "掠海云影",
       cloudsHint: "云层投下柔和、缓慢漂移的字符阴影，轻微压暗鲸体颜色，并让开阅读区域。默认开启。",
-      ripples: "尾拍涟漪",
-      ripplesHint: "鲸鱼用力摆尾时溅起碎水和逐渐扩散的波纹；滑行或潜入水下时不生成。",
+      ripples: "游动尾流与水花",
+      ripplesHint: "游过后留下逐渐展开、消散的 ASCII 尾流，滑行也有；用力拍尾时带少量碎水。潜入水下后停止生成新尾流。",
       save: "保存",
       saving: "保存中…",
       reset: "恢复默认值",

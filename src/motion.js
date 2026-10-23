@@ -1017,12 +1017,16 @@ export function divePose(elapsed, timing) {
   }
   t -= under;
   const u = t / exit;
-  // A faster push through the surface, then a longer, monotonic settle.
-  const pitch = u < 0.32 ? -0.5 * diveSmoothstep(u / 0.32)
-    : -0.5 * (1 - diveSmoothstep((u - 0.32) / 0.68));
-  const depth = u < 0.58 ? 1.2 - 1.3 * diveSmoothstep(u / 0.58)
-    : -0.1 * (1 - diveSmoothstep((u - 0.58) / 0.42));
-  const arch = 0.08 * diveSmoothstep(u / 0.3) * (1 - diveSmoothstep((u - 0.4) / 0.6));
+  // Establish a readable head first, then let the shoulders and tail follow.
+  // A whole-body heave plus an arched back makes thick-backed species appear
+  // to surface from the middle even when a single nose probe leads by a frame.
+  const pitch = u < 0.22 ? -0.58 * diveSmoothstep(u / 0.22)
+    : u < 0.48 ? -0.58 : -0.58 * (1 - diveSmoothstep((u - 0.48) / 0.52));
+  const depth = u < 0.24 ? 1.2 - 0.58 * diveSmoothstep(u / 0.24)
+    : u < 0.48 ? 0.62 - 0.04 * diveSmoothstep((u - 0.24) / 0.24)
+      : u < 0.76 ? 0.58 - 0.68 * diveSmoothstep((u - 0.48) / 0.28)
+        : -0.1 * (1 - diveSmoothstep((u - 0.76) / 0.24));
+  const arch = 0;
   const submergence = u < 0.65 ? 1 - 0.8 * diveSmoothstep(u / 0.65)
     : 0.2 * (1 - diveSmoothstep((u - 0.65) / 0.35));
   return { submergence, pitch, noseFirst: submergence > 0, depth, tailKick: 0, arch };

@@ -554,7 +554,8 @@ test('content glass gives every card a pane and fades the sharp glyphs inside it
   const { stats, drawn, canvas, raf, install, restore } = harness({ contentBoxes: cards, composerRect: composer });
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, composerAvoid: false });
+  // Cloud shadows have independent Canvas buffers; count the glass buffers alone.
+  const config = normalizeConfig({ ...DEFAULTS, composerAvoid: false, clouds: false });
   const layer = createWhaleLayer(canvas(), config);
   // One shared sea buffer plus its blurred copy: two offscreen canvases, no more.
   assert.equal(stats.createCanvas, 2, 'the shared sea and its blur buffer are allocated once');
@@ -619,7 +620,7 @@ test('reduced transparency clears the content material but still holds glyphs ou
   const { stats, drawn, canvas, install, restore } = harness({ contentBoxes: [card], reduceTransparency: true });
   install();
   t.after(restore);
-  const config = normalizeConfig(DEFAULTS);
+  const config = normalizeConfig({ ...DEFAULTS, clouds: false });
   const layer = createWhaleLayer(canvas(), config);
   assert.equal(stats.createCanvas, 0, 'no sea buffer is allocated when the material is cleared');
   assert.equal(stats.seaGlyphs, 0, 'no sea glyph pass runs when the material is cleared');
@@ -640,7 +641,7 @@ test('avoidance keeps whale ink off the input card, and the card stops hiding it
   const { stats, drawn, canvas, raf, install, restore } = harness({ composerRect: card });
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false, composerAvoid: true });
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, composerAvoid: true, clouds: false });
   const layer = createWhaleLayer(canvas(), config);
   for (let frame = 0; frame < 90; frame++) raf.step();
   const insideCard = point => point.x > card.left && point.x < card.left + card.width
@@ -658,3 +659,74 @@ test('avoidance keeps whale ink off the input card, and the card stops hiding it
   assert.ok(drawn.some(point => insideCard(point)), 'without avoidance the card region can hold whale ink again');
   plain.dispose();
 });
+
+test('content glass reaches deeply nested user bubbles past offscreen history, short replies and tall cards', t => {
+  const defaultStyle = { backgroundColor: 'rgba(0, 0, 0, 0)', borderRadius: '0px',
+    borderTopLeftRadius: '0px', borderTopRightRadius: '0px', borderBottomRightRadius: '0px',
+    borderBottomLeftRadius: '0px', position: 'static', visibility: 'visible', display: 'block',
+    getPropertyValue: () => '' };
+  const node = ({ left = 0, top = 0, width = 800, height = 40, opaque = false, radius = 0,
+    display = 'block', hidden = false, tagName = 'DIV', children = [] } = {}) => ({
+    tagName, hidden, children,
+    style: { display },
+    getBoundingClientRect: () => (display === 'none' || hidden || display === 'contents'
+      ? { left: 0, top: 0, width: 0, height: 0 }
+      : { left, top, width, height }),
+    __style: { ...defaultStyle,
+      backgroundColor: opaque ? 'rgb(237, 243, 254)' : defaultStyle.backgroundColor,
+      borderTopLeftRadius: `${radius}px`, borderTopRightRadius: `${radius}px`,
+      borderBottomRightRadius: `${radius}px`, borderBottomLeftRadius: `${radius}px`,
+      display: hidden ? 'none' : display },
+  });
+  const wrapSlot = (child, rect) => node({ ...rect, display: 'contents',
+    children: [node({ ...rect, children: [child] })] });
+  const wrapTurn = (leaf, rect) => wrapSlot(wrapSlot(wrapSlot(leaf, rect), rect), rect);
+
+  // Offscreen turns and collapsed tool groups with >700 nodes before the visible turn.
+  const history = Array.from({ length: 6 }, (_, turn) => {
+    const top = -1600 + turn * 220;
+    const rect = { left: 80, top, width: 640, height: 180 };
+    const hiddenTools = Array.from({ length: 20 }, () =>
+      wrapTurn(node({ ...rect, hidden: true }), { ...rect, hidden: true }));
+    const offscreenTokens = Array.from({ length: 16 }, () =>
+      node({ left: 100, top: top + 40, width: 60, height: 18, tagName: 'SPAN' }));
+    return node({ ...rect, children: [...hiddenTools,
+      node({ ...rect, tagName: 'PRE', children: offscreenTokens })] });
+  });
+
+  // Visible boxes in the 800x600 viewport:
+  // 1) Normal blue user bubble at DSH's real slot/flex depth
+  const mainBubble = { left: 360, top: 180, width: 340, height: 64, opaque: true, radius: 20 };
+  // 2) Short 1-char Chinese ("好", 46x42) and 1-char ASCII ("1", 38x42) blue user bubbles
+  const shortBubble = { left: 654, top: 270, width: 46, height: 42, opaque: true, radius: 20 };
+  const tinyBubble = { left: 662, top: 330, width: 38, height: 42, opaque: true, radius: 20 };
+  // 3) Tall card/bubble whose unclipped height (560px) is >= 90% of the 600px viewport
+  const tallCard = { left: 100, top: -320, width: 520, height: 560, opaque: true, radius: 16 };
+
+  const flowRoot = wrapTurn(node({
+    left: 0, top: 0, width: 800, height: 600,
+    children: [
+      ...history,
+      wrapTurn(node(mainBubble), mainBubble),
+      wrapTurn(node(shortBubble), shortBubble),
+      wrapTurn(node(tinyBubble), tinyBubble),
+      wrapTurn(node(tallCard), { left: 100, top: 0, width: 520, height: 240 }),
+    ],
+  }), { left: 0, top: 0, width: 800, height: 600 });
+
+  const { stats, drawn, canvas, install, restore } = harness({
+    contentBoxes: [{ left: 0, top: 0, width: 800, height: 600, transparent: true, radius: 0, children: [flowRoot] }],
+    composerRect: { left: 100, top: 460, width: 600, height: 110 },
+  });
+  install();
+  t.after(restore);
+  const config = normalizeConfig({ ...DEFAULTS, composerAvoid: false, clouds: false });
+  const layer = createWhaleLayer(canvas(), config);
+  const paneCount = stats.paneGradients / 2;
+  assert.equal(paneCount, 5, 'main bubble, two short bubbles, tall card and composer all receive glass panes');
+  const insideMain = point => point.x > mainBubble.left && point.x < mainBubble.left + mainBubble.width
+    && point.y > mainBubble.top && point.y < mainBubble.top + mainBubble.height;
+  assert.ok(drawn.every(point => !insideMain(point)), 'sharp glyphs are faded inside the deeply nested blue bubble');
+  layer.dispose();
+});
+

@@ -100,6 +100,9 @@ function commandsIn(frame) {
   return frame.commands.flatMap(command => [command,
     ...(command.op === 'drawImage' ? commandsIn(command.args[0]) : [])]);
 }
+// The glass buffer contains the glyph sea; cloud buffers contain only texel fills.
+const glassImagesIn = frame => frame.commands.filter(command => command.op === 'drawImage'
+  && commandsIn(command.args[0]).some(nested => nested.op === 'fillText'));
 
 test('shipped entries draw the same moving school across custom/ascii edits and a shared pause', async t => {
   const pair = createArtifactPair(await shippedArtifacts(), {
@@ -108,6 +111,8 @@ test('shipped entries draw the same moving school across custom/ascii edits and 
   });
   t.after(() => pair.dispose());
   const initial = assertDrawingEqual(pair, 'initial public mounts draw the same glyphs, coordinates and styles');
+  assert.equal(pair.config().clouds, true, 'the default moving-school comparison includes cloud shadows');
+  assert.ok(initial.commands.some(command => command.op === 'drawImage'), 'the default cloud image reaches both public entries');
   assert.ok(initial.commands.filter(command => command.op === 'fillText').length > 100);
   assert.ok(initial.commands.some(command => command.op === 'fillText' && command.args[0] === '鲸'));
   pair.advance(24);
@@ -135,7 +140,7 @@ test('shipped entries share dark/light glass buffers, card masking and avoidance
   t.after(() => pair.dispose());
   const initial = assertDrawingEqual(pair, 'dark glass composites the same offscreen sea through both entries');
   const all = commandsIn(initial);
-  assert.ok(initial.commands.some(command => command.op === 'drawImage'), 'glass actually composites an offscreen canvas');
+  assert.equal(glassImagesIn(initial).length, 1, 'glass composites one shared glyph-sea image');
   assert.ok(all.filter(command => command.op === 'fillText').length > 100, 'nested sea glyphs are recorded too');
   assert.ok(all.some(command => command.state.fillStyle?.kind === 'linear-gradient'), 'glass gradient colors/stops are observed');
   pair.advance(12);
@@ -143,14 +148,15 @@ test('shipped entries share dark/light glass buffers, card masking and avoidance
   pair.update({ composerAvoid: true });
   const avoided = assertDrawingEqual(pair, 'last-enabled avoidance disables glass consistently');
   assert.equal(pair.config().glass, false);
-  assert.equal(avoided.commands.some(command => command.op === 'drawImage'), false);
+  assert.equal(glassImagesIn(avoided).length, 0, 'avoidance removes the glass image');
+  assert.ok(avoided.commands.some(command => command.op === 'drawImage'), 'cloud shadows remain active without glass');
   pair.update({ dark: false });
   const light = assertDrawingEqual(pair, 'theme observers and DOM handlers reach the live renderer');
   assert.notEqual(drawingHash(light), drawingHash(avoided), 'theme changes actual drawing styles');
   pair.update({ glass: true });
   const frosted = assertDrawingEqual(pair, 'glass can be enabled again after avoidance');
   assert.equal(pair.config().composerAvoid, false);
-  assert.ok(frosted.commands.some(command => command.op === 'drawImage'));
+  assert.equal(glassImagesIn(frosted).length, 1, 'reenabling glass restores its shared glyph-sea image');
 });
 
 test('drawing comparison detects an output mutation in only one in-memory shipped artifact', async t => {

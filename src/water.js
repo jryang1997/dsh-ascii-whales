@@ -1,6 +1,7 @@
 import { createInkPalette, glyphInkIndex } from './shading.js';
 import { DIVE_TAIL_CONTACT, DIVE_NOSE_CONTACT } from './motion.js';
 import { whalePose, projectParticle } from './model.js';
+import { createWakeField, resetWakeField, stepWake, visitWakePoints } from './wake.js';
 
 // Ripples are a top-down read of the surface: one fluke slap sends out a calm
 // ring that swells quickly and then settles. Everything here is pure geometry
@@ -136,9 +137,9 @@ export function waterRippleRadius(ripple) {
   return progress >= 1 ? end : start + (end - start) * growth;
 }
 
-/** A new, empty surface: live rings plus each whale's last observed beat. */
+/** Surface history: impact rings, observed beats and distance-sampled wakes. */
 export function createWaterField() {
-  return { ripples: [], beats: new Map() };
+  return { ripples: [], beats: new Map(), wake: createWakeField() };
 }
 
 /** Clear both the rings and the beat memory; the next beat starts afresh. */
@@ -148,6 +149,8 @@ export function resetWaterField(field) {
   else field.ripples = [];
   if (field.beats instanceof Map) field.beats.clear();
   else field.beats = new Map();
+  if (field.wake) resetWakeField(field.wake);
+  else field.wake = createWakeField();
   return field;
 }
 
@@ -167,6 +170,8 @@ export function stepWater(field, scene, delta, options = {}) {
   const step = waterFinite(delta, 0);
   const settings = options && typeof options === 'object' ? options : {};
   const maxRipples = Math.max(0, Math.floor(waterFinite(settings.maxRipples, WATER_MAX_RIPPLES)));
+  if (!field.wake) field.wake = createWakeField();
+  stepWake(field.wake, scene, step, settings);
 
   // Age first, then drop the spent rings: a single step long enough to outlive
   // a ring must remove it in this same call.
@@ -253,7 +258,7 @@ export function stepWater(field, scene, delta, options = {}) {
 }
 
 /**
- * Paint every live ring into an ASCII cell grid.
+ * Paint live rings and wake crests into an ASCII cell grid.
  *
  * The target is only a pseudo 2D context: `font`, `fillStyle`, `globalAlpha`,
  * `textAlign`, `textBaseline` and `fillText` are the whole contract, because
@@ -263,8 +268,8 @@ export function stepWater(field, scene, delta, options = {}) {
  */
 export function drawWater(target, field, options = {}) {
   if (!target || typeof target.fillText !== 'function') return 0;
-  const ripples = field && Array.isArray(field.ripples) ? field.ripples : null;
-  if (!ripples || !ripples.length) return 0;
+  const ripples = field && Array.isArray(field.ripples) ? field.ripples : [];
+  if (!ripples.length && !field?.wake?.packets?.length) return 0;
   const settings = options && typeof options === 'object' ? options : {};
   const width = waterFinite(settings.width, 0);
   const height = waterFinite(settings.height, 0);
@@ -317,6 +322,7 @@ export function drawWater(target, field, options = {}) {
     target.globalAlpha = value;
     target.fillText(glyph, centreX, centreY, Math.max(1, cellWidth * 1.1));
     drawn++;
+    return true;
   };
 
   for (let r = 0; r < ripples.length; r++) {
@@ -404,6 +410,9 @@ export function drawWater(target, field, options = {}) {
       }
     }
   }
+  const wakeCells = new Set();
+  visitWakePoints(field?.wake, settings, (x, y, glyph, alpha, light) =>
+    paintPoint(x, y, glyph, opacity * 0.90 * alpha, light, wakeCells));
   target.globalAlpha = 1;
   return drawn;
 }

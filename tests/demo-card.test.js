@@ -184,7 +184,8 @@ test('avoidance mode keeps whale ink off the demo card without any glass materia
   const { stats, drawn, fills, canvas, raf, install, restore } = harness();
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false, composerAvoid: true });
+  // Count only glass buffers; cloud projection has its own Canvas cache.
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, composerAvoid: true, clouds: false });
   const layer = createWhaleLayer(canvas(), config, { demoCard: DEMO });
   for (let frame = 0; frame < 120; frame++) raf.step();
   const card = demoRectOf(800, 600);

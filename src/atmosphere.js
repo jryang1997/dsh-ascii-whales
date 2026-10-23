@@ -1,9 +1,13 @@
 import { createInkPalette, glyphInkIndex } from './shading.js';
 
-// Sea-surface atmosphere, not sky icons. Seeds and character ranks stay fixed;
-// only coherent fields and short wind packets advect through the scene.
+// Sea-surface atmosphere. Fixed soft lobes cast continuous shadows while short
+// ASCII wind packets advect independently through the scene.
 const ATMOS_MAX_WIND = 192;
-const ATMOS_MAX_CLOUD = 1100;
+const ATMOS_CLOUD_TEXELS = 8192;
+const ATMOS_MASK_TILES = 6144;
+const ATMOS_MASK_PIXELS = 2097152;
+const ATMOS_MASK_LEVELS = 32;
+const atmosCloudBuffers = new WeakMap();
 const atmosFinite = (value, fallback) => Number.isFinite(value) ? value : fallback;
 const atmosClamp = (value, lo = 0, hi = 1) => value < lo ? lo : value > hi ? hi : value;
 const atmosSmooth = value => { const t = atmosClamp(value); return t * t * (3 - 2 * t); };
@@ -93,7 +97,132 @@ export function shadeAtmosphere(field, grid, options = {}) {
   }
 }
 
-/** A bounded ASCII stipple shadow and sparse, wind-aligned surface strokes. */
+// Both axes are capped as well as the area, including very narrow viewports.
+function atmosRasterSize(width, height, budget, minimum = 1) {
+  const scale = Math.max(minimum, width / 192, height / 128, Math.sqrt(width * height / budget));
+  return { columns: Math.max(1, Math.floor(width / scale)), rows: Math.max(1, Math.floor(height / scale)) };
+}
+
+function atmosCloudBuffer(target, field, width, height, ink) {
+  if (typeof target.drawImage !== 'function') return null;
+  let buffer = atmosCloudBuffers.get(field);
+  if (!buffer) {
+    try {
+      const document = target.canvas?.ownerDocument || globalThis.document;
+      const canvas = document?.createElement ? document.createElement('canvas')
+        : typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(1, 1) : null;
+      const context = canvas?.getContext('2d');
+      if (!context || typeof context.fillRect !== 'function') return null;
+      buffer = { canvas, context };
+      atmosCloudBuffers.set(field, buffer);
+    } catch { return null; }
+  }
+  const { columns, rows } = atmosRasterSize(width, height, ATMOS_CLOUD_TEXELS);
+  if (buffer.time === field.time && buffer.width === width && buffer.height === height
+    && buffer.fieldWidth === field.width && buffer.fieldHeight === field.height && buffer.ink === ink) return buffer;
+  const { canvas, context } = buffer;
+  if (canvas.width !== columns) canvas.width = columns;
+  if (canvas.height !== rows) canvas.height = rows;
+  context.clearRect(0, 0, columns, rows);
+  context.fillStyle = ink;
+  for (let row = 0; row < rows; row++) for (let col = 0; col < columns; col++) {
+    const shadow = atmosphereCloudAt(field, (col + 0.5) * width / columns, (row + 0.5) * height / rows);
+    if (!(shadow > 0.001)) continue;
+    context.globalAlpha = shadow;
+    context.fillRect(col, row, 1, 1);
+  }
+  context.globalAlpha = 1;
+  Object.assign(buffer, { time: field.time, width, height, fieldWidth: field.width, fieldHeight: field.height, ink });
+  return buffer;
+}
+
+function atmosMaskRuns(buffer, fade, width, height, pixelsX, pixelsY, columns, rows) {
+  const cached = buffer.maskRuns;
+  if (cached && cached.fade === fade && cached.width === width && cached.height === height
+    && cached.pixelsX === pixelsX && cached.pixelsY === pixelsY && cached.columns === columns
+    && cached.rows === rows) return cached.runs;
+  const runs = [];
+  for (let row = 0; row < rows; row++) {
+    const top = Math.floor(row * pixelsY / rows), bottom = Math.floor((row + 1) * pixelsY / rows);
+    let start = 0, previous = 0;
+    for (let col = 0; col <= columns; col++) {
+      let rank = 0;
+      if (col < columns) {
+        const left = Math.floor(col * pixelsX / columns), right = Math.floor((col + 1) * pixelsX / columns);
+        let mask = 1;
+        // Nine samples cover each footprint conservatively. Reuse these runs
+        // while the reading layout's fade reference and raster geometry stay fixed.
+        for (let iy = 0; iy < 3 && mask > 0; iy++) for (let ix = 0; ix < 3 && mask > 0; ix++) {
+          mask = Math.min(mask, atmosClamp(atmosFinite(fade((left + (right - left) * ix / 2) * width / pixelsX,
+            (top + (bottom - top) * iy / 2) * height / pixelsY), 0)));
+        }
+        rank = Math.floor(mask * ATMOS_MASK_LEVELS);
+      }
+      if (rank !== previous) {
+        if (previous > 0) {
+          const left = Math.floor(start * pixelsX / columns), right = Math.floor(col * pixelsX / columns);
+          runs.push(left, top, right - left, bottom - top, previous / ATMOS_MASK_LEVELS);
+        }
+        start = col;
+        previous = rank;
+      }
+    }
+  }
+  buffer.maskRuns = { fade, width, height, pixelsX, pixelsY, columns, rows, runs };
+  return runs;
+}
+
+function atmosDrawClouds(target, field, width, height, opacity, palette, dark, fade) {
+  const buffer = atmosCloudBuffer(target, field, width, height,
+    dark ? 'rgb(2, 8, 16)' : palette[glyphInkIndex(0.10, 0.16)]);
+  if (!buffer) return 0;
+  let source = buffer.canvas;
+  if (fade) {
+    if (!buffer.maskCanvas) {
+      try {
+        const document = target.canvas?.ownerDocument || globalThis.document;
+        buffer.maskCanvas = document?.createElement ? document.createElement('canvas')
+          : typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(1, 1) : null;
+        buffer.maskContext = buffer.maskCanvas?.getContext('2d');
+      } catch { return 0; }
+      if (!buffer.maskContext) return 0;
+    }
+    const canvas = buffer.maskCanvas, context = buffer.maskContext;
+    const scale = Math.min(1, 4096 / width, 4096 / height, Math.sqrt(ATMOS_MASK_PIXELS / (width * height)));
+    const pixelsX = Math.max(1, Math.floor(width * scale)), pixelsY = Math.max(1, Math.floor(height * scale));
+    if (canvas.width !== pixelsX) canvas.width = pixelsX;
+    if (canvas.height !== pixelsY) canvas.height = pixelsY;
+    context.clearRect(0, 0, pixelsX, pixelsY);
+    const size = atmosRasterSize(width, height, ATMOS_MASK_TILES, 8);
+    const columns = Math.min(pixelsX, size.columns), rows = Math.min(pixelsY, size.rows);
+    const runs = atmosMaskRuns(buffer, fade, width, height, pixelsX, pixelsY, columns, rows);
+    if (!runs.length) { context.globalAlpha = 1; return 0; }
+    context.fillStyle = '#fff';
+    for (let i = 0; i < runs.length; i += 5) {
+      context.globalAlpha = runs[i + 4];
+      context.fillRect(runs[i], runs[i + 1], runs[i + 2], runs[i + 3]);
+    }
+    context.globalAlpha = 1;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.globalCompositeOperation = 'source-in';
+    context.drawImage(buffer.canvas, 0, 0, pixelsX, pixelsY);
+    context.globalCompositeOperation = 'source-over';
+    source = canvas;
+  }
+  const smoothing = target.imageSmoothingEnabled, quality = target.imageSmoothingQuality;
+  // The cloud field has already been smoothed inside the mask. A second linear
+  // upscale would bleed its alpha over a reading boundary on large viewports.
+  target.imageSmoothingEnabled = !fade;
+  target.imageSmoothingQuality = 'high';
+  target.globalAlpha = opacity * (dark ? 0.78 : 0.42);
+  target.drawImage(source, 0, 0, width, height);
+  target.imageSmoothingEnabled = smoothing;
+  target.imageSmoothingQuality = quality;
+  return 1;
+}
+
+/** Continuous cloud shadows and bounded ASCII wind strokes. Counts are image draws / wind glyphs. */
 export function drawAtmosphere(target, field, options = {}) {
   const result = { wind: 0, clouds: 0 };
   if (!target || typeof target.fillText !== 'function' || !field) return result;
@@ -115,30 +244,14 @@ export function drawAtmosphere(target, field, options = {}) {
     const mask = fade ? atmosClamp(atmosFinite(fade(x, y), 0)) : 1;
     alpha *= mask;
     if (!(alpha > 0.006)) return;
-    const ink = kind === 'clouds' && options.dark
-      ? 'rgb(3, 12, 20)' : palette[glyphInkIndex(light, 0.16)];
+    const ink = palette[glyphInkIndex(light, 0.16)];
     if (ink !== fill) { target.fillStyle = ink; fill = ink; }
     target.globalAlpha = Math.min(opacity * 0.24, alpha);
     target.fillText(glyph, x, y, cellWidth);
     result[kind]++;
   };
-  if (options.clouds) {
-    // About 2200 candidates even on a 4K monitor; only fixed-rank stipple in
-    // shadow cores is painted, with a second hard budget on actual glyphs.
-    const spacing = Math.max(cellWidth * 1.4, cellHeight * 1.1, Math.sqrt(width * height / 2200));
-    const columns = Math.ceil(width / spacing), rows = Math.ceil(height / spacing);
-    for (let row = 0; row < rows && result.clouds < ATMOS_MAX_CLOUD; row++) {
-      for (let col = 0; col < columns && result.clouds < ATMOS_MAX_CLOUD; col++) {
-        const key = row * 8192 + col, rank = atmosHash(key, field.seed, 91);
-        const x = (col + 0.5) * spacing, y = (row + 0.5) * spacing;
-        const shadow = atmosphereCloudAt(field, x, y);
-        const density = atmosSmooth((shadow - rank * 0.40) / 0.32);
-        const glyph = rank < 0.34 ? '.' : rank < 0.64 ? "'" : ':';
-        paint(glyph, x, y, opacity * 0.24 * density,
-          options.dark ? 0.32 : 0.16, 'clouds');
-      }
-    }
-  }
+  if (options.clouds) result.clouds = atmosDrawClouds(target, field, width, height,
+    opacity, palette, options.dark, fade);
   if (options.wind) {
     const size = Math.min(width, height), angle = -0.14;
     const fx = Math.cos(angle), fy = Math.sin(angle), nx = -fy, ny = fx;

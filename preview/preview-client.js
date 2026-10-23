@@ -20,7 +20,7 @@ function readConfig() {
     whaleSize: readNumber('whaleSize', 0.55, 1.55, 1),
     speed: paused ? 0 : readNumber('speed', 0.3, 2, 0.65),
     opacity: 0.8, glass: el('glass').checked, quietCenter: false,
-    composerAvoid: el('composerAvoid').checked,
+    composerAvoid: el('composerAvoid').checked, ripples: el('ripples').checked,
   };
 }
 
@@ -64,7 +64,7 @@ for (const id of ['renderStyle', 'fillMode', 'text', 'species', 'count', 'whaleS
 el('whaleSize').addEventListener('input', scheduleSamples);
 el('dark').addEventListener('change', () => { apply(); scheduleSamples(); });
 el('pause').addEventListener('click', () => { paused = !paused; apply(); });
-for (const id of ['glass', 'composerAvoid']) {
+for (const id of ['glass', 'composerAvoid', 'ripples']) {
   el(id).addEventListener('change', () => changeOption(id, el(id).checked));
 }
 const sampleObserver = new ResizeObserver(scheduleSamples);

@@ -17,15 +17,23 @@ const SCROLL_SELECTOR = '[data-conversation-scroll]';
 const COMPOSER_CARD_SELECTOR = '[data-composer-card]';
 const COMPOSER_SEAT_SELECTOR = '[data-composer-seat]';
 const COMPOSER_RADIUS = 18;
-const MEASURE_INTERVAL = 400;
+const MEASURE_INTERVAL = 120;
 
 // Which of the conversation's boxes get their own pane of glass. Only opaque,
 // rounded, card-sized boxes are candidates; the input card is always one.
 const CONTENT_MAX_SCAN = 600;
-const CONTENT_MIN_AREA = 2000;
-const CONTENT_MAX_AREA_RATIO = 0.55;
+const CONTENT_MAX_VISIT = 6000;
+const CONTENT_MIN_AREA = 960;
+const CONTENT_MAX_WIDTH_RATIO = 0.95;
 const CONTENT_MAX_HEIGHT_RATIO = 0.9;
 const CONTENT_MIN_ALPHA = 0.9;
+const CONTENT_SKIP_TAGS = new Set([
+  'SVG', 'PATH', 'G', 'CIRCLE', 'RECT', 'LINE', 'POLYLINE', 'POLYGON',
+  'CODE', 'KBD', 'SAMP', 'VAR', 'IMG', 'PICTURE', 'VIDEO', 'AUDIO', 'CANVAS',
+  'INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'LABEL', 'TIME', 'BR', 'HR', 'WBR',
+  'STRONG', 'EM', 'B', 'I', 'U', 'S', 'SMALL', 'SUB', 'SUP', 'MARK', 'A',
+]);
+const CONTENT_LEAF_TAGS = new Set(['PRE', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
 
 // The injected demo card (settings preview): one near-opaque rounded body plus
 // grey text lines, standing in for a DSH content card that the preview canvas
@@ -137,33 +145,55 @@ function composerRadius(element) {
  */
 function collectContentBoxes(canvasRect, composerHit) {
   const boxes = [];
-  const canvasArea = canvasRect.width * canvasRect.height;
   const scroller = pick(SCROLL_SELECTOR, canvasRect);
   if (scroller) {
     const queue = [scroller.element];
-    let checked = 0;
-    while (queue.length && checked < CONTENT_MAX_SCAN) {
+    let visited = 0, styled = 0;
+    while (queue.length && visited < CONTENT_MAX_VISIT && styled < CONTENT_MAX_SCAN) {
       const element = queue.shift();
-      checked++;
-      const children = element.children;
-      if (children) for (const child of children) queue.push(child);
+      visited++;
+      if (!element || element.hidden || (typeof element.hasAttribute === 'function' && element.hasAttribute('hidden'))) continue;
+      const tag = typeof element.tagName === 'string' ? element.tagName.toUpperCase() : '';
+      if (CONTENT_SKIP_TAGS.has(tag)) continue;
+      if (element.style?.display === 'none') continue;
+      if (element.style?.display === 'contents' || element.dataset?.slot !== undefined) {
+        if (element.children) for (const child of element.children) queue.push(child);
+        continue;
+      }
       let rect;
       try { rect = element.getBoundingClientRect(); } catch { continue; }
-      if (!(rect.width > 0) || !(rect.height > 0)) continue;
+      if (!(rect.width > 0) || !(rect.height > 0)) {
+        let style;
+        try { style = getComputedStyle(element); } catch { continue; }
+        if (style.display !== 'none' && style.visibility !== 'hidden' && !CONTENT_LEAF_TAGS.has(tag) && element.children) {
+          for (const child of element.children) queue.push(child);
+        }
+        continue;
+      }
       if (rect.left + rect.width < canvasRect.left || rect.left > canvasRect.left + canvasRect.width) continue;
       if (rect.top + rect.height < canvasRect.top || rect.top > canvasRect.top + canvasRect.height) continue;
+      if (!CONTENT_LEAF_TAGS.has(tag) && element.children) {
+        for (const child of element.children) queue.push(child);
+      }
+      if (element === scroller.element) continue;
+      const clippedWidth = Math.min(rect.left + rect.width, canvasRect.left + canvasRect.width) - Math.max(rect.left, canvasRect.left);
+      const clippedHeight = Math.min(rect.top + rect.height, canvasRect.top + canvasRect.height) - Math.max(rect.top, canvasRect.top);
+      if (clippedWidth >= canvasRect.width * CONTENT_MAX_WIDTH_RATIO
+        && clippedHeight >= canvasRect.height * CONTENT_MAX_HEIGHT_RATIO) continue;
       const area = rect.width * rect.height;
-      if (!(area >= CONTENT_MIN_AREA) || area > canvasArea * CONTENT_MAX_AREA_RATIO) continue;
-      if (!(rect.height < canvasRect.height * CONTENT_MAX_HEIGHT_RATIO)) continue;
+      if (!(area >= CONTENT_MIN_AREA) || rect.width < 32 || rect.height < 24) continue;
       let style;
-      try { style = getComputedStyle(element); } catch { continue; }
+      try { style = getComputedStyle(element); styled++; } catch { continue; }
       if (style.position === 'fixed') continue;
       if (style.visibility === 'hidden' || style.display === 'none') continue;
       const alpha = colorAlpha(style.backgroundColor);
       if (alpha === null || alpha < CONTENT_MIN_ALPHA) continue;
       const radius = cornerRadius(style);
       if (!(radius > 0)) continue;
-      boxes.push({ left: rect.left, top: rect.top, width: rect.width, height: rect.height, radius });
+      if (rect.width < 40 && !(rect.height >= 36 && radius >= 16)) continue;
+      const width = Math.max(40, rect.width);
+      const left = rect.left - (width - rect.width) / 2;
+      boxes.push({ left, top: rect.top, width, height: rect.height, radius });
     }
   }
   // The input card is always a content box, whatever its background shorthand.
@@ -318,7 +348,10 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       cellHeight: grid.cellHeight, palette: sceneryPalette, opacity: config.opacity,
       wind: config.wind, clouds: config.clouds, dark });
     if (config.renderStyle !== 'cells') paintSeaSilhouette(seaInk, material);
+    const savedQuietCenter = config.quietCenter;
+    config.quietCenter = false;
     painter.paint(seaInk, grid, poses, width, height, 1, null, dark);
+    config.quietCenter = savedQuietCenter;
     blurredSeaInk.setTransform(1, 0, 0, 1, 0, 0);
     blurredSeaInk.clearRect(0, 0, blurredSea.width, blurredSea.height);
     blurredSeaInk.filter = blurSupport ? `blur(${Math.max(0.4, seaBlurRadius).toFixed(2)}px)` : 'none';

@@ -86,10 +86,10 @@ test('powered exit exposes the nose before the tail and settles after one lift p
   const emerging = poseAt(exitStart + timing.exit * 0.32);
   assert.ok(projectParticle(back(1.04), emerging).visibility > 0.5);
   assert.equal(projectParticle(back(-1.05), emerging).visibility, 0);
-  const lifted = divePose(exitStart + timing.exit * 0.58, timing);
+  const lifted = divePose(exitStart + timing.exit * 0.76, timing);
   assert.ok(lifted.depth < 0, 'the back briefly rises above its resting waterline');
   let lastDepth = lifted.depth;
-  for (let i = 59; i <= 100; i++) {
+  for (let i = 77; i <= 100; i++) {
     const current = divePose(exitStart + timing.exit * i / 100, timing);
     assert.ok(current.depth >= lastDepth - 1e-12, 'settles monotonically rather than bouncing');
     lastDepth = current.depth;
@@ -100,7 +100,7 @@ test('powered exit exposes the nose before the tail and settles after one lift p
 
 test('all geometry controls have continuous velocity at phase joins and flat action endpoints', () => {
   const joins = [0, ...[0.18, 0.2, 0.35, 0.38, 0.46, 0.55, 0.65, 0.68, 0.92, 1].map(u => u * timing.entry),
-    timing.entry + timing.under, ...[0.3, 0.32, 0.4, 0.58, 1].map(u => timing.entry + timing.under + u * timing.exit)];
+    timing.entry + timing.under, ...[0.22, 0.24, 0.48, 0.65, 0.76, 1].map(u => timing.entry + timing.under + u * timing.exit)];
   const epsilon = 1e-5;
   for (const t of joins) {
     const a = divePose(t - epsilon, timing), b = divePose(t, timing), c = divePose(t + epsilon, timing);
