@@ -36,7 +36,15 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/jryang1997/dsh-ascii-whales/releases/latest) 下载 `local-dsh-ascii-ocean-*.tgz` 安装包。
+在 DSH Web 中可通过命令行安装：
+
+```sh
+dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
+```
+
+也可以在桌面端或插件管理器中安装安装包：
+
+1. 从 [Releases](https://github.com/jryang1997/dsh-ascii-whales/releases/latest) 下载 `local-dsh-ascii-ocean-*.tgz` 安装包（或在插件管理器填入 `github:jryang1997/dsh-ascii-whales`）。
 2. 在 DSH 插件管理器中安装该文件。
 3. 打开 **插件 → 文字蓝鲸**，调整选项后点击 **保存**。
 

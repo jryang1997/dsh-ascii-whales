@@ -4,9 +4,33 @@
   "private": true,
   "type": "module",
   "description": "Five whale species with shaded cells or ASCII fill; every content card and the input box is frosted glass with whales blurred behind it, plus independent random dives, tail-stroke ripples, optional input-box avoidance, occasional random spouts, drifting ASCII wind and cloud shadows, continuous toroidal swimming, a whale-size slider, and in-place config updates that never restart the school.",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "plugin",
+    "bundle",
+    "theme",
+    "ui",
+    "ascii-art",
+    "whale",
+    "canvas",
+    "frosted-glass"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jryang1997/dsh-ascii-whales.git"
+  },
+  "homepage": "https://github.com/jryang1997/dsh-ascii-whales#readme",
+  "bugs": {
+    "url": "https://github.com/jryang1997/dsh-ascii-whales/issues"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
@@ -16,7 +40,10 @@
     "src/",
     "locale/",
     "icon.svg",
+    "icon.png",
     "cordis.patch.yml",
+    "LICENSE",
+    "screenshots.json",
     "README.md",
     "README.en.md",
     "CHANGELOG.md",

@@ -36,7 +36,15 @@ Five whale species cruise, turn, and glide through the conversation page, seen f
 
 ## Install
 
-1. Download a `local-dsh-ascii-ocean-*.tgz` package from [Releases](https://github.com/jryang1997/dsh-ascii-whales/releases/latest).
+In DSH Web, install from GitHub with the CLI:
+
+```sh
+dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
+```
+
+Or install the release tarball through the plugin manager:
+
+1. Download a `local-dsh-ascii-ocean-*.tgz` package from [Releases](https://github.com/jryang1997/dsh-ascii-whales/releases/latest) (or enter `github:jryang1997/dsh-ascii-whales` in the plugin manager).
 2. Install the file through the DSH plugin manager.
 3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
