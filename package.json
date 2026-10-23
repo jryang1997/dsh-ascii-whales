@@ -1,9 +1,9 @@
 {
   "name": "@local/dsh-ascii-ocean",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
-  "description": "Five whale species with shaded cells or ASCII fill; every content card and the input box is frosted glass with whales blurred behind it, plus independent random dives, sparse fixed reef rocks with avoidance, tail-stroke ripples, optional input-box avoidance, optional click-to-spout, a whale-size slider, and in-place config updates that never restart the school.",
+  "description": "Five whale species with shaded cells or ASCII fill; every content card and the input box is frosted glass with whales blurred behind it, plus independent random dives, tail-stroke ripples, optional input-box avoidance, occasional random spouts, drifting ASCII wind and cloud shadows, continuous toroidal swimming, a whale-size slider, and in-place config updates that never restart the school.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -49,22 +49,27 @@
     "whale-preview.html",
     "dive.test.js",
     "random-dive.test.js",
-    "reef.js",
-    "reef.test.js",
     "water.js",
     "water.test.js",
     "motion-circle.test.js",
     "dive-water.test.js",
     "dive-geometry.test.js",
-    "demo-card.test.js"
+    "demo-card.test.js",
+    "dive-heading.test.js",
+    "dive-heading-safety.test.js",
+    "atmosphere.js",
+    "atmosphere.test.js",
+    "ATMOSPHERE-RESEARCH.md",
+    "wrap-continuity.test.js",
+    "preview-viewport.test.js"
   ],
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.5"
   },
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test model.test.js motion.test.js regression.test.js rig.test.js shading.test.js overhead.test.js glass.test.js species.test.js surface.test.js update.test.js content-glass.test.js composer.test.js spout.test.js dive.test.js random-dive.test.js reef.test.js water.test.js motion-circle.test.js dive-water.test.js dive-geometry.test.js demo-card.test.js",
-    "check": "node --check index.js && node --check rig.js && node --check shading.js && node --check motion.js && node --check model.js && node --check glass.js && node --check engine.js && node --check settings.js && node --check client.js && node --check build.mjs && node --check model.test.js && node --check motion.test.js && node --check regression.test.js && node --check rig.test.js && node --check shading.test.js && node --check overhead.test.js && node --check glass.test.js && node --check species.js && node --check species.test.js && node --check preview.mjs && node --check surface.js && node --check surface.test.js && node --check update.test.js && node --check content-glass.test.js && node --check composer.test.js && node --check spout.js && node --check spout.test.js && node --check dive.test.js && node --check random-dive.test.js && node --check reef.js && node --check water.js && node --check reef.test.js && node --check water.test.js && node --check motion-circle.test.js && node --check dive-water.test.js && node --check dive-geometry.test.js && node --check demo-card.test.js"
+    "test": "node --test model.test.js motion.test.js regression.test.js rig.test.js shading.test.js overhead.test.js glass.test.js species.test.js surface.test.js update.test.js content-glass.test.js composer.test.js spout.test.js dive.test.js random-dive.test.js water.test.js motion-circle.test.js dive-water.test.js dive-geometry.test.js demo-card.test.js dive-heading.test.js dive-heading-safety.test.js atmosphere.test.js wrap-continuity.test.js preview-viewport.test.js",
+    "check": "node --check index.js && node --check rig.js && node --check shading.js && node --check motion.js && node --check model.js && node --check glass.js && node --check engine.js && node --check settings.js && node --check client.js && node --check build.mjs && node --check model.test.js && node --check motion.test.js && node --check regression.test.js && node --check rig.test.js && node --check shading.test.js && node --check overhead.test.js && node --check glass.test.js && node --check species.js && node --check species.test.js && node --check preview.mjs && node --check surface.js && node --check surface.test.js && node --check update.test.js && node --check content-glass.test.js && node --check composer.test.js && node --check spout.js && node --check spout.test.js && node --check dive.test.js && node --check random-dive.test.js && node --check water.js && node --check water.test.js && node --check motion-circle.test.js && node --check dive-water.test.js && node --check dive-geometry.test.js && node --check demo-card.test.js && node --check dive-heading.test.js && node --check dive-heading-safety.test.js && node --check atmosphere.js && node --check atmosphere.test.js && node --check wrap-continuity.test.js && node --check preview-viewport.test.js"
   },
   "dsh": {
     "bundle": {

@@ -83,7 +83,18 @@ export function registerWhales(ctx, React, dictionaries) {
     const frame = React.useRef(0);
     React.useEffect(() => {
       const instance = createWhaleLayer(ref.current, previewConfigOf(latest.current), {
-        demoCard: { x: 0.1, y: 0.52, width: 0.8, height: 0.2, radius: 14 },
+        // Use the conversation's viewport before fitting the whole image into
+        // this card. Shrinking only the whale made an 11px glyph look enormous.
+        viewport: () => {
+          const style = getComputedStyle(ref.current);
+          const sidebar = parseFloat(style.getPropertyValue('--dsh-windows-sidebar-width'));
+          const clearance = parseFloat(style.getPropertyValue('--dsh-frame-top-clearance')) || 0;
+          return {
+            width: Math.max(1, window.innerWidth - (Number.isFinite(sidebar) ? sidebar : latest.current.leftInset)),
+            height: Math.max(1, window.innerHeight - clearance),
+          };
+        },
+        demoCard: { x: 0.58, y: 0.76, width: 0.35, height: 0.18, radius: 14 },
       });
       layer.current = instance;
       return () => {
@@ -263,7 +274,7 @@ export function registerWhales(ctx, React, dictionaries) {
 }
 
 const SETTINGS_CSS = `
-.aw-settings{color:var(--dsw-alias-label-primary);font:inherit;max-width:1060px;padding:4px 0 24px}
+.aw-settings{color:var(--dsw-alias-label-primary);font:inherit;width:100%;max-width:1280px;min-width:0;container-type:inline-size;padding:4px 0 24px}
 .aw-settings h2{font-size:18px;font-weight:600;margin:0 0 8px}
 .aw-settings .aw-purpose{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 20px}
 /* Two columns: a live preview that stays in view while the fields scroll. The
@@ -272,17 +283,17 @@ const SETTINGS_CSS = `
    a stretched aside would fill the whole row and sticky would have nowhere to
    travel inside its own column. */
 .aw-settings .aw-layout{display:flex;gap:24px;align-items:flex-start}
-.aw-settings .aw-preview{position:sticky;top:16px;flex:0 0 340px}
+.aw-settings .aw-preview{position:sticky;top:16px;flex:0 0 58%;min-width:0}
 .aw-settings .aw-preview-card{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;margin:0 0 8px;background:var(--dsw-alias-bg-layer-1)}
-.aw-settings .aw-preview-card canvas{display:block;width:100%;height:min(56vh,520px)}
+.aw-settings .aw-preview-card canvas{display:block;width:100%;height:clamp(260px,48vh,480px)}
 .aw-settings .aw-preview p{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:0}
-.aw-settings .aw-fields{flex:1 1 420px;min-width:0}
+.aw-settings .aw-fields{flex:1 1 0;min-width:0}
 .aw-settings .aw-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;padding:14px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .aw-settings .aw-copy{min-width:0;flex:1 1 200px}
 .aw-settings label{font-weight:500}
 .aw-settings .aw-copy p{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary);margin:5px 0 0}
 .aw-settings input,.aw-settings select,.aw-settings button{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:7px;padding:7px 10px}
-.aw-settings input[type=text]{flex:1 1 160px;width:100%;min-width:0;max-width:320px}
+.aw-settings input[type=text]{box-sizing:border-box;flex:1 1 160px;width:100%;min-width:0;max-width:320px}
 .aw-settings button{cursor:pointer}
 .aw-settings :disabled{opacity:.5;cursor:default}
 .aw-settings :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}
@@ -318,12 +329,18 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
 .aw-settings .aw-switch-knob{transition:transform .14s ease,background .14s ease}
 .aw-settings .aw-tick{transition:color .12s ease,background .12s ease}
 }
-/* Narrow screens collapse to one column: the preview scrolls with the page and
-   gives most of the height back to the fields. */
-@media(max-width:820px){
+/* The settings region can be narrow even on a wide screen with sidebars. */
+@container(max-width:760px){
 .aw-settings .aw-layout{display:block}
 .aw-settings .aw-preview{position:static;flex:none}
-.aw-settings .aw-preview-card canvas{height:240px}
+.aw-settings .aw-preview-card canvas{height:280px}
+}
+@container(max-width:440px){
+.aw-settings .aw-row{gap:8px 12px;align-items:flex-start}
+.aw-settings .aw-copy{flex:1 1 100%}
+.aw-settings .aw-control,.aw-settings input[type=text]{flex:1 1 100%;max-width:none}
+.aw-settings .aw-number-head{justify-content:flex-start}
+.aw-settings .aw-tick{font-size:10px}
 }
 @media(max-width:540px){
 .aw-settings .aw-row{gap:8px 12px;align-items:flex-start}

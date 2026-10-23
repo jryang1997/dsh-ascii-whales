@@ -26,9 +26,10 @@ export const FIELDS = Object.freeze({
   // migrated below instead of silently losing its effect.
   composerGlass: { kind: 'boolean', default: false, hidden: true },
   composerAvoid: { kind: 'boolean', default: false },
-  spout: { kind: 'boolean', default: false },
-  reefs: { kind: 'boolean', default: true },
+  spout: { kind: 'boolean', default: true },
   ripples: { kind: 'boolean', default: true },
+  wind: { kind: 'boolean', default: true },
+  clouds: { kind: 'boolean', default: true },
 });
 export const DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -369,6 +370,113 @@ export function resolveDepthGrid(projected, grid, triangles, decals = []) {
   }
 }
 
+function rasterShiftedTriangles(projected, grid, triangles, particles, whaleId, ox, oy, touched) {
+  for (let triangle = 0; triangle < triangles.length; triangle += 3) {
+    const ia = triangles[triangle], ib = triangles[triangle + 1], ic = triangles[triangle + 2];
+    if (particles[ia].whale !== whaleId) continue;
+    const a = projected[ia], b = projected[ib], c = projected[ic];
+    if (!a || !b || !c || Math.max(a.visibility, b.visibility, c.visibility) < 0.05) continue;
+    const ax = a.x + ox, ay = a.y + oy, bx = b.x + ox, by = b.y + oy, cx = c.x + ox, cy = c.y + oy;
+    const denominator = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    if (Math.abs(denominator) < 0.0001) continue;
+    const left = Math.max(0, Math.floor(Math.min(ax, bx, cx) / grid.cellWidth));
+    const right = Math.min(grid.columns - 1, Math.floor(Math.max(ax, bx, cx) / grid.cellWidth));
+    const top = Math.max(0, Math.floor(Math.min(ay, by, cy) / grid.cellHeight));
+    const bottom = Math.min(grid.rows - 1, Math.floor(Math.max(ay, by, cy) / grid.cellHeight));
+    if (left > right || top > bottom) continue;
+    for (let row = top; row <= bottom; row++) for (let col = left; col <= right; col++) {
+      const cell = row * grid.columns + col;
+      let wrote = false;
+      for (let sample = 0; sample < 5; sample++) {
+        const x = (col + CELL_SAMPLES[sample * 2]) * grid.cellWidth;
+        const y = (row + CELL_SAMPLES[sample * 2 + 1]) * grid.cellHeight;
+        const u = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / denominator;
+        const v = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / denominator;
+        const w = 1 - u - v;
+        if (Math.min(u, v, w) < -0.000001) continue;
+        const visible = a.visibility * u + b.visibility * v + c.visibility * w;
+        if (visible < 0.05) continue;
+        const depth = a.z * u + b.z * v + c.z * w, index = cell * 5 + sample;
+        if (depth >= grid.sampleDepths[index]) continue;
+        grid.sampleDepths[index] = depth;
+        grid.sampleOwners[index] = u >= v && u >= w ? ia : v >= w ? ib : ic;
+        grid.sampleLights[index] = a.light * u + b.light * v + c.light * w;
+        grid.sampleVisibility[index] = visible;
+        wrote = true;
+      }
+      if (wrote) touched.add(cell);
+    }
+  }
+}
+
+function repaintWrappedCells(grid, touched) {
+  for (const cell of touched) {
+    let hits = 0, light = 0, visible = 0, selected = -1;
+    for (let sample = 0; sample < 5; sample++) {
+      const index = cell * 5 + sample;
+      if (grid.sampleOwners[index] < 0) continue;
+      hits++; light += grid.sampleLights[index]; visible += grid.sampleVisibility[index];
+      if (sample === 0 || selected < 0) selected = index;
+    }
+    if (!hits) continue;
+    grid.owners[cell] = grid.sampleOwners[selected];
+    grid.depths[cell] = grid.sampleDepths[selected];
+    grid.lights[cell] = light / hits;
+    grid.coverage[cell] = hits / 5;
+    grid.visibility[cell] = visible / hits;
+  }
+}
+
+function stampWrappedPoint(projected, grid, index, ox, oy) {
+  const p = projected[index];
+  if (!p || p.visibility < 0.05) return;
+  const x = p.x + ox, y = p.y + oy;
+  if (x < 0 || x >= grid.width || y < 0 || y >= grid.height) return;
+  const cell = Math.floor(y / grid.cellHeight) * grid.columns + Math.floor(x / grid.cellWidth);
+  if (p.z > grid.depths[cell] + 0.75) return;
+  grid.owners[cell] = index; grid.depths[cell] = p.z; grid.lights[cell] = p.light ?? 0.75;
+  grid.coverage[cell] = 1; grid.visibility[cell] = p.visibility;
+}
+
+/**
+ * Draw the part of a body that has crossed an edge on the opposite edge.
+ * The centre stays in range; only the overhang is stamped, so a whale swims
+ * off the top and the same stroke comes back in from the bottom.
+ */
+export function stampSeaWraps(scene, projected, grid) {
+  const width = grid?.width, height = grid?.height;
+  const triangles = scene?.triangles, particles = scene?.particles;
+  if (!(width > 0) || !(height > 0) || !triangles?.length || !particles?.length) return;
+  const touched = new Set();
+  const shifts = [];
+  for (const whale of scene.whales || []) {
+    const reach = Math.max(48, motionFiniteLength(whale) * 0.9);
+    const xShifts = whale.x - reach < 0 ? [width] : whale.x + reach > width ? [-width] : [];
+    const yShifts = whale.y - reach < 0 ? [height] : whale.y + reach > height ? [-height] : [];
+    for (const ox of xShifts) shifts.push([whale.id, ox, 0]);
+    for (const oy of yShifts) shifts.push([whale.id, 0, oy]);
+    for (const ox of xShifts) for (const oy of yShifts) shifts.push([whale.id, ox, oy]);
+  }
+  if (!shifts.length) return;
+  for (const [whaleId, ox, oy] of shifts) {
+    rasterShiftedTriangles(projected, grid, triangles, particles, whaleId, ox, oy, touched);
+  }
+  repaintWrappedCells(grid, touched);
+  const decals = scene.decals || [];
+  for (const index of decals) {
+    const whaleId = particles[index]?.whale;
+    for (const [id, ox, oy] of shifts) {
+      if (id !== whaleId) continue;
+      stampWrappedPoint(projected, grid, index, ox, oy);
+    }
+  }
+}
+
+function motionFiniteLength(whale) {
+  const length = whale && whale.length;
+  return typeof length === 'number' && Number.isFinite(length) ? length : 0;
+}
+
 export function glyphOpacity(opacity, light, visibility, fade) {
   return clamp(opacity * (0.9 + 0.1 * light) * visibility * fade, 0, 1);
 }
@@ -378,9 +486,20 @@ export function fitCanvas(width, height, dpr) {
   return { ratio, width: Math.max(1, Math.floor(width * ratio)), height: Math.max(1, Math.floor(height * ratio)) };
 }
 
+// One edge of the historical bottom fade: full until 14% in, gone by 4% in.
+function edgeAttenuation(distance, span) {
+  const outer = span * 0.14;
+  const feather = Math.max(1, span * 0.10);
+  return 1 - smooth((outer - distance) / feather);
+}
+
 export function attenuation(x, y, width, height, quietCenter) {
-  const bottom = 1 - smooth((y - height * 0.86) / Math.max(1, height * 0.10));
-  const edge = smooth(Math.min(x, width - x) / 24);
+  // Top and bottom keep the original band. Left and right use the same thickness
+  // (the shorter screen side), so a wide window does not grow a huge side vignette
+  // and a whale leaving any edge fades out the same way.
+  const side = Math.min(width, height);
+  const vertical = edgeAttenuation(y, height) * edgeAttenuation(height - y, height);
+  const horizontal = edgeAttenuation(x, side) * edgeAttenuation(width - x, side);
   const central = quietCenter ? 1 - 0.25 * Math.exp(-(((x / width - 0.5) / 0.29) ** 2)) * smooth(y / height / 0.18) : 1;
-  return clamp(bottom * edge * central, 0, 1);
+  return clamp(vertical * horizontal * central, 0, 1);
 }

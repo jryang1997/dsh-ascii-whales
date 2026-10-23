@@ -34,7 +34,7 @@ Five whale species cruise, turn, and glide through the conversation page, seen f
 2. Install the file through the DSH plugin manager.
 3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
-The current published package is [v0.10.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.10.0). The features and screenshots below describe that release.
+The current published package is [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). Screenshots below come from the standalone preview and do not show every newer switch.
 
 ## Features
 
@@ -43,6 +43,7 @@ The current published package is [v0.10.0](https://github.com/jryang1997/dsh-asc
 - Draw glyphs alone for a lighter outline, or add colored cells to shade the back, flanks, flippers, and flukes.
 - Adjust the count, body size, speed, opacity, and palette. Body size does not change swimming speed or tail-beat timing.
 - Apply saved settings while preserving the group's movement. Switching models keeps the whales swimming.
+- Version 0.14.0 adds sea-surface wind streaks and slow cloud shadows, each with its own switch. Whales leave through any edge and return on the opposite side, steering clear of obstacles there before they cross. See [atmosphere research](./ATMOSPHERE-RESEARCH.md).
 - Follow light and dark themes and system preferences. Reduced motion shows a static pose. Hidden pages pause the animation, and the decorative layer lets pointer events pass through.
 
 ## Whales around your conversation

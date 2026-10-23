@@ -86,17 +86,29 @@ test('the independent stream can be seeded after creation and never consumes cru
   stepScene(active, 1 / 60);
   stepScene(other, 1 / 60);
   assert.notDeepEqual(active.whales.map(whale => whale._motion.dive), other.whales.map(whale => whale._motion.dive));
-  // Disable only the other school's dive decisions. Steering still takes its
-  // usual random draws, and the active school's completed actions draw many more.
+  // A dive now deliberately holds its course at the surface, so positions may
+  // differ. Keep targets out of reach to remove arrival-triggered route draws;
+  // both schools still make all age-driven wander draws during repeated dives.
   for (const whale of other.whales) whale._motion.dive.nextDecision = Infinity;
-  advance(active, 120);
-  advance(other, 120);
+  const initialCruiseSeeds = active.whales.map(whale => whale._motion.seed);
+  for (let tick = 0; tick < 120 * 60; tick++) {
+    for (const scene of [active, other]) {
+      for (const whale of scene.whales) {
+        whale._motion.targetDue = Infinity;
+        whale._motion.targetX = whale.x + scene.width * 4;
+        whale._motion.targetY = whale.y + scene.height * 4;
+      }
+      stepScene(scene, 1 / 60);
+    }
+  }
   assert.ok(active.whales.some(whale => whale._motion.dive.dives >= 2));
+  assert.ok(other.whales.every(whale => whale._motion.dive.dives === 0));
+  assert.ok(active.whales.some((whale, id) => whale._motion.seed !== initialCruiseSeeds[id]),
+    'both cruise streams really advanced, rather than only comparing unused seeds');
   for (const [id, whale] of active.whales.entries()) {
     const twin = other.whales[id];
-    for (const key of ['x', 'y', 'heading', 'turn', 'speed', 'vx', 'vy']) assert.equal(whale[key], twin[key], key);
-    for (const key of ['seed', 'age', 'targetX', 'targetY', 'targetDue', 'wander', 'wanderGoal',
-      'wanderDue', 'wave', 'stroke', 'cruise', 'agility']) assert.equal(whale._motion[key], twin._motion[key], key);
+    for (const key of ['seed', 'age', 'wander', 'wanderGoal', 'wanderDue',
+      'stroke', 'cruise', 'agility']) assert.equal(whale._motion[key], twin._motion[key], key);
   }
 });
 

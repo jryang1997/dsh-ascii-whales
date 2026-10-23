@@ -1,11 +1,11 @@
 import { createWhalePainter } from './surface.js';
-import { createScene, resizeScene, stepScene, whalePose, projectParticle, createDepthGrid, resolveDepthGrid, fitCanvas, normalizeConfig, attenuation } from './model.js';
+import { createScene, resizeScene, stepScene, whalePose, projectParticle, createDepthGrid, resolveDepthGrid, stampSeaWraps, fitCanvas, normalizeConfig, attenuation } from './model.js';
 import { adoptSceneState, setSceneObstacles } from './motion.js';
 import { glassContentPanes, glassContentTone, glassRoundedPath, glassRoundedSubpath, glassTone, glassSeaFactor, glassSeaBuffer, glassEdgeFade } from './glass.js';
 import { attachSpout } from './spout.js';
-import { createReefField, resizeReefField, reefObstacles, drawReefs } from './reef.js';
 import { createWaterField, resetWaterField, stepWater, drawWater } from './water.js';
 import { createInkPalette } from './shading.js';
+import { createAtmosphereField, resizeAtmosphereField, stepAtmosphere, drawAtmosphere, shadeAtmosphere } from './atmosphere.js';
 
 // DSH publishes these hooks on the conversation subtree. Every one of them is
 // optional: without them the whales simply paint as before, so an unknown
@@ -46,7 +46,7 @@ const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'reefs', 'ripples']);
+const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'wind', 'clouds']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -237,8 +237,8 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
   let scene = createScene(config.count, config.text, config.species, config.whaleSize);
   scene.diveSeed = scenerySeed;
-  let reef = null;
   const water = createWaterField();
+  const atmosphere = createAtmosphereField({ seed: scenerySeed });
   let sceneryPalette = createInkPalette(config.color);
   let poses = scene.whales.map(() => ({}));
   let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
@@ -246,6 +246,10 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   ink.font = painter.font;
   let metrics = measureGlyphs();
   let width = 0, height = 0, ratio = 1, grid = null;
+  let offsetX = 0, offsetY = 0;
+  // A preview uses the same logical sea as the background. Only its final
+  // presentation is smaller, so body geometry and glyphs keep their proportions.
+  const viewport = options.viewport;
   // Shared blurred sea: one downsampled painter pass and one blur per frame; the
   // number of panes only changes how many times the image is drawn, never the
   // blur cost.
@@ -332,6 +336,9 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     // The painter works in CSS pixels; the 1/factor transform rasterises it at a
     // fraction of the resolution and the panes scale the blur back up.
     seaInk.setTransform(1 / seaFactor, 0, 0, 1 / seaFactor, seaPad, seaPad);
+    drawAtmosphere(seaInk, atmosphere, { width, height, cellWidth: grid.cellWidth,
+      cellHeight: grid.cellHeight, palette: sceneryPalette, opacity: config.opacity,
+      wind: config.wind, clouds: config.clouds, dark });
     if (config.renderStyle !== 'cells') paintSeaSilhouette(seaInk, material);
     painter.paint(seaInk, grid, poses, width, height, 1, null, dark);
     blurredSeaInk.setTransform(1, 0, 0, 1, 0, 0);
@@ -367,7 +374,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
    */
   function applySceneObstacles() {
     if (!scene) return;
-    const obstacles = config.reefs && reef ? reefObstacles(reef) : [];
+    const obstacles = [];
     if (config.composerAvoid && composerCard) {
       let largest = 0;
       for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
@@ -469,11 +476,20 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   function draw() {
     if (!width || !height || !scene || !grid) return;
     if (performance.now() - measuredAt > MEASURE_INTERVAL) measure();
-    ink.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ink.clearRect(0, 0, width, height);
+    if (viewport) {
+      ink.setTransform(1, 0, 0, 1, 0, 0);
+      ink.clearRect(0, 0, canvas.width, canvas.height);
+      ink.setTransform(ratio, 0, 0, ratio, offsetX, offsetY);
+    } else {
+      ink.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ink.clearRect(0, 0, width, height);
+    }
     for (let i = 0; i < scene.whales.length; i++) whalePose(scene.whales[i], scene.time, width, height, config.speed, poses[i]);
     for (let i = 0; i < scene.particles.length; i++) projectParticle(scene.particles[i], poses[scene.particles[i].whale], projected[i]);
     resolveDepthGrid(projected, grid, scene.triangles, scene.decals);
+    // A body crossing the top is the same body entering from the bottom.
+    stampSeaWraps(scene, projected, grid);
+    shadeAtmosphere(atmosphere, grid, config);
     // Reduced transparency withholds the material, not the readability work: the
     // panes still hold the glyphs out, they just paint no glass over the words.
     const visiblePanes = tone ? panes : [];
@@ -489,11 +505,19 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       for (const pane of visiblePanes) fade = Math.min(fade, glassEdgeFade(pane, x, y, featherOf(pane)));
       return fade;
     };
-    const sceneryFade = (x, y) => attenuation(x, y, width, height, config.quietCenter)
-      * (fade ? fade(x, y) : 1);
+    const sceneryFade = (x, y) => {
+      // Weather remains outside the entire reading card, including the small
+      // corners beyond its rounded material. Scattered shadow dots must not
+      // drift into that text container while a whale-only scene happens to miss it.
+      for (const pane of visiblePanes) {
+        if (x >= pane.x && x <= pane.x + pane.width && y >= pane.y && y <= pane.y + pane.height) return 0;
+      }
+      return attenuation(x, y, width, height, config.quietCenter) * (fade ? fade(x, y) : 1);
+    };
     const scenery = { width, height, ratio, font: painter.font, palette: sceneryPalette,
       cellWidth: grid.cellWidth, cellHeight: grid.cellHeight, opacity: config.opacity, fade: sceneryFade };
-    if (config.reefs && reef) drawReefs(ink, reef, scenery);
+    drawAtmosphere(ink, atmosphere, { ...scenery, wind: config.wind, clouds: config.clouds,
+      dark: document.body.hasAttribute('data-ds-dark-theme') });
     if (config.ripples) drawWater(ink, water, scenery);
     paintGlyphs(ink, fade);
     spout.paint(ink, fade);
@@ -631,6 +655,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       const startedAt = scene.time;
       stepScene(scene, Math.min(0.1, (now - previous) / 1000), config.speed);
       if (config.ripples) stepWater(water, scene, scene.time - startedAt);
+      stepAtmosphere(atmosphere, scene.time - startedAt);
     }
     previous = now;
     if (now - lastPaint >= 1000 / 30) { draw(); lastPaint = now; }
@@ -666,7 +691,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     if (noChange(changes)) return;
     // The draw loop and the painter share this object, so live options such as
     // opacity and speed apply from the next frame without any rebuild.
-    const previousReefs = config.reefs, previousRipples = config.ripples;
+    const previousRipples = config.ripples;
     Object.assign(config, next);
 
     if (changes.scene) {
@@ -704,9 +729,9 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       if (width && height) measure();
     }
 
-    if (previousReefs !== config.reefs) applySceneObstacles();
     if (previousRipples !== config.ripples || changes.scene) resetWaterField(water);
     if (changes.palette) sceneryPalette = createInkPalette(config.color);
+    if (viewport) resize();
 
     lastPaint = -Infinity;
     if (!document.hidden && width && height) {
@@ -726,19 +751,26 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
-    const nextWidth = Math.floor(rect.width), nextHeight = Math.floor(rect.height);
-    const pixels = fitCanvas(nextWidth, nextHeight, window.devicePixelRatio);
-    if (width === nextWidth && height === nextHeight && canvas.width === pixels.width && canvas.height === pixels.height) return;
-    width = nextWidth; height = nextHeight; ratio = pixels.ratio;
+    const displayWidth = Math.floor(rect.width), displayHeight = Math.floor(rect.height);
+    const source = viewport?.();
+    const visible = displayWidth > 0 && displayHeight > 0;
+    const nextWidth = visible ? Math.max(1, Math.floor(source?.width ?? displayWidth)) : 0;
+    const nextHeight = visible ? Math.max(1, Math.floor(source?.height ?? displayHeight)) : 0;
+    const pixels = fitCanvas(displayWidth, displayHeight, window.devicePixelRatio);
+    const scale = viewport && visible ? Math.min(displayWidth / nextWidth, displayHeight / nextHeight) : 1;
+    const nextRatio = pixels.ratio * scale;
+    const nextOffsetX = viewport ? (displayWidth - nextWidth * scale) * pixels.ratio / 2 : 0;
+    const nextOffsetY = viewport ? (displayHeight - nextHeight * scale) * pixels.ratio / 2 : 0;
+    if (width === nextWidth && height === nextHeight && canvas.width === pixels.width && canvas.height === pixels.height
+      && ratio === nextRatio && offsetX === nextOffsetX && offsetY === nextOffsetY) return;
+    width = nextWidth; height = nextHeight; ratio = nextRatio;
+    offsetX = nextOffsetX; offsetY = nextOffsetY;
     canvas.width = pixels.width; canvas.height = pixels.height;
-    ink.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ink.setTransform(ratio, 0, 0, ratio, offsetX, offsetY);
     grid = createDepthGrid(width, height, config.glyphSize, metrics);
     resizeScene(scene, width, height);
-    if (width > 0 && height > 0) {
-      if (reef) resizeReefField(reef, width, height);
-      else reef = createReefField({ width, height, seed: scenerySeed, count: width * height < 360000 ? 2 : 3 });
-      resetWaterField(water);
-    }
+    resizeAtmosphereField(atmosphere, width, height);
+    if (width > 0 && height > 0) resetWaterField(water);
     measuredAt = -Infinity;
     sync();
   }
@@ -756,7 +788,6 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   function dispose() {
     spout.detach();
     resetWaterField(water);
-    reef = null;
     disposed = true;
     cancelAnimationFrame(raf);
     raf = 0;

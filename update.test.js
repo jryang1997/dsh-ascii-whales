@@ -14,7 +14,7 @@ const ALTERNATIVES = Object.freeze({
   enabled: false, count: 5, species: 'blue', renderStyle: 'cells', fillMode: 'ascii',
   text: '深海蓝鲸', speed: 1.1, opacity: 0.7, glyphSize: 13, whaleSize: 1.2,
   color: 'azure', quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
-  composerGlass: true, composerAvoid: true, spout: true, reefs: false, ripples: false,
+  composerGlass: true, composerAvoid: true, spout: false, ripples: false, wind: false, clouds: false,
 });
 
 const GROUP_OF = Object.freeze({
@@ -23,7 +23,7 @@ const GROUP_OF = Object.freeze({
   palette: ['color'],
   glass: ['glass', 'glassStrength'],
   composer: ['composerGlass', 'composerAvoid'],
-  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'reefs', 'ripples'],
+  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'wind', 'clouds'],
 });
 const GROUPS = Object.keys(GROUP_OF);
 
@@ -347,33 +347,29 @@ function harness(options = {}) {
   return { stats, drawn, canvas, canvases, raf, viewport, setViewport, install, restore };
 }
 
-test('reef layout stays fixed across settings and scene edits and toggles without remounting', t => {
-  const { stats, drawn, canvas, raf, install, restore } = harness();
+test('weather toggles repaint the same layer and preserve the paused seeded pattern', t => {
+  const { stats, drawn, canvas, install, restore } = harness({ reduceMotion: true });
   install();
-  const config = { ...DEFAULTS, glass: false, quietCenter: false,
-    reefs: true, ripples: false, text: '鲸', speed: 0 };
+  const config = { ...DEFAULTS, glass: false, quietCenter: false, text: '鲸', spout: false,
+    ripples: false, wind: true, clouds: true };
   const layer = createWhaleLayer(canvas(), config);
   t.after(() => { layer.dispose(); restore(); });
-  const rocks = () => drawn.filter(point => point.glyph !== '鲸' && point.glyph !== '海')
-    .map(({ glyph, x, y }) => ({ glyph, x, y }));
-  const original = rocks();
-  assert.ok(original.length > 10, 'rocks are actually painted by the running layer');
-  const measurements = stats.measureText;
-  layer.update({ ...config, reefs: false });
-  assert.equal(rocks().length, 0);
-  assert.equal(stats.measureText, measurements, 'scenery toggles do not rebuild the font');
+  const weather = () => drawn.filter(point => point.glyph !== '鲸').map(point => ({ ...point }));
+  const original = weather();
+  assert.ok(original.length > 10, 'the running layer actually paints weather');
+  const contexts = stats.getContext, fonts = stats.measureText;
+  layer.update({ ...config, wind: false, clouds: false });
+  assert.equal(weather().length, 0);
   layer.update(config);
-  assert.deepEqual(rocks(), original, 'turning rocks back on keeps their positions');
-  layer.update({ ...config, text: '海', count: 4 });
-  assert.deepEqual(rocks(), original, 'a rebuilt school does not reroll the scenery');
-  assert.equal(stats.getContext, 1);
-  assert.equal(raf.queue.size, 1);
+  assert.deepEqual(weather(), original, 'a live toggle does not reroll wind or cloud shapes');
+  assert.equal(stats.getContext, contexts, 'the canvas is reused');
+  assert.equal(stats.measureText, fonts, 'the whale painter is reused');
 });
 
 test('the running layer generates tail ripples only after swimming and clears them live', t => {
   const { drawn, canvas, raf, install, restore } = harness();
   install();
-  const config = { ...DEFAULTS, glass: false, quietCenter: false,
+  const config = { ...DEFAULTS, glass: false, quietCenter: false, spout: false, wind: false, clouds: false,
     reefs: false, ripples: true, text: '鲸', speed: 0 };
   const layer = createWhaleLayer(canvas(), config);
   t.after(() => { layer.dispose(); restore(); });
@@ -398,8 +394,8 @@ test('an unchanged settings snapshot is a complete no-op and a real edit updates
   // Glass is off here: the frosted pane needs a second canvas and a text column,
   // which is out of scope for the update mechanics and already covered by
   // glass.test.js. Scenery is off so every recorded glyph belongs to the whale.
-  const config = normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
-  const same = () => normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, ripples: false, wind: false, clouds: false });
+  const same = () => normalizeConfig({ ...DEFAULTS, glass: false, ripples: false, wind: false, clouds: false });
   const layer = createWhaleLayer(canvas(), config);
   assert.equal(stats.getContext, 1, 'one 2D context for the whole lifetime');
   assert.equal(raf.queue.size, 1, 'the animation loop starts once');
@@ -475,7 +471,7 @@ test('speed 0 is a preview-only pause sentinel and never leaks into the settings
   const { stats, drawn, canvas, raf, install, restore } = harness();
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, ripples: false, wind: false, clouds: false });
   // The settings document cannot express 0, and normalization keeps clamping it:
   // the sentinel exists only inside the engine's own config copy.
   assert.equal(normalizeConfig({ ...DEFAULTS, speed: 0 }).speed, FIELDS.speed.min);
@@ -501,7 +497,7 @@ test('reduced motion stays on a static pose but an update still repaints one fra
   const { stats, drawn, canvas, raf, install, restore } = harness({ reduceMotion: true });
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, ripples: false, wind: false, clouds: false });
   const layer = createWhaleLayer(canvas(), config);
   assert.equal(raf.queue.size, 0, 'reduced motion must not start an animation loop');
   assert.ok(drawn.length > 100, 'the static pose is painted once');
@@ -520,7 +516,7 @@ test('a scene rebuilt before the canvas is laid out still lands where the school
   const { drawn, canvas, canvases, raf, setViewport, install, restore } = harness({ width: 0, height: 0 });
   install();
   t.after(restore);
-  const config = normalizeConfig({ ...DEFAULTS, glass: false, reefs: false, ripples: false });
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, ripples: false, wind: false, clouds: false });
   const layer = createWhaleLayer(canvas(), config);
   assert.equal(raf.queue.size, 0, 'nothing to animate while the canvas has no size');
   // The settings document can be written before the overlay gets its layout.

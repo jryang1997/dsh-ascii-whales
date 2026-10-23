@@ -156,23 +156,29 @@ test('long incoming frames are capped instead of advancing through a suspension'
   near(capped.time, 0.25);
 });
 
-test('turning and boundary recovery are continuous without wrapping or positional clamps', () => {
+test('an outward heading leaves through one edge and returns on the opposite edge', () => {
   const scene = makeScene(1), whale = scene.whales[0];
   Object.assign(whale, { x: scene.width - 8, y: 400, heading: 0, turn: 0,
-    speed: 60, vx: 60, vy: 0 });
-  let maximumTurn = 0;
-  for (let frame = 0; frame < 24 * 60; frame++) {
-    const { x, y, heading } = whale;
+    speed: 80, vx: 80, vy: 0 });
+  Object.assign(whale._motion, { targetX: scene.width + 500, targetY: 400, targetDue: 1e9 });
+  const heading = whale.heading;
+  let wrapped = false;
+  for (let frame = 0; frame < 6 * 60; frame++) {
+    const before = whale.x;
     stepScene(scene, 1 / 60);
-    const turn = Math.abs(whale.heading - heading);
-    maximumTurn = Math.max(maximumTurn, turn);
-    assert.ok(turn <= 1.1 / 60 + 1e-10);
-    assert.ok(Math.hypot(whale.x - x, whale.y - y) <= 75 / 60 + 1e-10);
-    near(whale.x - x, whale.vx / 60);
-    near(whale.y - y, whale.vy / 60);
+    assert.ok(whale.x >= 0 && whale.x < scene.width + 1e-6, `x stayed folded, got ${whale.x}`);
+    assert.ok(whale.y >= 0 && whale.y < scene.height + 1e-6, `y stayed folded, got ${whale.y}`);
+    if (before > scene.width * 0.75 && whale.x < scene.width * 0.25) wrapped = true;
   }
-  assert.ok(maximumTurn > 0.002);
-  assert.ok(whale.x < scene.width - 80, 'an outward-facing whale swims back into the scene');
+  assert.ok(wrapped, 'the whale re-enters from the opposite edge');
+  const turn = Math.atan2(Math.sin(whale.heading - heading), Math.cos(whale.heading - heading));
+  assert.ok(Math.abs(turn) < 0.45, `heading changed by ${turn}, it should not turn around`);
+  const nodes = whale.rig.nodes;
+  let span = 0;
+  for (let i = 0; i < nodes.length; i += 2) {
+    span = Math.max(span, Math.hypot(nodes[i] - whale.x, nodes[i + 1] - whale.y));
+  }
+  assert.ok(span < whale.length, `spine tore across the wrap, gap ${span}`);
 });
 
 test('pose reuses output and projects the state with a realistic silhouette length', () => {

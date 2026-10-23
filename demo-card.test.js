@@ -167,7 +167,7 @@ test('the demo glass holds sharp glyphs out of the injected card and paints its 
   const card = demoRectOf(800, 600);
   assert.ok(drawn.length > 50, 'the school still paints around the card');
   assert.ok(drawn.every(point => !insideRect(point, card)),
-    'sharp glyphs must not show under the demo glass');
+    `sharp glyphs must not show under the demo glass: ${JSON.stringify(drawn.filter(point => insideRect(point, card)).slice(0, 4))}`);
   assert.ok(drawn.some(point => !insideRect(point, card)), 'glyphs remain outside the pane');
   assert.ok(stats.seaGlyphs > 0 && stats.blurCopies > 0, 'the blurred sea is built for the pane');
   // Card body plus four text lines, in that order per frame: the body fill is

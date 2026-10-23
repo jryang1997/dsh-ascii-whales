@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 const root = new URL('./', import.meta.url);
 // Keep this list in the same order as build.mjs: the preview inlines the whole
 // renderer, so any module engine.js imports (glass, spout, …) must be here too.
-const names = ['species.js', 'rig.js', 'shading.js', 'reef.js', 'water.js', 'motion.js', 'model.js', 'surface.js', 'glass.js', 'spout.js', 'engine.js'];
+const names = ['species.js', 'rig.js', 'shading.js', 'atmosphere.js', 'water.js', 'motion.js', 'model.js', 'surface.js', 'glass.js', 'spout.js', 'engine.js'];
 const strip = text => text.replace(/^import .*;\r?\n/gm, '').replace(/^export \{.*\} from .*;\r?\n/gm, '').replace(/^export /gm, '');
 const source = (await Promise.all(names.map(name => readFile(new URL(name, root), 'utf8')))).map(strip).join('\n');
 const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>文字鲸鱼 · 彩色字格与 ASCII</title>

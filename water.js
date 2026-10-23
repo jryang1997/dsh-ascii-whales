@@ -1,4 +1,6 @@
 import { createInkPalette, glyphInkIndex } from './shading.js';
+import { DIVE_TAIL_CONTACT, DIVE_NOSE_CONTACT } from './motion.js';
+import { whalePose, projectParticle } from './model.js';
 
 // Ripples are a top-down read of the surface: one fluke slap sends out a calm
 // ring that swells quickly and then settles. Everything here is pure geometry
@@ -80,9 +82,21 @@ function waterHeadPoint(whale) {
     y: waterFinite(whale.y, 0) + Math.sin(heading) * reach };
 }
 
-function waterSpawnRipple(ripples, whale, stroke, index, beat, impact = null) {
+// Contact coordinates use the same geometry as the mesh, including pitch and
+// perspective. The historical rig nodes alone describe only the sea plane.
+const waterImpactPose = {}, waterImpactProjected = {};
+function waterImpactPoint(whale, kind, scene) {
+  if (!(scene.width > 0 && scene.height > 0)) return null;
+  whalePose(whale, scene.time, scene.width, scene.height, 1, waterImpactPose);
+  projectParticle(kind === 'surface' ? DIVE_NOSE_CONTACT : DIVE_TAIL_CONTACT,
+    waterImpactPose, waterImpactProjected);
+  return Number.isFinite(waterImpactProjected.x) && Number.isFinite(waterImpactProjected.y)
+    ? waterImpactProjected : null;
+}
+
+function waterSpawnRipple(ripples, whale, stroke, index, beat, impact = null, point = null) {
   const bodyRadius = Math.max(1, waterFinite(whale.bodyRadius, 10));
-  const tail = impact === 'surface' ? waterHeadPoint(whale) : waterTailPoint(whale);
+  const tail = point || (impact === 'surface' ? waterHeadPoint(whale) : waterTailPoint(whale));
   // One seed decides the life, splash pattern and ring dashes together, so a
   // ring keeps its shape while it expands.
   const seed = waterKeySeed(index, beat);
@@ -105,7 +119,8 @@ function waterSpawnRipple(ripples, whale, stroke, index, beat, impact = null) {
     ripple.heading = waterFinite(whale.heading, 0);
     ripple.aspect = impact === 'surface' ? 0.68 : 0.76;
     ripple.endRadius = waterClamp(bodyRadius * (impact === 'surface' ? 3.8 : 3.0), 42, 160);
-    ripple.startRadius = Math.max(4, bodyRadius * (impact === 'surface' ? 0.45 : 0.3));
+    ripple.startRadius = Math.min(ripple.endRadius * 0.7,
+      Math.max(8, bodyRadius * (impact === 'surface' ? 1.25 : 0.95)));
     ripple.life = (impact === 'surface' ? 4.1 : 3.3) + seed * 0.5;
   }
 }
@@ -117,7 +132,12 @@ export function waterRippleRadius(ripple) {
   const start = Math.max(0, waterFinite(ripple && ripple.startRadius, WATER_MIN_START_RADIUS));
   const end = Math.max(start, waterFinite(ripple && ripple.endRadius, start));
   const progress = age / life;
-  return start + (end - start) * (1 - (1 - progress) ** 1.8);
+  const impact = ripple && (ripple.kind === 'surface' || ripple.kind === 'dive');
+  // The first crest launches rapidly and then spends its energy. Normal cruise
+  // rings retain their quiet expansion; compute this once per ripple.
+  const growth = impact ? 0.35 * (1 - Math.exp(-age * 8))
+    + 0.65 * (1 - (1 - progress) ** 1.8) : 1 - (1 - progress) ** 1.8;
+  return progress >= 1 ? end : start + (end - start) * growth;
 }
 
 /** A new, empty surface: live rings plus each whale's last observed beat. */
@@ -203,7 +223,8 @@ export function stepWater(field, scene, delta, options = {}) {
         ripples.splice(ordinary < 0 ? 0 : ordinary, 1);
       }
       waterSpawnRipple(ripples, whale,
-        waterClamp(waterFinite(dive.splashStrength, 1), 0, 1), i, splashSerial, dive.splashKind);
+        waterClamp(waterFinite(dive.splashStrength, 1), 0, 1), i, splashSerial, dive.splashKind,
+        waterImpactPoint(whale, dive.splashKind, scene));
     }
     const previousBeat = waterFinite(previous.beat, beat);
     if (beat === previousBeat) continue;
@@ -324,7 +345,8 @@ export function drawWater(target, field, options = {}) {
     if (!(ageFade > 0)) continue;
     // Mid-dark ink, not the pale end of the ramp: the page under the canvas is
     // usually light, and a highlight-coloured ring would simply vanish there.
-    const light = waterClamp(0.40 + 0.10 * strength, 0, 1);
+    const impulse = impact ? 1 - waterClamp(age / 0.85, 0, 1) : 0;
+    const light = waterClamp(0.40 + 0.10 * strength - 0.25 * impulse, 0, 1);
     const outerAlpha = opacity * (0.70 + 0.25 * strength) * ageFade;
     const seen = new Set();
     const spacing = Math.max(4, (cellWidth + cellHeight) * 0.45);
@@ -353,9 +375,11 @@ export function drawWater(target, field, options = {}) {
         const tangentX = -angleSin * axisCos - angleCos * aspect * axisSin;
         const tangentY = -angleSin * axisSin + angleCos * aspect * axisCos;
         const horizontal = Math.abs(tangentX) / Math.hypot(tangentX, tangentY) > 0.82;
-        const glyph = ring === 0
-          ? (horizontal ? (pick < 0.75 ? '~' : '·') : (pick < 0.72 ? '·' : pick < 0.9 ? '˙' : "'"))
-          : (pick < 0.7 ? '·' : '˙');
+        const glyph = impact && impulse > 0.15 && ring === 0
+          ? (horizontal ? '~' : ':')
+          : ring === 0
+            ? (horizontal ? (pick < 0.75 ? '~' : '·') : (pick < 0.72 ? '·' : pick < 0.9 ? '˙' : "'"))
+            : (pick < 0.7 ? '·' : '˙');
         const localX = angleCos * pointRadius;
         const localY = angleSin * pointRadius * aspect;
         paintPoint(x + localX * axisCos - localY * axisSin, y + localX * axisSin + localY * axisCos,

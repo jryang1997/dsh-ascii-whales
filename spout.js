@@ -228,15 +228,63 @@ function spoutDescribePointer(target) {
   return { tag, editable, composer, role };
 }
 
+// First mist is soon enough to notice; later ones stay occasional, not a fountain.
+const SPOUT_FIRST_MIN = 2800;
+const SPOUT_FIRST_SPAN = 7000;
+const SPOUT_GAP_MIN = 11000;
+const SPOUT_GAP_SPAN = 16000;
+const SPOUT_DIVE_RETRY = 2400;
+
+function spoutUnit(rng) {
+  rng.state = (Math.imul(rng.state, 1664525) + 1013904223) >>> 0;
+  return rng.state / 4294967296;
+}
+
 export function attachSpout(canvas, read) {
   let bursts = [];
+  let nextAt = [];
   let seenScene;
   let detached = false;
+  const rng = { state: 0x6d2b79f5 };
+
+  function spoutGap(first) {
+    return first
+      ? SPOUT_FIRST_MIN + spoutUnit(rng) * SPOUT_FIRST_SPAN
+      : SPOUT_GAP_MIN + spoutUnit(rng) * SPOUT_GAP_SPAN;
+  }
+
+  function spoutResetSchedule(state) {
+    const whales = state.scene && state.scene.whales || [];
+    const now = Number.isFinite(state.now) ? state.now : 0;
+    nextAt = whales.map((_, index) => now + spoutGap(true) + index * 900);
+  }
 
   function spoutAdoptScene(state) {
     if (state.scene !== seenScene) {
       seenScene = state.scene;
       bursts.length = 0;
+      nextAt = [];
+    }
+  }
+
+  /** One short mist per whale, on its own clock. A dive just postpones it. */
+  function spoutConsider(state) {
+    if (!state || state.enabled !== true || state.reduced || state.hidden) return;
+    if (!Number.isFinite(state.now)) return;
+    const whales = state.scene && state.scene.whales;
+    if (!whales || !whales.length) return;
+    if (nextAt.length !== whales.length) spoutResetSchedule(state);
+    for (let id = 0; id < whales.length; id++) {
+      if (state.now < nextAt[id]) continue;
+      const submergence = whales[id]._motion && whales[id]._motion.submergence;
+      if (Number.isFinite(submergence) && submergence > 0.4) {
+        nextAt[id] = state.now + SPOUT_DIVE_RETRY;
+        continue;
+      }
+      const had = bursts.some(burst => burst.whaleId === id);
+      spoutPushBurst(state, id);
+      const has = bursts.some(burst => burst.whaleId === id);
+      nextAt[id] = state.now + (!had && has ? spoutGap(false) : SPOUT_DIVE_RETRY);
     }
   }
 
@@ -275,35 +323,17 @@ export function attachSpout(canvas, read) {
     });
   }
 
-  function onPointerDown(event) {
-    if (detached || !event) return;
-    let state;
-    try { state = read(); } catch { return; }
-    if (!state || state.reduced || state.hidden || state.enabled !== true || event.button !== 0) return;
-    if (!canvas || typeof canvas.getBoundingClientRect !== 'function') return;
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    if (!(x >= 0 && y >= 0 && x < rect.width && y < rect.height)) return;
-    spoutAdoptScene(state);
-    const described = spoutDescribePointer(event.target);
-    const whaleId = spoutHit({
-      enabled: true, button: 0, x, y,
-      tag: described.tag, editable: described.editable, composer: described.composer, role: described.role,
-    }, state.grid, state.scene && state.scene.particles);
-    if (whaleId == null) return;
-    spoutPushBurst(state, whaleId);
-  }
-
   function paint(ink, fade) {
     if (detached) return;
     let state;
     try { state = read(); } catch { return; }
     if (!state || state.enabled !== true || state.reduced) {
       bursts.length = 0;
+      nextAt = [];
       return;
     }
     spoutAdoptScene(state);
+    spoutConsider(state);
     spoutDropExpired(state.now);
     if (!ink || !bursts.length) return;
     const opacity = Number.isFinite(state.opacity) ? state.opacity : 0;
@@ -335,9 +365,8 @@ export function attachSpout(canvas, read) {
     if (detached) return;
     detached = true;
     bursts.length = 0;
-    document.removeEventListener('pointerdown', onPointerDown);
+    nextAt = [];
   }
 
-  document.addEventListener('pointerdown', onPointerDown);
   return { paint, detach };
 }

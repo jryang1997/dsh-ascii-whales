@@ -240,12 +240,27 @@ function deformWhaleParticle(p, pose, out) {
   if (Number.isFinite(dive) && dive !== 0) {
     const cd = Number.isFinite(pose.diveCos) ? pose.diveCos : Math.cos(dive);
     const sd = Number.isFinite(pose.diveSin) ? pose.diveSin : Math.sin(dive);
-    const ox = out.x, oy = out.y;
-    out.x = cd * ox - sd * oy;
-    out.y = sd * ox + cd * oy;
-    const nx = out.nx, ny = out.ny;
-    out.nx = cd * nx - sd * ny;
-    out.ny = sd * nx + cd * ny;
+    if (Math.abs(cy) < 1e-12 && Math.abs(ty) < 1e-12 && Math.abs(tx - 1) < 1e-12) {
+      // Preserve the original straight-body path, including its arithmetic.
+      const ox = out.x, oy = out.y;
+      out.x = cd * ox - sd * oy;
+      out.y = sd * ox + cd * oy;
+      const nx = out.nx, ny = out.ny;
+      out.nx = cd * nx - sd * ny;
+      out.ny = sd * nx + cd * ny;
+    } else {
+      // Both components of the historical centreline foreshorten together.
+      // Rotate along/vertical in the local tangent frame; lateral width and
+      // follow-through remain attached to that same unmodified spine.
+      const pitchedAlong = cd * localX - sd * verticalY;
+      const pitchedNormal = cd * localNX - sd * verticalNormal;
+      out.x = cd * cx + tx * pitchedAlong + ty * lateral;
+      out.z = -cd * cy - ty * pitchedAlong + tx * lateral;
+      out.y = sd * (bind + localX) + cd * verticalY;
+      out.nx = tx * pitchedNormal + ty * lateralNormal;
+      out.nz = -ty * pitchedNormal + tx * lateralNormal;
+      out.ny = sd * localNX + cd * verticalNormal;
+    }
   }
   if (Number.isFinite(pose.diveDepth) && pose.diveDepth !== 0) out.y += pose.diveDepth;
   return out;
@@ -326,340 +341,174 @@ function surfaceInkTone(elevation, upness, sideFacing, material = 'skin', seed =
   return Math.max(0.14, Math.min(0.9, tone));
 }
 
-// Reef islands for the sea surface. The layout is seeded once per page load and
-// then never re-rolled: a resize only rescales the same rocks, so the background
-// does not pop when the window changes.
-//
-// build.mjs concatenates the renderer modules into one factory, so no top-level
-// name may collide with model.js (which owns `clamp`, `smooth`, `noise` and the
-// other short helpers). Every helper here carries a `reef` prefix.
 
-
-// Ordered densest to sparsest. The banded pressure ridges of a rock read as
-// dark lines, so the shadow side gets the dense glyph and the lit side the
-// sparse one; the ink palette supplies the matching tone.
-const REEF_GLYPHS = '@%#*+:.';
-const REEF_SPECKLE = '·';
-// The reading column owns the middle of the sea and the glass pane leaves only
-// narrow margins on a normal desktop, so the rocks live in the far margins
-// instead of behind the words. They still steer the school.
-const REEF_LEFT_BAND = Object.freeze([0.02, 0.10]);
-const REEF_RIGHT_BAND = Object.freeze([0.90, 0.98]);
-const REEF_VERTICAL_BAND = Object.freeze([0.16, 0.78]);
-const REEF_RADIUS_MIN_FRACTION = 0.05;
-const REEF_RADIUS_MAX_FRACTION = 0.07;
-const REEF_RADIUS_MIN = 26;
-const REEF_RADIUS_MAX = 72;
-const REEF_MIN_GAP = 14;
-const REEF_ATTEMPTS = 220;
-const REEF_FALLBACK_ATTEMPTS = 120;
-const REEF_DEFAULT_WIDTH = 1280;
-const REEF_DEFAULT_HEIGHT = 800;
-const REEF_DEFAULT_COUNT = 3;
-const REEF_MAX_COUNT = 8;
-const REEF_DEFAULT_OPACITY = 0.6;
-const REEF_DEFAULT_CELL_WIDTH = 11;
-const REEF_DEFAULT_CELL_HEIGHT = 13;
-
-// The renderer fades glyphs near the reading pane; the reef must obey the same
-// per-point fade so it dissolves with the rest of the sea.
-const reefClamp = (value, low, high) => value < low ? low : value > high ? high : value;
-const reefFinite = (value, fallback) => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-const reefPositive = (value, fallback) => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
-const reefSmooth = t => { t = reefClamp(t, 0, 1); return t * t * (3 - 2 * t); };
-
-/** Small deterministic PRNG (mulberry32); one instance per field creation. */
-const reefRandom = seed => {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-
-/** Stable 0..1 fraction of an integer seed, used instead of another RNG. */
-const reefFraction = seed => ((seed >>> 0) % 1000) / 1000;
-
-/**
- * Fixed per-cell noise. Drawing must not allocate or advance a clock, so the
- * grain is a pure hash of the rock seed and the character cell.
- */
-const reefCellNoise = (seed, column, row) => {
-  let hash = (seed | 0) ^ Math.imul(column + 1, 0x9e3779b1) ^ Math.imul(row + 1, 0x85ebca6b);
-  hash = Math.imul(hash ^ (hash >>> 15), 0x2545f491);
-  hash ^= hash >>> 13;
-  return (hash >>> 0) / 4294967296;
-};
-
-/**
- * One main stone plus one or two smaller stones leaning against it, expressed
- * relative to the reef centre and normalised so the outer radius is exact.
- */
-function reefBuildLobes(radius, rand) {
-  const count = rand() < 0.5 ? 2 : 3;
-  // The main stone sits on the field anchor; only the satellites are offset, so
-  // `radius` really is the circumcircle of the whole group. The satellites are
-  // deliberately chunky and close, so the cluster reads as one island at an
-  // 11px cell resolution instead of a few isolated pebbles.
-  const lobes = [{ dx: 0, dy: 0, r: radius * (0.48 + 0.08 * rand()) }];
-  const base = rand() * Math.PI * 2;
-  for (let i = 1; i < count; i++) {
-    const angle = base + (i - 1) * Math.PI * 0.85 + (rand() - 0.5) * 0.6;
-    const distance = radius * (0.42 + 0.16 * rand());
-    const small = radius * (0.34 + 0.08 * rand());
-    lobes.push({
-      dx: lobes[0].dx + Math.cos(angle) * distance,
-      dy: lobes[0].dy + Math.sin(angle) * distance,
-      r: small,
-    });
-  }
-  let bound = 0;
-  for (const lobe of lobes) bound = Math.max(bound, Math.hypot(lobe.dx, lobe.dy) + lobe.r);
-  const scale = bound > 0 ? radius / bound : 1;
-  for (const lobe of lobes) {
-    lobe.dx *= scale; lobe.dy *= scale; lobe.r *= scale;
-  }
-  return lobes;
+// Sea-surface atmosphere, not sky icons. Seeds and character ranks stay fixed;
+// only coherent fields and short wind packets advect through the scene.
+const ATMOS_MAX_WIND = 192;
+const ATMOS_MAX_CLOUD = 1100;
+const atmosFinite = (value, fallback) => Number.isFinite(value) ? value : fallback;
+const atmosClamp = (value, lo = 0, hi = 1) => value < lo ? lo : value > hi ? hi : value;
+const atmosSmooth = value => { const t = atmosClamp(value); return t * t * (3 - 2 * t); };
+const atmosWrap = value => value - Math.floor(value);
+const atmosDelta = value => value - Math.round(value);
+function atmosHash(a, b = 0, salt = 0) {
+  let value = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(salt | 0, 1442695041);
+  value = Math.imul(value ^ (value >>> 13), 1274126177);
+  return ((value ^ (value >>> 16)) >>> 0) / 4294967296;
 }
 
-/** True when the candidate circumcircle keeps the required gap to every rock. */
-function reefSeparated(reefs, x, y, radius) {
-  for (const reef of reefs) {
-    const dx = reef.x - x, dy = reef.y - y;
-    if (Math.sqrt(dx * dx + dy * dy) < reef.radius + radius + REEF_MIN_GAP) return false;
-  }
-  return true;
+function createAtmosphereField(options = {}) {
+  const seed = atmosFinite(options.seed, 0) >>> 0;
+  const clouds = Array.from({ length: 3 }, (_, i) => {
+    const key = i + 11;
+    return { u: atmosHash(key, seed, 1), v: atmosHash(key, seed, 2),
+      rx: 0.18 + 0.075 * atmosHash(key, seed, 3),
+      ry: 0.14 + 0.07 * atmosHash(key, seed, 4),
+      phase: atmosHash(key, seed, 5) * Math.PI * 2,
+      lobes: Array.from({ length: 4 }, (_, lobe) => ({
+        x: (atmosHash(key, seed, 10 + lobe) - 0.5) * 0.9,
+        y: (atmosHash(key, seed, 20 + lobe) - 0.5) * 0.8,
+        radius: 0.5 + 0.25 * atmosHash(key, seed, 30 + lobe),
+      })) };
+  });
+  const gusts = Array.from({ length: 12 }, (_, i) => ({
+    u: atmosHash(i + 1, seed, 71), v: atmosHash(i + 1, seed, 72),
+    life: 9 + 7 * atmosHash(i + 1, seed, 73),
+    phase: 17 * atmosHash(i + 1, seed, 74),
+    length: 0.055 + 0.055 * atmosHash(i + 1, seed, 75),
+    bend: (atmosHash(i + 1, seed, 76) - 0.5) * 0.8,
+  }));
+  return { seed, time: 0, width: Math.max(0, atmosFinite(options.width, 0)),
+    height: Math.max(0, atmosFinite(options.height, 0)), clouds, gusts };
 }
 
-/**
- * One rejection-sampling attempt. Returns null when the position collides.
- *
- * The bands already leave a wide margin on normal viewports; the clamp only
- * matters for windows narrower than the reading column and keeps a whole rock
- * on the canvas instead of half of one.
- */
-function reefCandidate(width, height, left, radius, existing, rand) {
-  const band = left ? REEF_LEFT_BAND : REEF_RIGHT_BAND;
-  const nx = band[0] + (band[1] - band[0]) * rand();
-  const ny = REEF_VERTICAL_BAND[0] + (REEF_VERTICAL_BAND[1] - REEF_VERTICAL_BAND[0]) * rand();
-  let x = nx * width, y = ny * height;
-  if (width > radius * 2 + 4) x = reefClamp(x, radius + 2, width - radius - 2);
-  else x = width / 2;
-  if (height > radius * 2 + 4) y = reefClamp(y, radius + 2, height - radius - 2);
-  else y = height / 2;
-  if (!reefSeparated(existing, x, y, radius)) return null;
-  const seed = (Math.floor(rand() * 0x100000000) >>> 0);
-  return { x, y, radius, seed, lobes: reefBuildLobes(radius, rand) };
-}
-
-/**
- * Build the fixed reef field.
- *
- * `seed` is the one thing the caller draws at page load; with the same seed and
- * the same size this returns an identical field, which is what lets a settings
- * change repaint without moving the rocks.
- */
-function createReefField({ width, height, seed, count = REEF_DEFAULT_COUNT } = {}) {
-  const safeWidth = reefPositive(width, REEF_DEFAULT_WIDTH);
-  const safeHeight = reefPositive(height, REEF_DEFAULT_HEIGHT);
-  const rootSeed = typeof seed === 'number' && Number.isFinite(seed)
-    ? (seed >>> 0) : (Math.floor(Math.random() * 0x100000000) >>> 0);
-  const wanted = reefClamp(Math.round(reefFinite(count, REEF_DEFAULT_COUNT)), 1, REEF_MAX_COUNT);
-  const minSide = Math.min(safeWidth, safeHeight);
-  const span = REEF_RADIUS_MAX_FRACTION - REEF_RADIUS_MIN_FRACTION;
-  const rand = reefRandom(rootSeed);
-  const reefs = [];
-  for (let index = 0; index < wanted; index++) {
-    // Left, right, left, ... so the pair never crowds one margin.
-    const left = index % 2 === 0;
-    let reef = null;
-    for (let attempt = 0; attempt < REEF_ATTEMPTS && !reef; attempt++) {
-      const radius = reefClamp(minSide * (REEF_RADIUS_MIN_FRACTION + span * rand()),
-        REEF_RADIUS_MIN, REEF_RADIUS_MAX);
-      reef = reefCandidate(safeWidth, safeHeight, left, radius, reefs, rand);
-    }
-    if (!reef) {
-      // Tiny windows or very large counts: shrink to the floor radius and try a
-      // little harder, but never draw an overlapping pair.
-      const radius = reefClamp(minSide * REEF_RADIUS_MIN_FRACTION, REEF_RADIUS_MIN, REEF_RADIUS_MAX);
-      for (let attempt = 0; attempt < REEF_FALLBACK_ATTEMPTS && !reef; attempt++) {
-        reef = reefCandidate(safeWidth, safeHeight, left, radius, reefs, rand);
-      }
-    }
-    if (reef) reefs.push(reef);
-  }
-  return { width: safeWidth, height: safeHeight, seed: rootSeed, reefs };
-}
-
-/**
- * Rescale the field in place. Positions keep their normalized coordinates, so
- * the reef belongs to the same page layout after a window resize and no new
- * random values are drawn.
- *
- * Rocks scale by the smaller of the two axis factors. Anisotropic resizing can
- * pull two neighbours closer together; keeping the radius below that factor is
- * what stops the groups from fusing when a window changes aspect ratio.
- */
-function resizeReefField(field, width, height) {
-  if (!field || !Array.isArray(field.reefs)) return field;
-  const oldWidth = reefFinite(field.width, 0);
-  const oldHeight = reefFinite(field.height, 0);
-  if (!(oldWidth > 0) || !(oldHeight > 0)) return field;
-  const nextWidth = reefPositive(width, oldWidth);
-  const nextHeight = reefPositive(height, oldHeight);
-  const xScale = nextWidth / oldWidth, yScale = nextHeight / oldHeight;
-  const rockScale = Math.min(xScale, yScale);
-  for (const reef of field.reefs) {
-    if (!reef) continue;
-    if (Number.isFinite(reef.x)) reef.x *= xScale;
-    if (Number.isFinite(reef.y)) reef.y *= yScale;
-    if (reef.radius > 0) reef.radius *= rockScale;
-    if (!Array.isArray(reef.lobes)) continue;
-    for (const lobe of reef.lobes) {
-      lobe.dx *= rockScale; lobe.dy *= rockScale; lobe.r *= rockScale;
-    }
-  }
-  field.width = nextWidth; field.height = nextHeight;
+function resizeAtmosphereField(field, width, height) {
+  if (!field) return field;
+  field.width = Math.max(0, atmosFinite(width, 0));
+  field.height = Math.max(0, atmosFinite(height, 0));
   return field;
 }
 
-/**
- * One circle per rock for the motion layer. The circumcircle is deliberately a
- * little generous: a whale should start steering before its body clips a stone.
- */
-function reefObstacles(field) {
-  const obstacles = [];
-  if (!field || !Array.isArray(field.reefs)) return obstacles;
-  for (const reef of field.reefs) {
-    if (!reef) continue;
-    const radius = reefFinite(reef.radius, 0);
-    if (!(radius > 0)) continue;
-    const x = reefFinite(reef.x, NaN), y = reefFinite(reef.y, NaN);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    obstacles.push({ x, y, radius });
-  }
-  return obstacles;
+function stepAtmosphere(field, delta) {
+  if (field && Number.isFinite(delta) && delta > 0) field.time += delta;
+  return field;
 }
 
-/**
- * Paint the reefs as ASCII cells.
- *
- * Only `fillText` and the basic text state are used, so this can drive the real
- * canvas or a test double. Every cell is sampled at its centre: inside a stone
- * the palette tone and glyph density follow a fixed upper-left light, and the
- * band just outside gets sparse `·` as broken water over the shallows.
- *
- * @returns {number} glyphs drawn, which is also what the zero-fade test checks.
- */
-function drawReefs(target, field, options = {}) {
-  if (!target || typeof target.fillText !== 'function' || !field
-    || !Array.isArray(field.reefs) || !field.reefs.length) return 0;
-  const settings = options && typeof options === 'object' ? options : {};
-  const width = reefPositive(settings.width, reefPositive(field.width, REEF_DEFAULT_WIDTH));
-  const height = reefPositive(settings.height, reefPositive(field.height, REEF_DEFAULT_HEIGHT));
-  const cellWidth = reefPositive(settings.cellWidth, REEF_DEFAULT_CELL_WIDTH);
-  const cellHeight = reefPositive(settings.cellHeight, REEF_DEFAULT_CELL_HEIGHT);
-  const ratio = reefPositive(settings.ratio, 1);
-  const opacity = reefClamp(reefFinite(settings.opacity, REEF_DEFAULT_OPACITY), 0, 1);
-  const palette = settings.palette && typeof settings.palette.length === 'number' && settings.palette.length > 0
-    ? settings.palette : createInkPalette('ocean');
-  const fade = typeof settings.fade === 'function' ? settings.fade : null;
-  if (!(opacity > 0)) return 0;
+/** Normalized, broad shadow coverage. The coordinate field is continuous in time. */
+function atmosphereCloudAt(field, x, y) {
+  if (!field || !(field.width > 0 && field.height > 0)
+    || !Number.isFinite(x) || !Number.isFinite(y)) return 0;
+  const time = atmosFinite(field.time, 0);
+  const u = x / field.width, v = y / field.height;
+  let remaining = 1;
+  for (const cloud of field.clouds || []) {
+    const dx = atmosDelta(u - cloud.u - time * 0.0009) / cloud.rx;
+    const dy = atmosDelta(v - cloud.v + time * 0.00016) / cloud.ry;
+    if (Math.abs(dx) > 2.2 || Math.abs(dy) > 2.2) continue;
+    let density = 0;
+    // Four overlapping soft lobes make an irregular, unfenced penumbra. There
+    // are no per-frame random samples, thresholded noise or changing glyphs.
+    for (const lobe of cloud.lobes) {
+      const lx = (dx - lobe.x) / lobe.radius, ly = (dy - lobe.y) / lobe.radius;
+      density += Math.exp(-(lx * lx + ly * ly) * 1.6) * 0.42;
+    }
+    remaining *= 1 - atmosSmooth((density - 0.10) / 0.87) * 0.82;
+  }
+  return atmosClamp(1 - remaining);
+}
 
-  if (typeof settings.font === 'string' && settings.font) target.font = settings.font;
-  target.textAlign = 'center';
-  target.textBaseline = 'middle';
-  const columns = Math.max(1, Math.ceil(width / cellWidth));
-  const rows = Math.max(1, Math.ceil(height / cellHeight));
-  const maxWidth = Math.max(1, cellWidth - 1);
-  const paletteSize = palette.length;
-  let currentInk = null;
-  let drawn = 0;
+/** Call once after resolving the mesh. Geometry and character density stay untouched. */
+function shadeAtmosphere(field, grid, options = {}) {
+  if (!grid || !grid.lights) return;
+  if (!options.clouds) {
+    if (grid.atmosphereLights) grid.atmosphereLights.set(grid.lights);
+    return;
+  }
+  if (grid.atmosphereLights?.length !== grid.lights.length) {
+    grid.atmosphereLights = new Float32Array(grid.lights.length);
+  }
+  grid.atmosphereLights.set(grid.lights);
+  for (let cell = 0; cell < grid.owners.length; cell++) {
+    if (grid.owners[cell] < 0) continue;
+    grid.atmosphereLights[cell] = Math.max(0, grid.lights[cell]
+      - 0.10 * atmosphereCloudAt(field, grid.centersX[cell], grid.centersY[cell]));
+  }
+}
 
-  for (const reef of field.reefs) {
-    if (!reef || !Array.isArray(reef.lobes) || !reef.lobes.length) continue;
-    const originX = reefFinite(reef.x, NaN), originY = reefFinite(reef.y, NaN);
-    const radius = reefFinite(reef.radius, 0);
-    if (!Number.isFinite(originX) || !Number.isFinite(originY) || !(radius > 0)) continue;
-    const lobes = reef.lobes, lobeCount = lobes.length;
-    const seed = reefFinite(reef.seed, 0) >>> 0;
-    // Rock colour varies a little per island so the group does not look stamped.
-    const depth = 0.30 + reefFraction(seed) * 0.18;
-    const halo = Math.max(cellWidth * 0.45, Math.min(radius * 0.32, 14));
-    const left = Math.max(0, Math.floor((originX - radius - halo) / cellWidth));
-    const right = Math.min(columns - 1, Math.floor((originX + radius + halo) / cellWidth));
-    const top = Math.max(0, Math.floor((originY - radius - halo) / cellHeight));
-    const bottom = Math.min(rows - 1, Math.floor((originY + radius + halo) / cellHeight));
-    for (let row = top; row <= bottom; row++) {
-      const cy = (row + 0.5) * cellHeight;
-      for (let column = left; column <= right; column++) {
-        const cx = (column + 0.5) * cellWidth;
-        let best = -Infinity, normalX = 0, normalY = 0, hits = 0;
-        for (let index = 0; index < lobeCount; index++) {
-          const lobe = lobes[index];
-          if (!(lobe.r > 0)) continue;
-          const dx = cx - (originX + lobe.dx), dy = cy - (originY + lobe.dy);
-          const inside = lobe.r - Math.sqrt(dx * dx + dy * dy);
-          if (inside > 0) hits++;
-          if (inside > best) {
-            best = inside; normalX = dx / lobe.r; normalY = dy / lobe.r;
-          }
-        }
-        if (best === -Infinity) continue;
-        // A zero or invalid fade means the glass owns this point: no glyph at all.
-        const fadeValue = fade ? fade(cx, cy) : 1;
-        if (!(fadeValue > 0)) continue;
-        const fadeScale = fadeValue < 1 ? fadeValue : 1;
-
-        if (best > 0) {
-          const cover = reefSmooth(best / Math.max(1, cellWidth * 0.9));
-          const rim = 1 - cover;
-          const facing = -0.62 * normalX - 0.78 * normalY;
-          const grain = reefCellNoise(seed, column, row);
-          // The rim carries the densest glyphs: that outline is what makes a few
-          // dozen cells read as a rock instead of scattered marks. Inside, the
-          // stone is a sparser texture, and the upper-left light thins it further.
-          // Creases where two stones meet sit in their own shadow.
-          let density = 3.4 + facing * 0.9 - rim * 2.2 + (grain - 0.5) * 1.4;
-          if (hits > 1) density -= 0.6;
-          const glyph = REEF_GLYPHS[reefClamp(Math.round(density), 0, REEF_GLYPHS.length - 1)];
-          // Keep the whole stone inside the dark half of the ink ramp: the pale
-          // end all but disappears on a light page, so relief comes from the
-          // glyph density while the ink stays legible on both themes.
-          const light = reefClamp(0.20 + 0.16 * (1 - rim) + 0.08 * facing + (grain - 0.5) * 0.06, 0.08, 0.55);
-          const shade = glyphInkIndex(light, depth);
-          const ink = palette[shade < paletteSize ? shade : paletteSize - 1];
-          const alpha = Math.min(opacity * 0.85, opacity * (0.26 + 0.62 * cover)) * fadeScale;
-          if (!(alpha > 0.004)) continue;
-          if (ink !== currentInk) { target.fillStyle = ink; currentInk = ink; }
-          target.globalAlpha = alpha;
-          target.fillText(glyph, Math.round(cx * ratio) / ratio, Math.round(cy * ratio) / ratio, maxWidth);
-          drawn++;
-        } else if (-best <= halo) {
-          const facing = reefClamp(-0.62 * normalX - 0.78 * normalY, -1, 1);
-          const noise = reefCellNoise(seed ^ 0x51ed270b, column, row);
-          const density = 0.10 + 0.10 * reefClamp(facing, 0, 1) + 0.06 * reefCellNoise(seed ^ 0x2c1b3d, row, column);
-          if (!(noise < density)) continue;
-          // Mid-tone rather than a white glint: the page is usually light, and a
-          // pale dot at low alpha would disappear completely.
-          const light = 0.58 + 0.18 * reefCellNoise(seed ^ 0x7f4a7c15, column + 7, row + 3);
-          const shade = glyphInkIndex(light, depth + 0.10);
-          const ink = palette[shade < paletteSize ? shade : paletteSize - 1];
-          const alpha = Math.min(opacity * 0.85, opacity * 0.26) * fadeScale;
-          if (!(alpha > 0.004)) continue;
-          if (ink !== currentInk) { target.fillStyle = ink; currentInk = ink; }
-          target.globalAlpha = alpha;
-          target.fillText(REEF_SPECKLE, Math.round(cx * ratio) / ratio, Math.round(cy * ratio) / ratio, maxWidth);
-          drawn++;
-        }
+/** A bounded ASCII stipple shadow and sparse, wind-aligned surface strokes. */
+function drawAtmosphere(target, field, options = {}) {
+  const result = { wind: 0, clouds: 0 };
+  if (!target || typeof target.fillText !== 'function' || !field) return result;
+  const width = atmosFinite(options.width, field.width), height = atmosFinite(options.height, field.height);
+  const opacity = atmosClamp(atmosFinite(options.opacity, 0.6));
+  if (!(width > 0 && height > 0 && opacity > 0)) return result;
+  const ratio = Math.max(0.1, atmosFinite(options.ratio, 1));
+  const cellWidth = Math.max(5, atmosFinite(options.cellWidth, 11));
+  const cellHeight = Math.max(5, atmosFinite(options.cellHeight, 13));
+  const palette = options.palette || createInkPalette('ocean');
+  const fade = typeof options.fade === 'function' ? options.fade : null;
+  const time = atmosFinite(field.time, 0);
+  target.font = `600 ${Math.max(9, Math.min(13, cellHeight * 0.92))}px Consolas, "Cascadia Mono", monospace`;
+  target.textAlign = 'center'; target.textBaseline = 'middle';
+  let fill = null;
+  const paint = (glyph, x, y, alpha, light, kind) => {
+    x = Math.round(x * ratio) / ratio; y = Math.round(y * ratio) / ratio;
+    if (!(x >= 0 && x < width && y >= 0 && y < height)) return;
+    const mask = fade ? atmosClamp(atmosFinite(fade(x, y), 0)) : 1;
+    alpha *= mask;
+    if (!(alpha > 0.006)) return;
+    const ink = kind === 'clouds' && options.dark
+      ? 'rgb(3, 12, 20)' : palette[glyphInkIndex(light, 0.16)];
+    if (ink !== fill) { target.fillStyle = ink; fill = ink; }
+    target.globalAlpha = Math.min(opacity * 0.24, alpha);
+    target.fillText(glyph, x, y, cellWidth);
+    result[kind]++;
+  };
+  if (options.clouds) {
+    // About 2200 candidates even on a 4K monitor; only fixed-rank stipple in
+    // shadow cores is painted, with a second hard budget on actual glyphs.
+    const spacing = Math.max(cellWidth * 1.4, cellHeight * 1.1, Math.sqrt(width * height / 2200));
+    const columns = Math.ceil(width / spacing), rows = Math.ceil(height / spacing);
+    for (let row = 0; row < rows && result.clouds < ATMOS_MAX_CLOUD; row++) {
+      for (let col = 0; col < columns && result.clouds < ATMOS_MAX_CLOUD; col++) {
+        const key = row * 8192 + col, rank = atmosHash(key, field.seed, 91);
+        const x = (col + 0.5) * spacing, y = (row + 0.5) * spacing;
+        const shadow = atmosphereCloudAt(field, x, y);
+        const density = atmosSmooth((shadow - rank * 0.40) / 0.32);
+        const glyph = rank < 0.34 ? '.' : rank < 0.64 ? "'" : ':';
+        paint(glyph, x, y, opacity * 0.24 * density,
+          options.dark ? 0.32 : 0.16, 'clouds');
+      }
+    }
+  }
+  if (options.wind) {
+    const size = Math.min(width, height), angle = -0.14;
+    const fx = Math.cos(angle), fy = Math.sin(angle), nx = -fy, ny = fx;
+    const speed = size * 0.027;
+    for (let i = 0; i < field.gusts.length && result.wind < ATMOS_MAX_WIND; i++) {
+      const gust = field.gusts[i];
+      const clock = time + gust.phase, cycle = Math.floor(clock / gust.life), age = clock - cycle * gust.life;
+      const envelope = atmosSmooth(age / (gust.life * 0.22))
+        * atmosSmooth((gust.life - age) / (gust.life * 0.28));
+      if (envelope < 0.02) continue;
+      const anchorX = atmosWrap(gust.u + atmosHash(i, cycle, field.seed) * 0.25) * width;
+      const anchorY = atmosWrap(gust.v + atmosHash(i, cycle, field.seed + 1) * 0.2) * height;
+      const length = Math.max(cellWidth * 4, size * gust.length);
+      const count = Math.min(16, Math.max(4, Math.ceil(length / (cellWidth * 0.85))));
+      for (let j = 0; j < count && result.wind < ATMOS_MAX_WIND; j++) {
+        const u = j / (count - 1), along = length * (u - 0.5) + speed * age;
+        const bend = Math.sin(u * Math.PI) * size * gust.bend * 0.025;
+        const x = atmosWrap((anchorX + fx * along + nx * bend) / width) * width;
+        const y = atmosWrap((anchorY + fy * along + ny * bend) / height) * height;
+        const feather = Math.sin(Math.PI * (0.08 + 0.84 * u));
+        const shadow = options.clouds ? atmosphereCloudAt(field, x, y) : 0;
+        paint(j % 4 === 1 ? '~' : '-', x, y, opacity * 0.24 * envelope * feather,
+          0.40 - shadow * 0.10, 'wind');
       }
     }
   }
   target.globalAlpha = 1;
-  return drawn;
+  return result;
 }
 
 
@@ -743,9 +592,21 @@ function waterHeadPoint(whale) {
     y: waterFinite(whale.y, 0) + Math.sin(heading) * reach };
 }
 
-function waterSpawnRipple(ripples, whale, stroke, index, beat, impact = null) {
+// Contact coordinates use the same geometry as the mesh, including pitch and
+// perspective. The historical rig nodes alone describe only the sea plane.
+const waterImpactPose = {}, waterImpactProjected = {};
+function waterImpactPoint(whale, kind, scene) {
+  if (!(scene.width > 0 && scene.height > 0)) return null;
+  whalePose(whale, scene.time, scene.width, scene.height, 1, waterImpactPose);
+  projectParticle(kind === 'surface' ? DIVE_NOSE_CONTACT : DIVE_TAIL_CONTACT,
+    waterImpactPose, waterImpactProjected);
+  return Number.isFinite(waterImpactProjected.x) && Number.isFinite(waterImpactProjected.y)
+    ? waterImpactProjected : null;
+}
+
+function waterSpawnRipple(ripples, whale, stroke, index, beat, impact = null, point = null) {
   const bodyRadius = Math.max(1, waterFinite(whale.bodyRadius, 10));
-  const tail = impact === 'surface' ? waterHeadPoint(whale) : waterTailPoint(whale);
+  const tail = point || (impact === 'surface' ? waterHeadPoint(whale) : waterTailPoint(whale));
   // One seed decides the life, splash pattern and ring dashes together, so a
   // ring keeps its shape while it expands.
   const seed = waterKeySeed(index, beat);
@@ -768,7 +629,8 @@ function waterSpawnRipple(ripples, whale, stroke, index, beat, impact = null) {
     ripple.heading = waterFinite(whale.heading, 0);
     ripple.aspect = impact === 'surface' ? 0.68 : 0.76;
     ripple.endRadius = waterClamp(bodyRadius * (impact === 'surface' ? 3.8 : 3.0), 42, 160);
-    ripple.startRadius = Math.max(4, bodyRadius * (impact === 'surface' ? 0.45 : 0.3));
+    ripple.startRadius = Math.min(ripple.endRadius * 0.7,
+      Math.max(8, bodyRadius * (impact === 'surface' ? 1.25 : 0.95)));
     ripple.life = (impact === 'surface' ? 4.1 : 3.3) + seed * 0.5;
   }
 }
@@ -780,7 +642,12 @@ function waterRippleRadius(ripple) {
   const start = Math.max(0, waterFinite(ripple && ripple.startRadius, WATER_MIN_START_RADIUS));
   const end = Math.max(start, waterFinite(ripple && ripple.endRadius, start));
   const progress = age / life;
-  return start + (end - start) * (1 - (1 - progress) ** 1.8);
+  const impact = ripple && (ripple.kind === 'surface' || ripple.kind === 'dive');
+  // The first crest launches rapidly and then spends its energy. Normal cruise
+  // rings retain their quiet expansion; compute this once per ripple.
+  const growth = impact ? 0.35 * (1 - Math.exp(-age * 8))
+    + 0.65 * (1 - (1 - progress) ** 1.8) : 1 - (1 - progress) ** 1.8;
+  return progress >= 1 ? end : start + (end - start) * growth;
 }
 
 /** A new, empty surface: live rings plus each whale's last observed beat. */
@@ -866,7 +733,8 @@ function stepWater(field, scene, delta, options = {}) {
         ripples.splice(ordinary < 0 ? 0 : ordinary, 1);
       }
       waterSpawnRipple(ripples, whale,
-        waterClamp(waterFinite(dive.splashStrength, 1), 0, 1), i, splashSerial, dive.splashKind);
+        waterClamp(waterFinite(dive.splashStrength, 1), 0, 1), i, splashSerial, dive.splashKind,
+        waterImpactPoint(whale, dive.splashKind, scene));
     }
     const previousBeat = waterFinite(previous.beat, beat);
     if (beat === previousBeat) continue;
@@ -987,7 +855,8 @@ function drawWater(target, field, options = {}) {
     if (!(ageFade > 0)) continue;
     // Mid-dark ink, not the pale end of the ramp: the page under the canvas is
     // usually light, and a highlight-coloured ring would simply vanish there.
-    const light = waterClamp(0.40 + 0.10 * strength, 0, 1);
+    const impulse = impact ? 1 - waterClamp(age / 0.85, 0, 1) : 0;
+    const light = waterClamp(0.40 + 0.10 * strength - 0.25 * impulse, 0, 1);
     const outerAlpha = opacity * (0.70 + 0.25 * strength) * ageFade;
     const seen = new Set();
     const spacing = Math.max(4, (cellWidth + cellHeight) * 0.45);
@@ -1016,9 +885,11 @@ function drawWater(target, field, options = {}) {
         const tangentX = -angleSin * axisCos - angleCos * aspect * axisSin;
         const tangentY = -angleSin * axisSin + angleCos * aspect * axisCos;
         const horizontal = Math.abs(tangentX) / Math.hypot(tangentX, tangentY) > 0.82;
-        const glyph = ring === 0
-          ? (horizontal ? (pick < 0.75 ? '~' : '·') : (pick < 0.72 ? '·' : pick < 0.9 ? '˙' : "'"))
-          : (pick < 0.7 ? '·' : '˙');
+        const glyph = impact && impulse > 0.15 && ring === 0
+          ? (horizontal ? '~' : ':')
+          : ring === 0
+            ? (horizontal ? (pick < 0.75 ? '~' : '·') : (pick < 0.72 ? '·' : pick < 0.9 ? '˙' : "'"))
+            : (pick < 0.7 ? '·' : '˙');
         const localX = angleCos * pointRadius;
         const localY = angleSin * pointRadius * aspect;
         paintPoint(x + localX * axisCos - localY * axisSin, y + localX * axisSin + localY * axisCos,
@@ -1114,8 +985,10 @@ function motionTarget(whale, width, height, first = false, obstacles = null) {
   // provides broad exploration without prescribing the path between them.
   const right = state.targetIndex === 1 || state.targetIndex === 2;
   const bottom = state.targetIndex >= 2;
-  state.targetX = width * ((right ? 0.83 : 0.17) + (motionRandom(state) - 0.5) * 0.075);
-  state.targetY = height * ((bottom ? 0.77 : 0.23) + (motionRandom(state) - 0.5) * 0.10);
+  // Destinations sit near the rim. The sea has no wall there: a whale that is
+  // already heading out keeps going and comes back on the opposite side.
+  state.targetX = width * ((right ? 0.94 : 0.06) + (motionRandom(state) - 0.5) * 0.05);
+  state.targetY = height * ((bottom ? 0.92 : 0.08) + (motionRandom(state) - 0.5) * 0.06);
   // A destination inside the input card would keep the whale pressed against the
   // obstacle for a whole route leg, so it is moved to the nearest point outside.
   const safe = motionAvoidTarget(whale, state.targetX, state.targetY, obstacles, width, height);
@@ -1170,6 +1043,19 @@ function motionBodyHull(whale) {
     const u = motionBodySampleU[i];
     hull.push(x + c * length * u, y + s * length * u, radii[i] + motionBodyClearance);
   }
+  const nodes = whale.rig?.nodes;
+  if (nodes?.length >= 4) {
+    const last = nodes.length / 2 - 1;
+    const shiftX = x + c * length * motionBodySampleU[4] - nodes[0];
+    const shiftY = y + s * length * motionBodySampleU[4] - nodes[1];
+    for (let i = 0; i < motionBodySampleU.length; i++) {
+      const at = (motionBodySampleU[4] - motionBodySampleU[i]) * last;
+      const a = Math.min(last - 1, Math.floor(at)), t = at - a;
+      hull.push(nodes[a * 2] * (1 - t) + nodes[(a + 1) * 2] * t + shiftX,
+        nodes[a * 2 + 1] * (1 - t) + nodes[(a + 1) * 2 + 1] * t + shiftY,
+        radii[i] + motionBodyClearance);
+    }
+  }
   return hull;
 }
 
@@ -1220,6 +1106,21 @@ function motionObstacleNormalize(obstacles) {
   return normalized;
 }
 
+// Collision geometry has the same periodic copies as the rendered animal.
+// Detect the landing-side reef while the snout is still leaving this side;
+// waiting until the centre folds would require a discontinuous push-out.
+function motionPeriodicObstacles(obstacles, width, height) {
+  if (!obstacles?.length) return obstacles;
+  const copies = [];
+  for (const obstacle of obstacles) {
+    copies.push(obstacle);
+    for (const oy of [-height, 0, height]) for (const ox of [-width, 0, width]) {
+      if (ox || oy) copies.push({ ...obstacle, x: obstacle.x + ox, y: obstacle.y + oy, periodic: true });
+    }
+  }
+  return copies;
+}
+
 /**
  * How close a point is to the soft boundary, as a signed distance plus the
  * outward normal. Positive depth is inside (nearest edge decides the normal);
@@ -1262,13 +1163,13 @@ function motionObstacleApproach(obstacle, allowance, x, y, band) {
  * Steering follows that station, so a stretched snout or a wide fluke starts
  * turning before the body centre would have noticed the card at all.
  */
-function motionObstacleApproachBody(whale, obstacle, band) {
+function motionObstacleApproachBody(whale, obstacle, band, deepest = false) {
   const hull = motionBodyHull(whale);
   let closest = null;
   for (let i = 0; i < hull.length; i += 3) {
     const hit = motionObstacleApproach(obstacle, hull[i + 2], hull[i], hull[i + 1], band);
     if (!hit) continue;
-    if (!closest || hit.depth < closest.depth) closest = hit;
+    if (!closest || (deepest ? hit.depth > closest.depth : hit.depth < closest.depth)) closest = hit;
   }
   return closest;
 }
@@ -1282,19 +1183,15 @@ function motionHullInside(obstacle, x, y, radius) {
 
 /**
  * Move the body rigidly until every station's silhouette is outside the
- * obstacles, keeping the whale on the canvas.
- *
- * A rigid translation is what a swimming animal can do in one tick: it cannot
- * bend to clear both sides of a card, so the move is chosen as the shortest one
- * that works for the widest station. Exits that would push the centre off the
- * sea are skipped while another exit exists; if the obstacle fills the sea the
- * canvas bound still wins, which is safer than a whale outside its own window.
+ * obstacles. The screen itself is not an obstacle: the shortest exit may leave
+ * the sea, and the caller folds that position back in from the opposite edge.
  *
  * Returns true when the position changed.
  */
 function motionPushOut(whale, obstacles, width, height) {
   if (!obstacles || !obstacles.length) return false;
   let moved = false;
+  const startX = whale.x, startY = whale.y;
   // Several passes: clearing one side can leave a different station inside the
   // same obstacle (a body diagonal across a corner), and one obstacle can push
   // into another.
@@ -1321,8 +1218,20 @@ function motionPushOut(whale, obstacles, width, height) {
           shift = Math.max(shift, clearance - ((hull[i] - obstacle.x) * nx + (hull[i + 1] - obstacle.y) * ny));
         }
         if (shift > 0) {
-          whale.x = motionLimit(centreX + nx * shift, 0, width);
-          whale.y = motionLimit(centreY + ny * shift, 0, height);
+          // Leaving the sea is allowed, but a slide that stays on screen wins so a
+          // rock in the margin does not throw the body onto the reef opposite.
+          let ex = nx, ey = ny;
+          const landedX = centreX + nx * shift, landedY = centreY + ny * shift;
+          if (landedX < 0 || landedX > width || landedY < 0 || landedY > height) {
+            for (const [tx, ty] of [[-ny, nx], [ny, -nx]]) {
+              const x = centreX + tx * shift, y = centreY + ty * shift;
+              if (x < 0 || x > width || y < 0 || y > height) continue;
+              ex = tx; ey = ty;
+              break;
+            }
+          }
+          whale.x = centreX + ex * shift;
+          whale.y = centreY + ey * shift;
           moved = changed = true;
         }
         continue;
@@ -1330,8 +1239,7 @@ function motionPushOut(whale, obstacles, width, height) {
       let leftShift = 0, rightShift = 0, upShift = 0, downShift = 0, inside = false;
       for (let i = 0; i < hull.length; i += 3) {
         const x = hull[i], y = hull[i + 1], radius = hull[i + 2];
-        if (!motionHullInside(obstacle, x, y, radius)) continue;
-        inside = true;
+        if (motionHullInside(obstacle, x, y, radius)) inside = true;
         const bounds = motionObstacleBounds(obstacle, radius);
         leftShift = Math.max(leftShift, x - bounds.left);
         rightShift = Math.max(rightShift, bounds.right - x);
@@ -1346,20 +1254,24 @@ function motionPushOut(whale, obstacles, width, height) {
         { dx: 0, dy: -upShift, distance: upShift },
         { dx: 0, dy: downShift, distance: downShift },
       ].sort((a, b) => a.distance - b.distance);
-      // Prefer an exit that keeps the centre on the canvas; only when every exit
-      // would leave it does the shortest one win, and the canvas clamp below keeps
-      // the whale inside its own window.
+      // An exit that stays on the sea wins. Off-screen is only the way out when
+      // the rock is pressed against the edge and every on-screen exit is longer
+      // than the sea itself — the caller then folds the body in from the far side.
       const move = candidates.find(candidate => {
         const x = centreX + candidate.dx, y = centreY + candidate.dy;
         return x >= 0 && x <= width && y >= 0 && y <= height;
       }) || candidates[0];
-      whale.x = motionLimit(centreX + move.dx, 0, width);
-      whale.y = motionLimit(centreY + move.dy, 0, height);
+      whale.x = centreX + move.dx;
+      whale.y = centreY + move.dy;
       moved = changed = true;
     }
     if (!changed) break;
   }
-  if (moved) updateWhaleRig(whale);
+  if (moved) {
+    const dx = whale.x - startX, dy = whale.y - startY;
+    whale.x = startX; whale.y = startY;
+    motionShiftWhale(whale, dx, dy);
+  }
   return moved;
 }
 
@@ -1402,8 +1314,10 @@ function setSceneObstacles(scene, obstacles) {
   scene.obstacles = normalized;
   const width = motionFinite(scene.width, 0), height = motionFinite(scene.height, 0);
   if (!normalized.length || !(width > 0) || !(height > 0)) return normalized;
+  const periodic = motionPeriodicObstacles(normalized, width, height);
   for (const whale of scene.whales || []) {
-    motionPushOut(whale, normalized, width, height);
+    motionPushOut(whale, periodic, width, height);
+    motionFoldWhale(whale, width, height);
     if (whale._motion) {
       const target = motionAvoidTarget(whale, whale._motion.targetX, whale._motion.targetY, normalized, width, height);
       whale._motion.targetX = target.x;
@@ -1472,7 +1386,11 @@ function resizeScene(scene, width, height) {
   // Scaling can carry a whale into the (scaled) obstacle: fix that in the same
   // pass, before anything is painted.
   if (scene.obstacles && scene.obstacles.length) {
-    for (const whale of whales) motionPushOut(whale, scene.obstacles, width, height);
+    const periodic = motionPeriodicObstacles(scene.obstacles, width, height);
+    for (const whale of whales) {
+      motionPushOut(whale, periodic, width, height);
+      motionFoldWhale(whale, width, height);
+    }
   }
   scene.width = width;
   scene.height = height;
@@ -1538,16 +1456,154 @@ function adoptSceneState(previous, next) {
   return adopted;
 }
 
+function motionWrap(value, size) {
+  if (!(size > 0) || !Number.isFinite(value)) return value;
+  const wrapped = value % size;
+  return wrapped < 0 ? wrapped + size : wrapped;
+}
+
+function motionTorusDelta(delta, size) {
+  if (!(size > 0) || !Number.isFinite(delta)) return delta;
+  const half = size * 0.5;
+  if (delta > half) return delta - size;
+  if (delta < -half) return delta + size;
+  return delta;
+}
+
+/** Translate the centre and the spine together, so a wrap cannot tear the body. */
+function motionShiftWhale(whale, dx, dy) {
+  if (!dx && !dy) return;
+  whale.x += dx;
+  whale.y += dy;
+  const nodes = whale.rig && whale.rig.nodes;
+  if (!nodes) return;
+  for (let i = 0; i < nodes.length; i += 2) {
+    nodes[i] += dx;
+    nodes[i + 1] += dy;
+  }
+}
+
+function motionWhaleBlocked(whale, obstacles) {
+  const hull = motionBodyHull(whale);
+  for (const obstacle of obstacles) {
+    for (let i = 0; i < hull.length; i += 3) {
+      if (motionHullInside(obstacle, hull[i], hull[i + 1], hull[i + 2])) return true;
+    }
+  }
+  return false;
+}
+
+// Reuse snapshots while evaluating a whole physical pose, including its history.
+// A trial never borrows the already-mutated spine from another rejected trial.
+const motionContactRig = { before: null, after: null };
+function motionContactTrial(whale, x, y, heading, nodes) {
+  whale.x = x; whale.y = y; whale.heading = heading;
+  whale.rig.nodes.set(nodes);
+  updateWhaleRig(whale);
+}
+
+// On a seam, predict the real future rig before accepting any movement. Sliding
+// and a partial step must keep the centre, bearing and historical nodes together.
+function motionConstrainStep(whale, x, y, heading, obstacles, width, height) {
+  if (!obstacles?.length) return false;
+  const seamReach = whale.length * 0.6 + motionHullReach(whale);
+  if (Math.min(x, width - x, y, height - y) > seamReach) return false;
+  const nodes = whale.rig.nodes;
+  if (motionContactRig.before?.length !== nodes.length) {
+    motionContactRig.before = new Float64Array(nodes.length);
+    motionContactRig.after = new Float64Array(nodes.length);
+  }
+  const before = motionContactRig.before, after = motionContactRig.after;
+  before.set(nodes);
+  const endX = whale.x, endY = whale.y, endHeading = whale.heading;
+  updateWhaleRig(whale);
+  if (!motionWhaleBlocked(whale, obstacles)) return true;
+  after.set(nodes);
+  const travel = Math.hypot(endX - x, endY - y);
+  let slid = false;
+  for (const turnFraction of [1, 0.5, 0.25, 0]) {
+    const trialHeading = heading + (endHeading - heading) * turnFraction;
+    motionContactTrial(whale, endX, endY, trialHeading, before);
+    for (let pass = 0; pass < 10; pass++) {
+      let corrected = false;
+      for (const obstacle of obstacles) {
+        const hit = motionObstacleApproachBody(whale, obstacle, 0, true);
+        if (!hit || !(hit.depth > 0)) continue;
+        motionContactTrial(whale, whale.x + hit.nx * (hit.depth + 1e-8),
+          whale.y + hit.ny * (hit.depth + 1e-8), trialHeading, before);
+        corrected = true;
+      }
+      if (!corrected) break;
+    }
+    if (Math.hypot(whale.x - x, whale.y - y) <= travel + 1e-8
+      && !motionWhaleBlocked(whale, obstacles)) {
+      slid = true;
+      break;
+    }
+  }
+  if (!slid) {
+    let best = null, bestScore = -Infinity;
+    for (const turnFraction of [1, 0.5, 0.25]) {
+      const trialHeading = heading + (endHeading - heading) * turnFraction;
+      for (let i = 0; i < 16; i++) {
+        const angle = Math.PI * 2 * i / 16;
+        const dx = Math.cos(angle) * travel, dy = Math.sin(angle) * travel;
+        motionContactTrial(whale, x + dx, y + dy, trialHeading, before);
+        if (motionWhaleBlocked(whale, obstacles)) continue;
+        const score = dx * (endX - x) + dy * (endY - y) + travel * travel * turnFraction * 0.05;
+        if (score > bestScore) { bestScore = score; best = { x: whale.x, y: whale.y, heading: trialHeading }; }
+      }
+    }
+    if (best) {
+      motionContactTrial(whale, best.x, best.y, best.heading, before);
+      slid = true;
+    }
+  }
+  if (!slid) {
+    // Interpolate the complete previous and proposed states. At zero progress
+    // the exact safe historical rig is retained, rather than relaxing it again.
+    const sample = t => {
+      whale.x = x + (endX - x) * t;
+      whale.y = y + (endY - y) * t;
+      whale.heading = heading + (endHeading - heading) * t;
+      for (let i = 0; i < nodes.length; i++) nodes[i] = before[i] + (after[i] - before[i]) * t;
+      nodes[0] = whale.x + Math.cos(whale.heading) * whale.length * 1.04 / 2.24;
+      nodes[1] = whale.y + Math.sin(whale.heading) * whale.length * 1.04 / 2.24;
+    };
+    let low = 0, high = 1;
+    for (let i = 0; i < 20; i++) {
+      const t = (low + high) * 0.5;
+      sample(t);
+      if (motionWhaleBlocked(whale, obstacles)) high = t;
+      else low = t;
+    }
+    sample(low);
+  }
+  whale.vx = (whale.x - x) / motionTick;
+  whale.vy = (whale.y - y) / motionTick;
+  whale.speed = Math.hypot(whale.vx, whale.vy);
+  whale.turn = (whale.heading - heading) / motionTick;
+  return true;
+}
+
+/** Fold by whole periods only; obstacle safety is resolved before this seam. */
+function motionFoldWhale(whale, width, height) {
+  const dx = motionWrap(whale.x, width) - whale.x;
+  const dy = motionWrap(whale.y, height) - whale.y;
+  motionShiftWhale(whale, dx, dy);
+}
+
 // Find the closest pair of samples on two heading-extended bodies, including
 // where those bodies will be after a short coast. A center-only check misses
-// a nose crossing another whale's tail.
-function motionBodyContact(a, b, horizon) {
+// a nose crossing another whale's tail. Distances wrap, so two whales passing
+// through opposite edges still separate.
+function motionBodyContact(a, b, horizon, width, height) {
   const ac = Math.cos(a.heading), as = Math.sin(a.heading);
   const bc = Math.cos(b.heading), bs = Math.sin(b.heading);
   let bestSquared = Infinity, bestX = 0, bestY = 0;
   for (const ahead of [0, horizon]) {
-    const dx = a.x - b.x + (a.vx - b.vx) * ahead;
-    const dy = a.y - b.y + (a.vy - b.vy) * ahead;
+    const dx = motionTorusDelta(a.x - b.x + (a.vx - b.vx) * ahead, width);
+    const dy = motionTorusDelta(a.y - b.y + (a.vy - b.vy) * ahead, height);
     for (let i = -2; i <= 2; i++) {
       const ax = dx + ac * a.length * i * 0.225;
       const ay = dy + as * a.length * i * 0.225;
@@ -1565,20 +1621,21 @@ function motionBodyContact(a, b, horizon) {
 function motionIntegrate(scene, speed) {
   const whales = scene.whales, width = scene.width, height = scene.height;
   const environmentSpeed = Math.min(1, Math.min(width, height) / 650);
-  const obstacles = scene.obstacles;
+  const obstacles = motionPeriodicObstacles(scene.obstacles, width, height);
   const forces = whales.map(() => ({ x: 0, y: 0, caution: 0 }));
   // Accumulate reciprocal forces before moving any body, so update order
   // cannot give a whale an advantage over its neighbor.
   for (let i = 0; i < whales.length; i++) {
     const a = whales[i];
     for (let j = i + 1; j < whales.length; j++) {
-      const b = whales[j], dx = b.x - a.x, dy = b.y - a.y;
+      const b = whales[j];
+      const dx = motionTorusDelta(b.x - a.x, width), dy = motionTorusDelta(b.y - a.y, height);
       const distance = Math.hypot(dx, dy);
       const dvx = b.vx - a.vx, dvy = b.vy - a.vy;
       const relativeSpeedSquared = dvx * dvx + dvy * dvy;
       const intercept = relativeSpeedSquared > 0.001
         ? motionLimit(-(dx * dvx + dy * dvy) / relativeSpeedSquared, 0, 2.6 / Math.max(0.3, speed)) : 0;
-      const contact = motionBodyContact(a, b, intercept);
+      const contact = motionBodyContact(a, b, intercept, width, height);
       const personalSpace = (a.length + b.length) * 0.53;
       const centerThreat = Math.max(0, 1 - distance / Math.max(1, personalSpace));
       const clearance = a.bodyRadius + b.bodyRadius + Math.min(a.length, b.length) * 0.12;
@@ -1607,8 +1664,12 @@ function motionIntegrate(scene, speed) {
   }
   for (let i = 0; i < whales.length; i++) {
     const whale = whales[i], state = whale._motion, force = forces[i];
+    const startX = whale.x, startY = whale.y, startHeading = whale.heading;
+    const anatomy = whaleSpecies(whale.species);
     const travelTick = motionTick * speed;
     state.age += travelTick;
+    motionPrepareDive(whale, i, scene.diveSeed, anatomy, travelTick);
+    const bearingHold = motionDiveBearingHold(state.dive, state.age);
     if (state.age >= state.targetDue
       || Math.hypot(state.targetX - whale.x, state.targetY - whale.y) < Math.max(8, whale.length * 0.14)) {
       motionTarget(whale, width, height, false, obstacles);
@@ -1621,6 +1682,9 @@ function motionIntegrate(scene, speed) {
     const dx = state.targetX - whale.x, dy = state.targetY - whale.y;
     const targetDistance = Math.hypot(dx, dy) || 1;
     const forwardX = Math.cos(whale.heading), forwardY = Math.sin(whale.heading);
+    const nearSeam = Math.min(whale.x, width - whale.x, whale.y, height - whale.y)
+      < whale.length * 0.6 + motionHullReach(whale);
+    let seamBrake = 0;
     if (obstacles && obstacles.length) {
       // The band is where steering starts: outside the clamp boundary but close
       // enough to turn, measured from the nearest body station (hull included) so
@@ -1628,8 +1692,18 @@ function motionIntegrate(scene, speed) {
       const band = Math.max(48, motionHullReach(whale) * 2, whale.length * 0.14);
       let caution = 0;
       for (const obstacle of obstacles) {
-        const hit = motionObstacleApproachBody(whale, obstacle, band);
+        const hit = motionObstacleApproachBody(whale, obstacle, band, obstacle.periodic === true);
         if (!hit) continue;
+        if (nearSeam) {
+          const contact = motionObstacleApproachBody(whale, obstacle, band, true);
+          const closing = contact ? -(whale.vx * contact.nx + whale.vy * contact.ny) : 0;
+          if (contact && closing > 0.1) {
+            const gap = Math.max(0, -contact.depth);
+            const cruise = state.cruise * environmentSpeed * speed;
+            const safePace = Math.max(cruise * 0.15, gap / 2.8);
+            seamBrake = Math.max(seamBrake, 1 - motionLimit(safePace / Math.max(1, cruise), 0.15, 1));
+          }
+        }
         const depth = hit.depth;
         // Positive depth pushes hard; the outer band only nudges. A body drifting
         // near the glass is turned gently, one already inside is pushed firmly.
@@ -1657,55 +1731,43 @@ function motionIntegrate(scene, speed) {
       + Math.sin(whale.heading + state.wander) * 0.35 + force.y;
     const turnLimit = state.agility * Math.sqrt(speed);
     const cruise = state.cruise * environmentSpeed * speed;
-    // Look beyond the snout by more than a turning radius. The response is
-    // continuous; even a body temporarily outside the view swims back in.
-    const lookAhead = whale.length * 0.22 + cruise / Math.max(0.08, turnLimit) * 0.95;
+    // A heading that already points off the screen is committed. Turning back
+    // here is what pinned a whale on a reef: the rock pushed it outward and the
+    // screen edge pushed it back. It leaves instead, and folds in from the far side.
+    const lookAhead = whale.length * 0.35 + cruise / Math.max(0.08, turnLimit);
     const lookX = whale.x + forwardX * lookAhead, lookY = whale.y + forwardY * lookAhead;
-    const marginX = Math.min(width * 0.17, whale.length * 0.24 + width * 0.025);
-    const marginY = Math.min(height * 0.18, whale.length * 0.17 + height * 0.025);
-    const left = motionLimit((marginX - lookX) / Math.max(1, marginX), 0, 3);
-    const right = motionLimit((lookX - width + marginX) / Math.max(1, marginX), 0, 3);
-    const top = motionLimit((marginY - lookY) / Math.max(1, marginY), 0, 3);
-    const bottom = motionLimit((lookY - height + marginY) / Math.max(1, marginY), 0, 3);
-    desiredX += (left * left - right * right) * 7;
-    desiredY += (top * top - bottom * bottom) * 7;
-    // A neighbor can push the center outward while the snout already points
-    // inward. Retain a positional restoring force during that recovery.
-    const centerLeft = motionLimit((marginX * 0.6 - whale.x) / Math.max(1, marginX), 0, 4);
-    const centerRight = motionLimit((whale.x - width + marginX * 0.6) / Math.max(1, marginX), 0, 4);
-    const centerTop = motionLimit((marginY * 0.6 - whale.y) / Math.max(1, marginY), 0, 4);
-    const centerBottom = motionLimit((whale.y - height + marginY * 0.6) / Math.max(1, marginY), 0, 4);
-    desiredX += (centerLeft * centerLeft - centerRight * centerRight) * 14;
-    desiredY += (centerTop * centerTop - centerBottom * centerBottom) * 14;
+    if (lookX < 0 || lookX > width) {
+      desiredX = forwardX * 1.7 + Math.cos(whale.heading + state.wander) * 0.2 + force.x;
+    }
+    if (lookY < 0 || lookY > height) {
+      desiredY = forwardY * 1.7 + Math.sin(whale.heading + state.wander) * 0.2 + force.y;
+    }
+    if (bearingHold > 0) {
+      const routine = 1 - bearingHold;
+      desiredX = (desiredX - force.x) * routine + forwardX * 2.7 * bearingHold + force.x;
+      desiredY = (desiredY - force.y) * routine + forwardY * 2.7 * bearingHold + force.y;
+    }
     let steeringError = motionAngle(whale.heading, Math.atan2(desiredY, desiredX));
     if (Math.abs(steeringError) > 2.5) {
       const turnSide = Math.abs(whale.turn) > 0.05 ? Math.sign(whale.turn) : state.routeDirection;
       steeringError = Math.abs(steeringError) * turnSide;
     }
     const requestedTurn = motionLimit(steeringError * 1.1, -turnLimit, turnLimit);
-    whale.turn += (requestedTurn - whale.turn) * (1 - Math.exp(-motionTick * 1.7));
+    const turnResponse = 1.7 + (1 / 0.06 - 1.7) * bearingHold;
+    whale.turn += (requestedTurn - whale.turn) * (1 - Math.exp(-motionTick * turnResponse));
     whale.turn = motionLimit(whale.turn, -turnLimit, turnLimit);
     whale.heading += whale.turn * motionTick;
-    const brakingX = marginX + cruise / Math.max(0.1, turnLimit);
-    const brakingY = marginY + cruise / Math.max(0.1, turnLimit);
-    const outward = Math.max(
-      -forwardX * motionLimit(1 - whale.x / Math.max(1, brakingX), 0, 1),
-      forwardX * motionLimit(1 - (width - whale.x) / Math.max(1, brakingX), 0, 1),
-      -forwardY * motionLimit(1 - whale.y / Math.max(1, brakingY), 0, 1),
-      forwardY * motionLimit(1 - (height - whale.y) / Math.max(1, brakingY), 0, 1), 0);
-    const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - outward * 0.65)
+    const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - seamBrake)
       * (1 - 0.12 * Math.abs(whale.turn) / Math.max(0.01, turnLimit));
-    whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + outward * 1.6)));
+    whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + seamBrake * 3.2)));
     whale.vx = Math.cos(whale.heading) * whale.speed;
     whale.vy = Math.sin(whale.heading) * whale.speed;
     whale.x += whale.vx * motionTick;
     whale.y += whale.vy * motionTick;
-    updateWhaleRig(whale);
-    // The force steers, but only the clamp guarantees the invariant (a strong
-    // neighbor push can still cross the boundary for a tick).
+    if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height)) updateWhaleRig(whale);
     if (obstacles && obstacles.length) motionPushOut(whale, obstacles, width, height);
+    motionFoldWhale(whale, width, height);
     const effort = whale.speed / Math.max(1, state.cruise * environmentSpeed);
-    const anatomy = whaleSpecies(whale.species);
     // Two smooth strokes followed by a coast. These durations are deliberately
     // calm decoration settings, not measured swimming periods for each species.
     const active = Math.PI * 4 / anatomy.beat, rest = active * anatomy.glide / (1 - anatomy.glide);
@@ -1715,9 +1777,30 @@ function motionIntegrate(scene, speed) {
     state.stroke += (envelope - state.stroke) * (1 - Math.exp(-travelTick * 2.2));
     state.wave += travelTick * anatomy.beat * (0.7 + 0.3 * Math.min(1.4, Math.sqrt(effort)))
       * (0.08 + 0.92 * state.stroke);
-    motionStepDive(whale, i, scene.diveSeed, anatomy, travelTick);
+    motionStepDive(whale);
   }
   scene.time += motionTick;
+}
+
+// This gate only suppresses routine route/wander steering. Collision forces
+// stay in the same physical controller and may override the decorative hold.
+function motionDiveBearingHold(dive, age) {
+  if (dive.startedAt === null) {
+    return Number.isFinite(dive.bearingReleaseAt)
+      ? 1 - diveSmoothstep((age - dive.bearingReleaseAt) / 0.6) : 0;
+  }
+  const elapsed = age - dive.startedAt;
+  if (elapsed < 0) return 0;
+  if (elapsed < dive.entry) return 1;
+  if (elapsed < dive.entry + dive.under) {
+    const hidden = elapsed - dive.entry;
+    const release = 1 - diveSmoothstep(hidden / 0.2);
+    const brakeWindow = Math.min(0.65, dive.under * 0.4);
+    const preBrake = diveSmoothstep((hidden - dive.under + brakeWindow) / brakeWindow);
+    return Math.max(release, preBrake);
+  }
+  const endedAt = dive.entry + dive.under + dive.exit;
+  return elapsed < endedAt ? 1 : 1 - diveSmoothstep((elapsed - endedAt) / 0.6);
 }
 
 function diveSmoothstep(amount) {
@@ -1736,7 +1819,7 @@ function motionDiveSeed(whale, index, sceneSeed) {
   return (seed ^ (seed >>> 16)) >>> 0;
 }
 
-function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
+function motionPrepareDive(whale, index, sceneSeed, anatomy, dt) {
   const state = whale._motion;
   if (!state.dive) {
     const dive = state.dive = { seed: motionDiveSeed(whale, index, sceneSeed),
@@ -1751,6 +1834,7 @@ function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
   if (dive.startedAt !== null && state.age >= dive.startedAt + dive.entry + dive.under + dive.exit) {
     const endedAt = dive.startedAt + dive.entry + dive.under + dive.exit;
     dive.startedAt = null;
+    dive.bearingReleaseAt = endedAt;
     dive.completed++;
     dive.nextDecision = endedAt + (10 + motionRandom(dive) * 16) * surfacePace;
   }
@@ -1769,6 +1853,10 @@ function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
       dive.nextDecision += (5 + motionRandom(dive) * 10) * surfacePace;
     }
   }
+}
+
+function motionStepDive(whale) {
+  const state = whale._motion, dive = state.dive;
   const pose = dive.startedAt === null ? diveLevel() : divePose(state.age - dive.startedAt, dive);
   state.submergence = pose.submergence;
   state.pitch = pose.pitch;
@@ -1782,10 +1870,16 @@ function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
     // Tail: wait until after the lift. Nose: wait until the ascent starts.
     // The height then comes from the very same rig, gait and curve as the mesh.
     if (elapsed >= (isTail ? dive.entry * 0.46 : dive.entry + dive.under)) {
-      const contactPose = writeWhaleRigPose(whale, { wave: state.wave, turn: whale.turn,
-        submergence: state.submergence, divePitch: state.pitch, diveDepth: state.depth,
-        diveKick: state.tailKick, diveArch: state.arch });
-      const point = isTail ? motionDiveTailContact : motionDiveNoseContact;
+      const contactPose = motionDiveContactPose;
+      contactPose.wave = state.wave;
+      contactPose.turn = whale.turn;
+      contactPose.submergence = state.submergence;
+      contactPose.divePitch = state.pitch;
+      contactPose.diveDepth = state.depth;
+      contactPose.diveKick = state.tailKick;
+      contactPose.diveArch = state.arch;
+      writeWhaleRigPose(whale, contactPose);
+      const point = isTail ? DIVE_TAIL_CONTACT : DIVE_NOSE_CONTACT;
       const height = deformWhaleParticle(point, contactPose, motionDiveContactOut).y;
       if (isTail ? height >= DIVE_WATERLINE : height <= DIVE_WATERLINE) {
         dive.splashSerial++;
@@ -1799,10 +1893,11 @@ function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
 
 // Reused probes and output avoid allocating a particle per tick. Contact state
 // stays primitive so adopting a scene can keep its existing independent clone.
-const motionDiveTailContact = Object.freeze({ x: -1.05, y: 0.01, z: 0,
+const DIVE_TAIL_CONTACT = Object.freeze({ x: -1.05, y: 0.01, z: 0,
   nx: 0, ny: -1, nz: 0, part: 'fluke' });
-const motionDiveNoseContact = Object.freeze({ x: 1.04, y: -0.08, z: 0,
+const DIVE_NOSE_CONTACT = Object.freeze({ x: 1.04, y: -0.08, z: 0,
   nx: 0, ny: -1, nz: 0, part: 'body' });
+const motionDiveContactPose = {};
 const motionDiveContactOut = {};
 
 function motionEnsureDive(state) {
@@ -1927,9 +2022,10 @@ const FIELDS = Object.freeze({
   // migrated below instead of silently losing its effect.
   composerGlass: { kind: 'boolean', default: false, hidden: true },
   composerAvoid: { kind: 'boolean', default: false },
-  spout: { kind: 'boolean', default: false },
-  reefs: { kind: 'boolean', default: true },
+  spout: { kind: 'boolean', default: true },
   ripples: { kind: 'boolean', default: true },
+  wind: { kind: 'boolean', default: true },
+  clouds: { kind: 'boolean', default: true },
 });
 const DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -2270,6 +2366,113 @@ function resolveDepthGrid(projected, grid, triangles, decals = []) {
   }
 }
 
+function rasterShiftedTriangles(projected, grid, triangles, particles, whaleId, ox, oy, touched) {
+  for (let triangle = 0; triangle < triangles.length; triangle += 3) {
+    const ia = triangles[triangle], ib = triangles[triangle + 1], ic = triangles[triangle + 2];
+    if (particles[ia].whale !== whaleId) continue;
+    const a = projected[ia], b = projected[ib], c = projected[ic];
+    if (!a || !b || !c || Math.max(a.visibility, b.visibility, c.visibility) < 0.05) continue;
+    const ax = a.x + ox, ay = a.y + oy, bx = b.x + ox, by = b.y + oy, cx = c.x + ox, cy = c.y + oy;
+    const denominator = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    if (Math.abs(denominator) < 0.0001) continue;
+    const left = Math.max(0, Math.floor(Math.min(ax, bx, cx) / grid.cellWidth));
+    const right = Math.min(grid.columns - 1, Math.floor(Math.max(ax, bx, cx) / grid.cellWidth));
+    const top = Math.max(0, Math.floor(Math.min(ay, by, cy) / grid.cellHeight));
+    const bottom = Math.min(grid.rows - 1, Math.floor(Math.max(ay, by, cy) / grid.cellHeight));
+    if (left > right || top > bottom) continue;
+    for (let row = top; row <= bottom; row++) for (let col = left; col <= right; col++) {
+      const cell = row * grid.columns + col;
+      let wrote = false;
+      for (let sample = 0; sample < 5; sample++) {
+        const x = (col + CELL_SAMPLES[sample * 2]) * grid.cellWidth;
+        const y = (row + CELL_SAMPLES[sample * 2 + 1]) * grid.cellHeight;
+        const u = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / denominator;
+        const v = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / denominator;
+        const w = 1 - u - v;
+        if (Math.min(u, v, w) < -0.000001) continue;
+        const visible = a.visibility * u + b.visibility * v + c.visibility * w;
+        if (visible < 0.05) continue;
+        const depth = a.z * u + b.z * v + c.z * w, index = cell * 5 + sample;
+        if (depth >= grid.sampleDepths[index]) continue;
+        grid.sampleDepths[index] = depth;
+        grid.sampleOwners[index] = u >= v && u >= w ? ia : v >= w ? ib : ic;
+        grid.sampleLights[index] = a.light * u + b.light * v + c.light * w;
+        grid.sampleVisibility[index] = visible;
+        wrote = true;
+      }
+      if (wrote) touched.add(cell);
+    }
+  }
+}
+
+function repaintWrappedCells(grid, touched) {
+  for (const cell of touched) {
+    let hits = 0, light = 0, visible = 0, selected = -1;
+    for (let sample = 0; sample < 5; sample++) {
+      const index = cell * 5 + sample;
+      if (grid.sampleOwners[index] < 0) continue;
+      hits++; light += grid.sampleLights[index]; visible += grid.sampleVisibility[index];
+      if (sample === 0 || selected < 0) selected = index;
+    }
+    if (!hits) continue;
+    grid.owners[cell] = grid.sampleOwners[selected];
+    grid.depths[cell] = grid.sampleDepths[selected];
+    grid.lights[cell] = light / hits;
+    grid.coverage[cell] = hits / 5;
+    grid.visibility[cell] = visible / hits;
+  }
+}
+
+function stampWrappedPoint(projected, grid, index, ox, oy) {
+  const p = projected[index];
+  if (!p || p.visibility < 0.05) return;
+  const x = p.x + ox, y = p.y + oy;
+  if (x < 0 || x >= grid.width || y < 0 || y >= grid.height) return;
+  const cell = Math.floor(y / grid.cellHeight) * grid.columns + Math.floor(x / grid.cellWidth);
+  if (p.z > grid.depths[cell] + 0.75) return;
+  grid.owners[cell] = index; grid.depths[cell] = p.z; grid.lights[cell] = p.light ?? 0.75;
+  grid.coverage[cell] = 1; grid.visibility[cell] = p.visibility;
+}
+
+/**
+ * Draw the part of a body that has crossed an edge on the opposite edge.
+ * The centre stays in range; only the overhang is stamped, so a whale swims
+ * off the top and the same stroke comes back in from the bottom.
+ */
+function stampSeaWraps(scene, projected, grid) {
+  const width = grid?.width, height = grid?.height;
+  const triangles = scene?.triangles, particles = scene?.particles;
+  if (!(width > 0) || !(height > 0) || !triangles?.length || !particles?.length) return;
+  const touched = new Set();
+  const shifts = [];
+  for (const whale of scene.whales || []) {
+    const reach = Math.max(48, motionFiniteLength(whale) * 0.9);
+    const xShifts = whale.x - reach < 0 ? [width] : whale.x + reach > width ? [-width] : [];
+    const yShifts = whale.y - reach < 0 ? [height] : whale.y + reach > height ? [-height] : [];
+    for (const ox of xShifts) shifts.push([whale.id, ox, 0]);
+    for (const oy of yShifts) shifts.push([whale.id, 0, oy]);
+    for (const ox of xShifts) for (const oy of yShifts) shifts.push([whale.id, ox, oy]);
+  }
+  if (!shifts.length) return;
+  for (const [whaleId, ox, oy] of shifts) {
+    rasterShiftedTriangles(projected, grid, triangles, particles, whaleId, ox, oy, touched);
+  }
+  repaintWrappedCells(grid, touched);
+  const decals = scene.decals || [];
+  for (const index of decals) {
+    const whaleId = particles[index]?.whale;
+    for (const [id, ox, oy] of shifts) {
+      if (id !== whaleId) continue;
+      stampWrappedPoint(projected, grid, index, ox, oy);
+    }
+  }
+}
+
+function motionFiniteLength(whale) {
+  const length = whale && whale.length;
+  return typeof length === 'number' && Number.isFinite(length) ? length : 0;
+}
+
 function glyphOpacity(opacity, light, visibility, fade) {
   return clamp(opacity * (0.9 + 0.1 * light) * visibility * fade, 0, 1);
 }
@@ -2279,11 +2482,22 @@ function fitCanvas(width, height, dpr) {
   return { ratio, width: Math.max(1, Math.floor(width * ratio)), height: Math.max(1, Math.floor(height * ratio)) };
 }
 
+// One edge of the historical bottom fade: full until 14% in, gone by 4% in.
+function edgeAttenuation(distance, span) {
+  const outer = span * 0.14;
+  const feather = Math.max(1, span * 0.10);
+  return 1 - smooth((outer - distance) / feather);
+}
+
 function attenuation(x, y, width, height, quietCenter) {
-  const bottom = 1 - smooth((y - height * 0.86) / Math.max(1, height * 0.10));
-  const edge = smooth(Math.min(x, width - x) / 24);
+  // Top and bottom keep the original band. Left and right use the same thickness
+  // (the shorter screen side), so a wide window does not grow a huge side vignette
+  // and a whale leaving any edge fades out the same way.
+  const side = Math.min(width, height);
+  const vertical = edgeAttenuation(y, height) * edgeAttenuation(height - y, height);
+  const horizontal = edgeAttenuation(x, side) * edgeAttenuation(width - x, side);
   const central = quietCenter ? 1 - 0.25 * Math.exp(-(((x / width - 0.5) / 0.29) ** 2)) * smooth(y / height / 0.18) : 1;
-  return clamp(bottom * edge * central, 0, 1);
+  return clamp(vertical * horizontal * central, 0, 1);
 }
 
 
@@ -2360,7 +2574,10 @@ function createWhalePainter(scene, config) {
       let alpha = glyphOpacity(opacity, light, grid.visibility[cell], attenuation(x, y, width, height, quietCenter)) * (0.3 + coverage * 0.7);
       if (fade) alpha *= fade(x, y);
       if (alpha < 0.01) continue;
-      const shade = glyphInkIndex(light, pose.cameraZ / pose.focal);
+      // Clouds tint the ink, while the original surface light still selects
+      // literal/ASCII glyphs and coverage. A passing shadow cannot change text.
+      const inkLight = grid.atmosphereLights ? grid.atmosphereLights[cell] : light;
+      const shade = glyphInkIndex(inkLight, pose.cameraZ / pose.focal);
       const solid = tiles && coverage >= 0.6 && grid.sampleOwners[cell * 5] >= 0;
       const material = cells[shade + (surfaceKey(particle) % 4) * 512];
       if (solid) {
@@ -2916,15 +3133,63 @@ function spoutDescribePointer(target) {
   return { tag, editable, composer, role };
 }
 
+// First mist is soon enough to notice; later ones stay occasional, not a fountain.
+const SPOUT_FIRST_MIN = 2800;
+const SPOUT_FIRST_SPAN = 7000;
+const SPOUT_GAP_MIN = 11000;
+const SPOUT_GAP_SPAN = 16000;
+const SPOUT_DIVE_RETRY = 2400;
+
+function spoutUnit(rng) {
+  rng.state = (Math.imul(rng.state, 1664525) + 1013904223) >>> 0;
+  return rng.state / 4294967296;
+}
+
 function attachSpout(canvas, read) {
   let bursts = [];
+  let nextAt = [];
   let seenScene;
   let detached = false;
+  const rng = { state: 0x6d2b79f5 };
+
+  function spoutGap(first) {
+    return first
+      ? SPOUT_FIRST_MIN + spoutUnit(rng) * SPOUT_FIRST_SPAN
+      : SPOUT_GAP_MIN + spoutUnit(rng) * SPOUT_GAP_SPAN;
+  }
+
+  function spoutResetSchedule(state) {
+    const whales = state.scene && state.scene.whales || [];
+    const now = Number.isFinite(state.now) ? state.now : 0;
+    nextAt = whales.map((_, index) => now + spoutGap(true) + index * 900);
+  }
 
   function spoutAdoptScene(state) {
     if (state.scene !== seenScene) {
       seenScene = state.scene;
       bursts.length = 0;
+      nextAt = [];
+    }
+  }
+
+  /** One short mist per whale, on its own clock. A dive just postpones it. */
+  function spoutConsider(state) {
+    if (!state || state.enabled !== true || state.reduced || state.hidden) return;
+    if (!Number.isFinite(state.now)) return;
+    const whales = state.scene && state.scene.whales;
+    if (!whales || !whales.length) return;
+    if (nextAt.length !== whales.length) spoutResetSchedule(state);
+    for (let id = 0; id < whales.length; id++) {
+      if (state.now < nextAt[id]) continue;
+      const submergence = whales[id]._motion && whales[id]._motion.submergence;
+      if (Number.isFinite(submergence) && submergence > 0.4) {
+        nextAt[id] = state.now + SPOUT_DIVE_RETRY;
+        continue;
+      }
+      const had = bursts.some(burst => burst.whaleId === id);
+      spoutPushBurst(state, id);
+      const has = bursts.some(burst => burst.whaleId === id);
+      nextAt[id] = state.now + (!had && has ? spoutGap(false) : SPOUT_DIVE_RETRY);
     }
   }
 
@@ -2963,35 +3228,17 @@ function attachSpout(canvas, read) {
     });
   }
 
-  function onPointerDown(event) {
-    if (detached || !event) return;
-    let state;
-    try { state = read(); } catch { return; }
-    if (!state || state.reduced || state.hidden || state.enabled !== true || event.button !== 0) return;
-    if (!canvas || typeof canvas.getBoundingClientRect !== 'function') return;
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    if (!(x >= 0 && y >= 0 && x < rect.width && y < rect.height)) return;
-    spoutAdoptScene(state);
-    const described = spoutDescribePointer(event.target);
-    const whaleId = spoutHit({
-      enabled: true, button: 0, x, y,
-      tag: described.tag, editable: described.editable, composer: described.composer, role: described.role,
-    }, state.grid, state.scene && state.scene.particles);
-    if (whaleId == null) return;
-    spoutPushBurst(state, whaleId);
-  }
-
   function paint(ink, fade) {
     if (detached) return;
     let state;
     try { state = read(); } catch { return; }
     if (!state || state.enabled !== true || state.reduced) {
       bursts.length = 0;
+      nextAt = [];
       return;
     }
     spoutAdoptScene(state);
+    spoutConsider(state);
     spoutDropExpired(state.now);
     if (!ink || !bursts.length) return;
     const opacity = Number.isFinite(state.opacity) ? state.opacity : 0;
@@ -3023,10 +3270,9 @@ function attachSpout(canvas, read) {
     if (detached) return;
     detached = true;
     bursts.length = 0;
-    document.removeEventListener('pointerdown', onPointerDown);
+    nextAt = [];
   }
 
-  document.addEventListener('pointerdown', onPointerDown);
   return { paint, detach };
 }
 
@@ -3051,6 +3297,16 @@ const CONTENT_MAX_AREA_RATIO = 0.55;
 const CONTENT_MAX_HEIGHT_RATIO = 0.9;
 const CONTENT_MIN_ALPHA = 0.9;
 
+// The injected demo card (settings preview): one near-opaque rounded body plus
+// grey text lines, standing in for a DSH content card that the preview canvas
+// has no DOM hook for. Two theme variants, like the material below.
+const DEMO_CARD_BODY_DARK = 'rgba(24, 26, 31, 0.96)';
+const DEMO_CARD_BODY_LIGHT = 'rgba(252, 253, 254, 0.96)';
+const DEMO_LINE_DARK = 'rgba(203, 217, 231, 0.34)';
+const DEMO_LINE_LIGHT = 'rgba(45, 66, 88, 0.32)';
+const DEMO_LINE_INSET = 14;
+const DEMO_LINE_HEIGHT = 7;
+
 
 // Which option belongs to which kind of work. A group only rebuilds its own
 // part; `live` options are read straight from the config while painting, so
@@ -3060,7 +3316,7 @@ const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'reefs', 'ripples']);
+const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'wind', 'clouds']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -3235,17 +3491,24 @@ function normalizeLayerConfig(value) {
  * painter and the draw loop read the new opacity/speed straight away instead of
  * being rebuilt.
  */
-function createWhaleLayer(canvas, initialConfig) {
+function createWhaleLayer(canvas, initialConfig, options = {}) {
   const ink = canvas.getContext('2d');
   if (!ink) return { update() {}, dispose() {} };
   const config = normalizeLayerConfig(initialConfig);
+  // Optional preview injection: `demoCard` places one card by canvas ratios
+  // (0..1) with a pixel radius. With it, measure() never reads the DOM — the
+  // settings preview has no conversation hooks to find, yet the glass and
+  // avoidance options still need a card to act on. Without it every path below
+  // is byte-for-byte the default one; Overlay and the standalone preview never
+  // pass a third argument.
+  const demo = options.demoCard || null;
   const scenerySeed = Math.floor(Math.random() * 0x100000000) >>> 0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
   let scene = createScene(config.count, config.text, config.species, config.whaleSize);
   scene.diveSeed = scenerySeed;
-  let reef = null;
   const water = createWaterField();
+  const atmosphere = createAtmosphereField({ seed: scenerySeed });
   let sceneryPalette = createInkPalette(config.color);
   let poses = scene.whales.map(() => ({}));
   let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
@@ -3253,6 +3516,10 @@ function createWhaleLayer(canvas, initialConfig) {
   ink.font = painter.font;
   let metrics = measureGlyphs();
   let width = 0, height = 0, ratio = 1, grid = null;
+  let offsetX = 0, offsetY = 0;
+  // A preview uses the same logical sea as the background. Only its final
+  // presentation is smaller, so body geometry and glyphs keep their proportions.
+  const viewport = options.viewport;
   // Shared blurred sea: one downsampled painter pass and one blur per frame; the
   // number of panes only changes how many times the image is drawn, never the
   // blur cost.
@@ -3339,6 +3606,9 @@ function createWhaleLayer(canvas, initialConfig) {
     // The painter works in CSS pixels; the 1/factor transform rasterises it at a
     // fraction of the resolution and the panes scale the blur back up.
     seaInk.setTransform(1 / seaFactor, 0, 0, 1 / seaFactor, seaPad, seaPad);
+    drawAtmosphere(seaInk, atmosphere, { width, height, cellWidth: grid.cellWidth,
+      cellHeight: grid.cellHeight, palette: sceneryPalette, opacity: config.opacity,
+      wind: config.wind, clouds: config.clouds, dark });
     if (config.renderStyle !== 'cells') paintSeaSilhouette(seaInk, material);
     painter.paint(seaInk, grid, poses, width, height, 1, null, dark);
     blurredSeaInk.setTransform(1, 0, 0, 1, 0, 0);
@@ -3374,7 +3644,7 @@ function createWhaleLayer(canvas, initialConfig) {
    */
   function applySceneObstacles() {
     if (!scene) return;
-    const obstacles = config.reefs && reef ? reefObstacles(reef) : [];
+    const obstacles = [];
     if (config.composerAvoid && composerCard) {
       let largest = 0;
       for (const whale of scene.whales) largest = Math.max(largest, Number(whale.bodyRadius) || 0);
@@ -3382,6 +3652,46 @@ function createWhaleLayer(canvas, initialConfig) {
       if (obstacle) obstacles.push(obstacle);
     }
     setSceneObstacles(scene, obstacles);
+  }
+
+  /** The demo card as a pixel rectangle for the current canvas size. */
+  function demoCardRect() {
+    if (!demo || !width || !height) return null;
+    const left = demo.x * width, top = demo.y * height;
+    const cardWidth = demo.width * width, cardHeight = demo.height * height;
+    if (!(cardWidth >= 1) || !(cardHeight >= 1)) return null;
+    return { left, top, width: cardWidth, height: cardHeight,
+      radius: Number.isFinite(demo.radius) ? demo.radius : 0 };
+  }
+
+  /**
+   * Preview measurement: the injected ratios replace every DOM read. The card
+   * is both the one glass pane and the avoidance target, so those two options
+   * show their real effect inside the settings preview; with both off the sea
+   * is simply open water and nothing is painted for the card. Resizes need no
+   * extra bookkeeping: every resize invalidates the measurement, and the ratios
+   * are re-applied to the new canvas size.
+   */
+  function measureDemoCard() {
+    const card = demoCardRect();
+    if (card && config.glass) {
+      panes = glassContentPanes({ canvas: { left: 0, top: 0, width, height }, boxes: [card], max: 1 });
+      tone = glassContentTone(config.glassStrength,
+        { dark: document.body.hasAttribute('data-ds-dark-theme'), reducedTransparency: reducedTransparency.matches });
+    }
+    if (card && config.composerAvoid) {
+      // Same shapes as the real composer: the margin obstacle steers the
+      // school, and the 8px rectangle guarantees no ink on the card even from
+      // a transiently bent fluke.
+      composerCard = { card, canvas: { left: 0, top: 0, width, height } };
+      const left = Math.max(0, card.left - 8);
+      const top = Math.max(0, card.top - 8);
+      const right = Math.min(width, card.left + card.width + 8);
+      const bottom = Math.min(height, card.top + card.height + 8);
+      avoidRect = right - left > 0 && bottom - top > 0
+        ? { x: left, y: top, width: right - left, height: bottom - top } : null;
+    }
+    applySceneObstacles();
   }
 
   /**
@@ -3399,6 +3709,7 @@ function createWhaleLayer(canvas, initialConfig) {
     composerCard = null;
     avoidRect = null;
     if (!width || !height || !scene || disposed) return;
+    if (demo) { measureDemoCard(); return; }
     if (!config.glass && !config.composerAvoid) {
       applySceneObstacles();
       return;
@@ -3435,14 +3746,22 @@ function createWhaleLayer(canvas, initialConfig) {
   function draw() {
     if (!width || !height || !scene || !grid) return;
     if (performance.now() - measuredAt > MEASURE_INTERVAL) measure();
-    ink.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ink.clearRect(0, 0, width, height);
+    if (viewport) {
+      ink.setTransform(1, 0, 0, 1, 0, 0);
+      ink.clearRect(0, 0, canvas.width, canvas.height);
+      ink.setTransform(ratio, 0, 0, ratio, offsetX, offsetY);
+    } else {
+      ink.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ink.clearRect(0, 0, width, height);
+    }
     for (let i = 0; i < scene.whales.length; i++) whalePose(scene.whales[i], scene.time, width, height, config.speed, poses[i]);
     for (let i = 0; i < scene.particles.length; i++) projectParticle(scene.particles[i], poses[scene.particles[i].whale], projected[i]);
     resolveDepthGrid(projected, grid, scene.triangles, scene.decals);
+    // A body crossing the top is the same body entering from the bottom.
+    stampSeaWraps(scene, projected, grid);
+    shadeAtmosphere(atmosphere, grid, config);
     // Reduced transparency withholds the material, not the readability work: the
     // panes still hold the glyphs out, they just paint no glass over the words.
-    const frosted = Boolean(tone) && tone.mode === 'frost';
     const visiblePanes = tone ? panes : [];
     const openWater = !visiblePanes.length && !avoidRect;
     const featherOf = pane => pane.feather ?? (tone ? tone.feather : 10) ?? 10;
@@ -3456,20 +3775,37 @@ function createWhaleLayer(canvas, initialConfig) {
       for (const pane of visiblePanes) fade = Math.min(fade, glassEdgeFade(pane, x, y, featherOf(pane)));
       return fade;
     };
-    const sceneryFade = (x, y) => attenuation(x, y, width, height, config.quietCenter)
-      * (fade ? fade(x, y) : 1);
+    const sceneryFade = (x, y) => {
+      // Weather remains outside the entire reading card, including the small
+      // corners beyond its rounded material. Scattered shadow dots must not
+      // drift into that text container while a whale-only scene happens to miss it.
+      for (const pane of visiblePanes) {
+        if (x >= pane.x && x <= pane.x + pane.width && y >= pane.y && y <= pane.y + pane.height) return 0;
+      }
+      return attenuation(x, y, width, height, config.quietCenter) * (fade ? fade(x, y) : 1);
+    };
     const scenery = { width, height, ratio, font: painter.font, palette: sceneryPalette,
       cellWidth: grid.cellWidth, cellHeight: grid.cellHeight, opacity: config.opacity, fade: sceneryFade };
-    if (config.reefs && reef) drawReefs(ink, reef, scenery);
+    drawAtmosphere(ink, atmosphere, { ...scenery, wind: config.wind, clouds: config.clouds,
+      dark: document.body.hasAttribute('data-ds-dark-theme') });
     if (config.ripples) drawWater(ink, water, scenery);
     paintGlyphs(ink, fade);
     spout.paint(ink, fade);
-    if (openWater || !frosted || !visiblePanes.length) return;
-    if (!seaBuffers(tone)) return;
-    paintBlurredSea(tone);
-    // One shared sea image for every pane, then the cheap per-pane surface work.
-    paintPaneSeaUnion(visiblePanes, tone);
-    for (const pane of visiblePanes) paintPaneSurface(pane, tone);
+    // The demo card is the preview's stand-in for a DSH card: whale ink is
+    // already held out of it by the fade above, the card body covers the open
+    // sea, the ordinary glass pipeline stacks on the body, and the text lines
+    // stay crisp on top — the same composite the real overlay produces over
+    // the DOM. Avoidance mode skips the material and keeps body plus lines.
+    if (demo && (config.glass || config.composerAvoid)) {
+      const card = demoCardRect();
+      if (card) {
+        paintDemoCardBody(card);
+        paintGlassMaterial();
+        paintDemoCardText(card);
+      }
+      return;
+    }
+    paintGlassMaterial();
   }
 
   /**
@@ -3537,6 +3873,51 @@ function createWhaleLayer(canvas, initialConfig) {
     ink.restore();
   }
 
+  /**
+   * The whole glass pipeline behind one guard: nothing to paint unless the
+   * material is frost and there is a pane. This is the exact condition the draw
+   * tail used to test inline (open water / clear mode / no pane), so the default
+   * path paints the same calls in the same order as before; the demo card reuses
+   * it between its card body and its text lines.
+   */
+  function paintGlassMaterial() {
+    if (!tone || tone.mode !== 'frost' || !panes.length) return;
+    if (!seaBuffers(tone)) return;
+    paintBlurredSea(tone);
+    // One shared sea image for every pane, then the cheap per-pane surface work.
+    paintPaneSeaUnion(panes, tone);
+    for (const pane of panes) paintPaneSurface(pane, tone);
+  }
+
+  /** The demo card's own body: one near-opaque rounded fill under the glass. */
+  function paintDemoCardBody(card) {
+    glassRoundedPath(ink, { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius });
+    ink.fillStyle = document.body.hasAttribute('data-ds-dark-theme') ? DEMO_CARD_BODY_DARK : DEMO_CARD_BODY_LIGHT;
+    ink.fill();
+  }
+
+  /**
+   * Four grey text lines, the last one 70% wide — the "text stays crisp" half
+   * of the demo. A card too short for four lines (the narrow-screen preview)
+   * draws as many as fit instead of overlapping them.
+   */
+  function paintDemoCardText(card) {
+    const inner = Math.max(0, card.height - DEMO_LINE_INSET * 2);
+    const count = Math.min(4, Math.floor(inner / DEMO_LINE_HEIGHT));
+    if (count < 1 || !(card.width > DEMO_LINE_INSET * 2 + 2)) return;
+    const step = count > 1 ? (inner - DEMO_LINE_HEIGHT) / (count - 1) : 0;
+    ink.fillStyle = document.body.hasAttribute('data-ds-dark-theme') ? DEMO_LINE_DARK : DEMO_LINE_LIGHT;
+    for (let line = 0; line < count; line++) {
+      const width = (card.width - DEMO_LINE_INSET * 2) * (line === count - 1 ? 0.7 : 1);
+      glassRoundedPath(ink, {
+        x: card.left + DEMO_LINE_INSET,
+        y: card.top + DEMO_LINE_INSET + step * line,
+        width, height: DEMO_LINE_HEIGHT, radius: DEMO_LINE_HEIGHT / 2,
+      });
+      ink.fill();
+    }
+  }
+
   function frame(now) {
     raf = 0;
     if (disposed || document.hidden || reduced.matches || !width || !height || !scene) return;
@@ -3544,6 +3925,7 @@ function createWhaleLayer(canvas, initialConfig) {
       const startedAt = scene.time;
       stepScene(scene, Math.min(0.1, (now - previous) / 1000), config.speed);
       if (config.ripples) stepWater(water, scene, scene.time - startedAt);
+      stepAtmosphere(atmosphere, scene.time - startedAt);
     }
     previous = now;
     if (now - lastPaint >= 1000 / 30) { draw(); lastPaint = now; }
@@ -3579,7 +3961,7 @@ function createWhaleLayer(canvas, initialConfig) {
     if (noChange(changes)) return;
     // The draw loop and the painter share this object, so live options such as
     // opacity and speed apply from the next frame without any rebuild.
-    const previousReefs = config.reefs, previousRipples = config.ripples;
+    const previousRipples = config.ripples;
     Object.assign(config, next);
 
     if (changes.scene) {
@@ -3617,9 +3999,9 @@ function createWhaleLayer(canvas, initialConfig) {
       if (width && height) measure();
     }
 
-    if (previousReefs !== config.reefs) applySceneObstacles();
     if (previousRipples !== config.ripples || changes.scene) resetWaterField(water);
     if (changes.palette) sceneryPalette = createInkPalette(config.color);
+    if (viewport) resize();
 
     lastPaint = -Infinity;
     if (!document.hidden && width && height) {
@@ -3639,19 +4021,26 @@ function createWhaleLayer(canvas, initialConfig) {
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
-    const nextWidth = Math.floor(rect.width), nextHeight = Math.floor(rect.height);
-    const pixels = fitCanvas(nextWidth, nextHeight, window.devicePixelRatio);
-    if (width === nextWidth && height === nextHeight && canvas.width === pixels.width && canvas.height === pixels.height) return;
-    width = nextWidth; height = nextHeight; ratio = pixels.ratio;
+    const displayWidth = Math.floor(rect.width), displayHeight = Math.floor(rect.height);
+    const source = viewport?.();
+    const visible = displayWidth > 0 && displayHeight > 0;
+    const nextWidth = visible ? Math.max(1, Math.floor(source?.width ?? displayWidth)) : 0;
+    const nextHeight = visible ? Math.max(1, Math.floor(source?.height ?? displayHeight)) : 0;
+    const pixels = fitCanvas(displayWidth, displayHeight, window.devicePixelRatio);
+    const scale = viewport && visible ? Math.min(displayWidth / nextWidth, displayHeight / nextHeight) : 1;
+    const nextRatio = pixels.ratio * scale;
+    const nextOffsetX = viewport ? (displayWidth - nextWidth * scale) * pixels.ratio / 2 : 0;
+    const nextOffsetY = viewport ? (displayHeight - nextHeight * scale) * pixels.ratio / 2 : 0;
+    if (width === nextWidth && height === nextHeight && canvas.width === pixels.width && canvas.height === pixels.height
+      && ratio === nextRatio && offsetX === nextOffsetX && offsetY === nextOffsetY) return;
+    width = nextWidth; height = nextHeight; ratio = nextRatio;
+    offsetX = nextOffsetX; offsetY = nextOffsetY;
     canvas.width = pixels.width; canvas.height = pixels.height;
-    ink.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ink.setTransform(ratio, 0, 0, ratio, offsetX, offsetY);
     grid = createDepthGrid(width, height, config.glyphSize, metrics);
     resizeScene(scene, width, height);
-    if (width > 0 && height > 0) {
-      if (reef) resizeReefField(reef, width, height);
-      else reef = createReefField({ width, height, seed: scenerySeed, count: width * height < 360000 ? 2 : 3 });
-      resetWaterField(water);
-    }
+    resizeAtmosphereField(atmosphere, width, height);
+    if (width > 0 && height > 0) resetWaterField(water);
     measuredAt = -Infinity;
     sync();
   }
@@ -3669,7 +4058,6 @@ function createWhaleLayer(canvas, initialConfig) {
   function dispose() {
     spout.detach();
     resetWaterField(water);
-    reef = null;
     disposed = true;
     cancelAnimationFrame(raf);
     raf = 0;

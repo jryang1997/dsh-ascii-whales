@@ -63,8 +63,10 @@ function motionTarget(whale, width, height, first = false, obstacles = null) {
   // provides broad exploration without prescribing the path between them.
   const right = state.targetIndex === 1 || state.targetIndex === 2;
   const bottom = state.targetIndex >= 2;
-  state.targetX = width * ((right ? 0.83 : 0.17) + (motionRandom(state) - 0.5) * 0.075);
-  state.targetY = height * ((bottom ? 0.77 : 0.23) + (motionRandom(state) - 0.5) * 0.10);
+  // Destinations sit near the rim. The sea has no wall there: a whale that is
+  // already heading out keeps going and comes back on the opposite side.
+  state.targetX = width * ((right ? 0.94 : 0.06) + (motionRandom(state) - 0.5) * 0.05);
+  state.targetY = height * ((bottom ? 0.92 : 0.08) + (motionRandom(state) - 0.5) * 0.06);
   // A destination inside the input card would keep the whale pressed against the
   // obstacle for a whole route leg, so it is moved to the nearest point outside.
   const safe = motionAvoidTarget(whale, state.targetX, state.targetY, obstacles, width, height);
@@ -119,6 +121,19 @@ function motionBodyHull(whale) {
     const u = motionBodySampleU[i];
     hull.push(x + c * length * u, y + s * length * u, radii[i] + motionBodyClearance);
   }
+  const nodes = whale.rig?.nodes;
+  if (nodes?.length >= 4) {
+    const last = nodes.length / 2 - 1;
+    const shiftX = x + c * length * motionBodySampleU[4] - nodes[0];
+    const shiftY = y + s * length * motionBodySampleU[4] - nodes[1];
+    for (let i = 0; i < motionBodySampleU.length; i++) {
+      const at = (motionBodySampleU[4] - motionBodySampleU[i]) * last;
+      const a = Math.min(last - 1, Math.floor(at)), t = at - a;
+      hull.push(nodes[a * 2] * (1 - t) + nodes[(a + 1) * 2] * t + shiftX,
+        nodes[a * 2 + 1] * (1 - t) + nodes[(a + 1) * 2 + 1] * t + shiftY,
+        radii[i] + motionBodyClearance);
+    }
+  }
   return hull;
 }
 
@@ -169,6 +184,21 @@ function motionObstacleNormalize(obstacles) {
   return normalized;
 }
 
+// Collision geometry has the same periodic copies as the rendered animal.
+// Detect the landing-side reef while the snout is still leaving this side;
+// waiting until the centre folds would require a discontinuous push-out.
+function motionPeriodicObstacles(obstacles, width, height) {
+  if (!obstacles?.length) return obstacles;
+  const copies = [];
+  for (const obstacle of obstacles) {
+    copies.push(obstacle);
+    for (const oy of [-height, 0, height]) for (const ox of [-width, 0, width]) {
+      if (ox || oy) copies.push({ ...obstacle, x: obstacle.x + ox, y: obstacle.y + oy, periodic: true });
+    }
+  }
+  return copies;
+}
+
 /**
  * How close a point is to the soft boundary, as a signed distance plus the
  * outward normal. Positive depth is inside (nearest edge decides the normal);
@@ -211,13 +241,13 @@ function motionObstacleApproach(obstacle, allowance, x, y, band) {
  * Steering follows that station, so a stretched snout or a wide fluke starts
  * turning before the body centre would have noticed the card at all.
  */
-function motionObstacleApproachBody(whale, obstacle, band) {
+function motionObstacleApproachBody(whale, obstacle, band, deepest = false) {
   const hull = motionBodyHull(whale);
   let closest = null;
   for (let i = 0; i < hull.length; i += 3) {
     const hit = motionObstacleApproach(obstacle, hull[i + 2], hull[i], hull[i + 1], band);
     if (!hit) continue;
-    if (!closest || hit.depth < closest.depth) closest = hit;
+    if (!closest || (deepest ? hit.depth > closest.depth : hit.depth < closest.depth)) closest = hit;
   }
   return closest;
 }
@@ -231,19 +261,15 @@ function motionHullInside(obstacle, x, y, radius) {
 
 /**
  * Move the body rigidly until every station's silhouette is outside the
- * obstacles, keeping the whale on the canvas.
- *
- * A rigid translation is what a swimming animal can do in one tick: it cannot
- * bend to clear both sides of a card, so the move is chosen as the shortest one
- * that works for the widest station. Exits that would push the centre off the
- * sea are skipped while another exit exists; if the obstacle fills the sea the
- * canvas bound still wins, which is safer than a whale outside its own window.
+ * obstacles. The screen itself is not an obstacle: the shortest exit may leave
+ * the sea, and the caller folds that position back in from the opposite edge.
  *
  * Returns true when the position changed.
  */
 function motionPushOut(whale, obstacles, width, height) {
   if (!obstacles || !obstacles.length) return false;
   let moved = false;
+  const startX = whale.x, startY = whale.y;
   // Several passes: clearing one side can leave a different station inside the
   // same obstacle (a body diagonal across a corner), and one obstacle can push
   // into another.
@@ -270,8 +296,20 @@ function motionPushOut(whale, obstacles, width, height) {
           shift = Math.max(shift, clearance - ((hull[i] - obstacle.x) * nx + (hull[i + 1] - obstacle.y) * ny));
         }
         if (shift > 0) {
-          whale.x = motionLimit(centreX + nx * shift, 0, width);
-          whale.y = motionLimit(centreY + ny * shift, 0, height);
+          // Leaving the sea is allowed, but a slide that stays on screen wins so a
+          // rock in the margin does not throw the body onto the reef opposite.
+          let ex = nx, ey = ny;
+          const landedX = centreX + nx * shift, landedY = centreY + ny * shift;
+          if (landedX < 0 || landedX > width || landedY < 0 || landedY > height) {
+            for (const [tx, ty] of [[-ny, nx], [ny, -nx]]) {
+              const x = centreX + tx * shift, y = centreY + ty * shift;
+              if (x < 0 || x > width || y < 0 || y > height) continue;
+              ex = tx; ey = ty;
+              break;
+            }
+          }
+          whale.x = centreX + ex * shift;
+          whale.y = centreY + ey * shift;
           moved = changed = true;
         }
         continue;
@@ -279,8 +317,7 @@ function motionPushOut(whale, obstacles, width, height) {
       let leftShift = 0, rightShift = 0, upShift = 0, downShift = 0, inside = false;
       for (let i = 0; i < hull.length; i += 3) {
         const x = hull[i], y = hull[i + 1], radius = hull[i + 2];
-        if (!motionHullInside(obstacle, x, y, radius)) continue;
-        inside = true;
+        if (motionHullInside(obstacle, x, y, radius)) inside = true;
         const bounds = motionObstacleBounds(obstacle, radius);
         leftShift = Math.max(leftShift, x - bounds.left);
         rightShift = Math.max(rightShift, bounds.right - x);
@@ -295,20 +332,24 @@ function motionPushOut(whale, obstacles, width, height) {
         { dx: 0, dy: -upShift, distance: upShift },
         { dx: 0, dy: downShift, distance: downShift },
       ].sort((a, b) => a.distance - b.distance);
-      // Prefer an exit that keeps the centre on the canvas; only when every exit
-      // would leave it does the shortest one win, and the canvas clamp below keeps
-      // the whale inside its own window.
+      // An exit that stays on the sea wins. Off-screen is only the way out when
+      // the rock is pressed against the edge and every on-screen exit is longer
+      // than the sea itself — the caller then folds the body in from the far side.
       const move = candidates.find(candidate => {
         const x = centreX + candidate.dx, y = centreY + candidate.dy;
         return x >= 0 && x <= width && y >= 0 && y <= height;
       }) || candidates[0];
-      whale.x = motionLimit(centreX + move.dx, 0, width);
-      whale.y = motionLimit(centreY + move.dy, 0, height);
+      whale.x = centreX + move.dx;
+      whale.y = centreY + move.dy;
       moved = changed = true;
     }
     if (!changed) break;
   }
-  if (moved) updateWhaleRig(whale);
+  if (moved) {
+    const dx = whale.x - startX, dy = whale.y - startY;
+    whale.x = startX; whale.y = startY;
+    motionShiftWhale(whale, dx, dy);
+  }
   return moved;
 }
 
@@ -351,8 +392,10 @@ export function setSceneObstacles(scene, obstacles) {
   scene.obstacles = normalized;
   const width = motionFinite(scene.width, 0), height = motionFinite(scene.height, 0);
   if (!normalized.length || !(width > 0) || !(height > 0)) return normalized;
+  const periodic = motionPeriodicObstacles(normalized, width, height);
   for (const whale of scene.whales || []) {
-    motionPushOut(whale, normalized, width, height);
+    motionPushOut(whale, periodic, width, height);
+    motionFoldWhale(whale, width, height);
     if (whale._motion) {
       const target = motionAvoidTarget(whale, whale._motion.targetX, whale._motion.targetY, normalized, width, height);
       whale._motion.targetX = target.x;
@@ -421,7 +464,11 @@ export function resizeScene(scene, width, height) {
   // Scaling can carry a whale into the (scaled) obstacle: fix that in the same
   // pass, before anything is painted.
   if (scene.obstacles && scene.obstacles.length) {
-    for (const whale of whales) motionPushOut(whale, scene.obstacles, width, height);
+    const periodic = motionPeriodicObstacles(scene.obstacles, width, height);
+    for (const whale of whales) {
+      motionPushOut(whale, periodic, width, height);
+      motionFoldWhale(whale, width, height);
+    }
   }
   scene.width = width;
   scene.height = height;
@@ -487,16 +534,154 @@ export function adoptSceneState(previous, next) {
   return adopted;
 }
 
+function motionWrap(value, size) {
+  if (!(size > 0) || !Number.isFinite(value)) return value;
+  const wrapped = value % size;
+  return wrapped < 0 ? wrapped + size : wrapped;
+}
+
+function motionTorusDelta(delta, size) {
+  if (!(size > 0) || !Number.isFinite(delta)) return delta;
+  const half = size * 0.5;
+  if (delta > half) return delta - size;
+  if (delta < -half) return delta + size;
+  return delta;
+}
+
+/** Translate the centre and the spine together, so a wrap cannot tear the body. */
+function motionShiftWhale(whale, dx, dy) {
+  if (!dx && !dy) return;
+  whale.x += dx;
+  whale.y += dy;
+  const nodes = whale.rig && whale.rig.nodes;
+  if (!nodes) return;
+  for (let i = 0; i < nodes.length; i += 2) {
+    nodes[i] += dx;
+    nodes[i + 1] += dy;
+  }
+}
+
+function motionWhaleBlocked(whale, obstacles) {
+  const hull = motionBodyHull(whale);
+  for (const obstacle of obstacles) {
+    for (let i = 0; i < hull.length; i += 3) {
+      if (motionHullInside(obstacle, hull[i], hull[i + 1], hull[i + 2])) return true;
+    }
+  }
+  return false;
+}
+
+// Reuse snapshots while evaluating a whole physical pose, including its history.
+// A trial never borrows the already-mutated spine from another rejected trial.
+const motionContactRig = { before: null, after: null };
+function motionContactTrial(whale, x, y, heading, nodes) {
+  whale.x = x; whale.y = y; whale.heading = heading;
+  whale.rig.nodes.set(nodes);
+  updateWhaleRig(whale);
+}
+
+// On a seam, predict the real future rig before accepting any movement. Sliding
+// and a partial step must keep the centre, bearing and historical nodes together.
+function motionConstrainStep(whale, x, y, heading, obstacles, width, height) {
+  if (!obstacles?.length) return false;
+  const seamReach = whale.length * 0.6 + motionHullReach(whale);
+  if (Math.min(x, width - x, y, height - y) > seamReach) return false;
+  const nodes = whale.rig.nodes;
+  if (motionContactRig.before?.length !== nodes.length) {
+    motionContactRig.before = new Float64Array(nodes.length);
+    motionContactRig.after = new Float64Array(nodes.length);
+  }
+  const before = motionContactRig.before, after = motionContactRig.after;
+  before.set(nodes);
+  const endX = whale.x, endY = whale.y, endHeading = whale.heading;
+  updateWhaleRig(whale);
+  if (!motionWhaleBlocked(whale, obstacles)) return true;
+  after.set(nodes);
+  const travel = Math.hypot(endX - x, endY - y);
+  let slid = false;
+  for (const turnFraction of [1, 0.5, 0.25, 0]) {
+    const trialHeading = heading + (endHeading - heading) * turnFraction;
+    motionContactTrial(whale, endX, endY, trialHeading, before);
+    for (let pass = 0; pass < 10; pass++) {
+      let corrected = false;
+      for (const obstacle of obstacles) {
+        const hit = motionObstacleApproachBody(whale, obstacle, 0, true);
+        if (!hit || !(hit.depth > 0)) continue;
+        motionContactTrial(whale, whale.x + hit.nx * (hit.depth + 1e-8),
+          whale.y + hit.ny * (hit.depth + 1e-8), trialHeading, before);
+        corrected = true;
+      }
+      if (!corrected) break;
+    }
+    if (Math.hypot(whale.x - x, whale.y - y) <= travel + 1e-8
+      && !motionWhaleBlocked(whale, obstacles)) {
+      slid = true;
+      break;
+    }
+  }
+  if (!slid) {
+    let best = null, bestScore = -Infinity;
+    for (const turnFraction of [1, 0.5, 0.25]) {
+      const trialHeading = heading + (endHeading - heading) * turnFraction;
+      for (let i = 0; i < 16; i++) {
+        const angle = Math.PI * 2 * i / 16;
+        const dx = Math.cos(angle) * travel, dy = Math.sin(angle) * travel;
+        motionContactTrial(whale, x + dx, y + dy, trialHeading, before);
+        if (motionWhaleBlocked(whale, obstacles)) continue;
+        const score = dx * (endX - x) + dy * (endY - y) + travel * travel * turnFraction * 0.05;
+        if (score > bestScore) { bestScore = score; best = { x: whale.x, y: whale.y, heading: trialHeading }; }
+      }
+    }
+    if (best) {
+      motionContactTrial(whale, best.x, best.y, best.heading, before);
+      slid = true;
+    }
+  }
+  if (!slid) {
+    // Interpolate the complete previous and proposed states. At zero progress
+    // the exact safe historical rig is retained, rather than relaxing it again.
+    const sample = t => {
+      whale.x = x + (endX - x) * t;
+      whale.y = y + (endY - y) * t;
+      whale.heading = heading + (endHeading - heading) * t;
+      for (let i = 0; i < nodes.length; i++) nodes[i] = before[i] + (after[i] - before[i]) * t;
+      nodes[0] = whale.x + Math.cos(whale.heading) * whale.length * 1.04 / 2.24;
+      nodes[1] = whale.y + Math.sin(whale.heading) * whale.length * 1.04 / 2.24;
+    };
+    let low = 0, high = 1;
+    for (let i = 0; i < 20; i++) {
+      const t = (low + high) * 0.5;
+      sample(t);
+      if (motionWhaleBlocked(whale, obstacles)) high = t;
+      else low = t;
+    }
+    sample(low);
+  }
+  whale.vx = (whale.x - x) / motionTick;
+  whale.vy = (whale.y - y) / motionTick;
+  whale.speed = Math.hypot(whale.vx, whale.vy);
+  whale.turn = (whale.heading - heading) / motionTick;
+  return true;
+}
+
+/** Fold by whole periods only; obstacle safety is resolved before this seam. */
+function motionFoldWhale(whale, width, height) {
+  const dx = motionWrap(whale.x, width) - whale.x;
+  const dy = motionWrap(whale.y, height) - whale.y;
+  motionShiftWhale(whale, dx, dy);
+}
+
 // Find the closest pair of samples on two heading-extended bodies, including
 // where those bodies will be after a short coast. A center-only check misses
-// a nose crossing another whale's tail.
-function motionBodyContact(a, b, horizon) {
+// a nose crossing another whale's tail. Distances wrap, so two whales passing
+// through opposite edges still separate.
+function motionBodyContact(a, b, horizon, width, height) {
   const ac = Math.cos(a.heading), as = Math.sin(a.heading);
   const bc = Math.cos(b.heading), bs = Math.sin(b.heading);
   let bestSquared = Infinity, bestX = 0, bestY = 0;
   for (const ahead of [0, horizon]) {
-    const dx = a.x - b.x + (a.vx - b.vx) * ahead;
-    const dy = a.y - b.y + (a.vy - b.vy) * ahead;
+    const dx = motionTorusDelta(a.x - b.x + (a.vx - b.vx) * ahead, width);
+    const dy = motionTorusDelta(a.y - b.y + (a.vy - b.vy) * ahead, height);
     for (let i = -2; i <= 2; i++) {
       const ax = dx + ac * a.length * i * 0.225;
       const ay = dy + as * a.length * i * 0.225;
@@ -514,20 +699,21 @@ function motionBodyContact(a, b, horizon) {
 function motionIntegrate(scene, speed) {
   const whales = scene.whales, width = scene.width, height = scene.height;
   const environmentSpeed = Math.min(1, Math.min(width, height) / 650);
-  const obstacles = scene.obstacles;
+  const obstacles = motionPeriodicObstacles(scene.obstacles, width, height);
   const forces = whales.map(() => ({ x: 0, y: 0, caution: 0 }));
   // Accumulate reciprocal forces before moving any body, so update order
   // cannot give a whale an advantage over its neighbor.
   for (let i = 0; i < whales.length; i++) {
     const a = whales[i];
     for (let j = i + 1; j < whales.length; j++) {
-      const b = whales[j], dx = b.x - a.x, dy = b.y - a.y;
+      const b = whales[j];
+      const dx = motionTorusDelta(b.x - a.x, width), dy = motionTorusDelta(b.y - a.y, height);
       const distance = Math.hypot(dx, dy);
       const dvx = b.vx - a.vx, dvy = b.vy - a.vy;
       const relativeSpeedSquared = dvx * dvx + dvy * dvy;
       const intercept = relativeSpeedSquared > 0.001
         ? motionLimit(-(dx * dvx + dy * dvy) / relativeSpeedSquared, 0, 2.6 / Math.max(0.3, speed)) : 0;
-      const contact = motionBodyContact(a, b, intercept);
+      const contact = motionBodyContact(a, b, intercept, width, height);
       const personalSpace = (a.length + b.length) * 0.53;
       const centerThreat = Math.max(0, 1 - distance / Math.max(1, personalSpace));
       const clearance = a.bodyRadius + b.bodyRadius + Math.min(a.length, b.length) * 0.12;
@@ -556,8 +742,12 @@ function motionIntegrate(scene, speed) {
   }
   for (let i = 0; i < whales.length; i++) {
     const whale = whales[i], state = whale._motion, force = forces[i];
+    const startX = whale.x, startY = whale.y, startHeading = whale.heading;
+    const anatomy = whaleSpecies(whale.species);
     const travelTick = motionTick * speed;
     state.age += travelTick;
+    motionPrepareDive(whale, i, scene.diveSeed, anatomy, travelTick);
+    const bearingHold = motionDiveBearingHold(state.dive, state.age);
     if (state.age >= state.targetDue
       || Math.hypot(state.targetX - whale.x, state.targetY - whale.y) < Math.max(8, whale.length * 0.14)) {
       motionTarget(whale, width, height, false, obstacles);
@@ -570,6 +760,9 @@ function motionIntegrate(scene, speed) {
     const dx = state.targetX - whale.x, dy = state.targetY - whale.y;
     const targetDistance = Math.hypot(dx, dy) || 1;
     const forwardX = Math.cos(whale.heading), forwardY = Math.sin(whale.heading);
+    const nearSeam = Math.min(whale.x, width - whale.x, whale.y, height - whale.y)
+      < whale.length * 0.6 + motionHullReach(whale);
+    let seamBrake = 0;
     if (obstacles && obstacles.length) {
       // The band is where steering starts: outside the clamp boundary but close
       // enough to turn, measured from the nearest body station (hull included) so
@@ -577,8 +770,18 @@ function motionIntegrate(scene, speed) {
       const band = Math.max(48, motionHullReach(whale) * 2, whale.length * 0.14);
       let caution = 0;
       for (const obstacle of obstacles) {
-        const hit = motionObstacleApproachBody(whale, obstacle, band);
+        const hit = motionObstacleApproachBody(whale, obstacle, band, obstacle.periodic === true);
         if (!hit) continue;
+        if (nearSeam) {
+          const contact = motionObstacleApproachBody(whale, obstacle, band, true);
+          const closing = contact ? -(whale.vx * contact.nx + whale.vy * contact.ny) : 0;
+          if (contact && closing > 0.1) {
+            const gap = Math.max(0, -contact.depth);
+            const cruise = state.cruise * environmentSpeed * speed;
+            const safePace = Math.max(cruise * 0.15, gap / 2.8);
+            seamBrake = Math.max(seamBrake, 1 - motionLimit(safePace / Math.max(1, cruise), 0.15, 1));
+          }
+        }
         const depth = hit.depth;
         // Positive depth pushes hard; the outer band only nudges. A body drifting
         // near the glass is turned gently, one already inside is pushed firmly.
@@ -606,55 +809,43 @@ function motionIntegrate(scene, speed) {
       + Math.sin(whale.heading + state.wander) * 0.35 + force.y;
     const turnLimit = state.agility * Math.sqrt(speed);
     const cruise = state.cruise * environmentSpeed * speed;
-    // Look beyond the snout by more than a turning radius. The response is
-    // continuous; even a body temporarily outside the view swims back in.
-    const lookAhead = whale.length * 0.22 + cruise / Math.max(0.08, turnLimit) * 0.95;
+    // A heading that already points off the screen is committed. Turning back
+    // here is what pinned a whale on a reef: the rock pushed it outward and the
+    // screen edge pushed it back. It leaves instead, and folds in from the far side.
+    const lookAhead = whale.length * 0.35 + cruise / Math.max(0.08, turnLimit);
     const lookX = whale.x + forwardX * lookAhead, lookY = whale.y + forwardY * lookAhead;
-    const marginX = Math.min(width * 0.17, whale.length * 0.24 + width * 0.025);
-    const marginY = Math.min(height * 0.18, whale.length * 0.17 + height * 0.025);
-    const left = motionLimit((marginX - lookX) / Math.max(1, marginX), 0, 3);
-    const right = motionLimit((lookX - width + marginX) / Math.max(1, marginX), 0, 3);
-    const top = motionLimit((marginY - lookY) / Math.max(1, marginY), 0, 3);
-    const bottom = motionLimit((lookY - height + marginY) / Math.max(1, marginY), 0, 3);
-    desiredX += (left * left - right * right) * 7;
-    desiredY += (top * top - bottom * bottom) * 7;
-    // A neighbor can push the center outward while the snout already points
-    // inward. Retain a positional restoring force during that recovery.
-    const centerLeft = motionLimit((marginX * 0.6 - whale.x) / Math.max(1, marginX), 0, 4);
-    const centerRight = motionLimit((whale.x - width + marginX * 0.6) / Math.max(1, marginX), 0, 4);
-    const centerTop = motionLimit((marginY * 0.6 - whale.y) / Math.max(1, marginY), 0, 4);
-    const centerBottom = motionLimit((whale.y - height + marginY * 0.6) / Math.max(1, marginY), 0, 4);
-    desiredX += (centerLeft * centerLeft - centerRight * centerRight) * 14;
-    desiredY += (centerTop * centerTop - centerBottom * centerBottom) * 14;
+    if (lookX < 0 || lookX > width) {
+      desiredX = forwardX * 1.7 + Math.cos(whale.heading + state.wander) * 0.2 + force.x;
+    }
+    if (lookY < 0 || lookY > height) {
+      desiredY = forwardY * 1.7 + Math.sin(whale.heading + state.wander) * 0.2 + force.y;
+    }
+    if (bearingHold > 0) {
+      const routine = 1 - bearingHold;
+      desiredX = (desiredX - force.x) * routine + forwardX * 2.7 * bearingHold + force.x;
+      desiredY = (desiredY - force.y) * routine + forwardY * 2.7 * bearingHold + force.y;
+    }
     let steeringError = motionAngle(whale.heading, Math.atan2(desiredY, desiredX));
     if (Math.abs(steeringError) > 2.5) {
       const turnSide = Math.abs(whale.turn) > 0.05 ? Math.sign(whale.turn) : state.routeDirection;
       steeringError = Math.abs(steeringError) * turnSide;
     }
     const requestedTurn = motionLimit(steeringError * 1.1, -turnLimit, turnLimit);
-    whale.turn += (requestedTurn - whale.turn) * (1 - Math.exp(-motionTick * 1.7));
+    const turnResponse = 1.7 + (1 / 0.06 - 1.7) * bearingHold;
+    whale.turn += (requestedTurn - whale.turn) * (1 - Math.exp(-motionTick * turnResponse));
     whale.turn = motionLimit(whale.turn, -turnLimit, turnLimit);
     whale.heading += whale.turn * motionTick;
-    const brakingX = marginX + cruise / Math.max(0.1, turnLimit);
-    const brakingY = marginY + cruise / Math.max(0.1, turnLimit);
-    const outward = Math.max(
-      -forwardX * motionLimit(1 - whale.x / Math.max(1, brakingX), 0, 1),
-      forwardX * motionLimit(1 - (width - whale.x) / Math.max(1, brakingX), 0, 1),
-      -forwardY * motionLimit(1 - whale.y / Math.max(1, brakingY), 0, 1),
-      forwardY * motionLimit(1 - (height - whale.y) / Math.max(1, brakingY), 0, 1), 0);
-    const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - outward * 0.65)
+    const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - seamBrake)
       * (1 - 0.12 * Math.abs(whale.turn) / Math.max(0.01, turnLimit));
-    whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + outward * 1.6)));
+    whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + seamBrake * 3.2)));
     whale.vx = Math.cos(whale.heading) * whale.speed;
     whale.vy = Math.sin(whale.heading) * whale.speed;
     whale.x += whale.vx * motionTick;
     whale.y += whale.vy * motionTick;
-    updateWhaleRig(whale);
-    // The force steers, but only the clamp guarantees the invariant (a strong
-    // neighbor push can still cross the boundary for a tick).
+    if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height)) updateWhaleRig(whale);
     if (obstacles && obstacles.length) motionPushOut(whale, obstacles, width, height);
+    motionFoldWhale(whale, width, height);
     const effort = whale.speed / Math.max(1, state.cruise * environmentSpeed);
-    const anatomy = whaleSpecies(whale.species);
     // Two smooth strokes followed by a coast. These durations are deliberately
     // calm decoration settings, not measured swimming periods for each species.
     const active = Math.PI * 4 / anatomy.beat, rest = active * anatomy.glide / (1 - anatomy.glide);
@@ -664,9 +855,30 @@ function motionIntegrate(scene, speed) {
     state.stroke += (envelope - state.stroke) * (1 - Math.exp(-travelTick * 2.2));
     state.wave += travelTick * anatomy.beat * (0.7 + 0.3 * Math.min(1.4, Math.sqrt(effort)))
       * (0.08 + 0.92 * state.stroke);
-    motionStepDive(whale, i, scene.diveSeed, anatomy, travelTick);
+    motionStepDive(whale);
   }
   scene.time += motionTick;
+}
+
+// This gate only suppresses routine route/wander steering. Collision forces
+// stay in the same physical controller and may override the decorative hold.
+function motionDiveBearingHold(dive, age) {
+  if (dive.startedAt === null) {
+    return Number.isFinite(dive.bearingReleaseAt)
+      ? 1 - diveSmoothstep((age - dive.bearingReleaseAt) / 0.6) : 0;
+  }
+  const elapsed = age - dive.startedAt;
+  if (elapsed < 0) return 0;
+  if (elapsed < dive.entry) return 1;
+  if (elapsed < dive.entry + dive.under) {
+    const hidden = elapsed - dive.entry;
+    const release = 1 - diveSmoothstep(hidden / 0.2);
+    const brakeWindow = Math.min(0.65, dive.under * 0.4);
+    const preBrake = diveSmoothstep((hidden - dive.under + brakeWindow) / brakeWindow);
+    return Math.max(release, preBrake);
+  }
+  const endedAt = dive.entry + dive.under + dive.exit;
+  return elapsed < endedAt ? 1 : 1 - diveSmoothstep((elapsed - endedAt) / 0.6);
 }
 
 function diveSmoothstep(amount) {
@@ -685,7 +897,7 @@ function motionDiveSeed(whale, index, sceneSeed) {
   return (seed ^ (seed >>> 16)) >>> 0;
 }
 
-function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
+function motionPrepareDive(whale, index, sceneSeed, anatomy, dt) {
   const state = whale._motion;
   if (!state.dive) {
     const dive = state.dive = { seed: motionDiveSeed(whale, index, sceneSeed),
@@ -700,6 +912,7 @@ function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
   if (dive.startedAt !== null && state.age >= dive.startedAt + dive.entry + dive.under + dive.exit) {
     const endedAt = dive.startedAt + dive.entry + dive.under + dive.exit;
     dive.startedAt = null;
+    dive.bearingReleaseAt = endedAt;
     dive.completed++;
     dive.nextDecision = endedAt + (10 + motionRandom(dive) * 16) * surfacePace;
   }
@@ -718,6 +931,10 @@ function motionStepDive(whale, index, sceneSeed, anatomy, dt) {
       dive.nextDecision += (5 + motionRandom(dive) * 10) * surfacePace;
     }
   }
+}
+
+function motionStepDive(whale) {
+  const state = whale._motion, dive = state.dive;
   const pose = dive.startedAt === null ? diveLevel() : divePose(state.age - dive.startedAt, dive);
   state.submergence = pose.submergence;
   state.pitch = pose.pitch;

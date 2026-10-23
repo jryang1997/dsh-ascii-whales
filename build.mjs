@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const root = new URL('./', import.meta.url);
 const readSource = name => readFile(new URL(name, root), 'utf8');
-const names = ['species.js', 'rig.js', 'shading.js', 'reef.js', 'water.js', 'motion.js', 'model.js', 'surface.js', 'glass.js', 'spout.js', 'engine.js', 'settings.js'];
+const names = ['species.js', 'rig.js', 'shading.js', 'atmosphere.js', 'water.js', 'motion.js', 'model.js', 'surface.js', 'glass.js', 'spout.js', 'engine.js', 'settings.js'];
 const sources = await Promise.all(names.map(readSource));
 const dictionaries = Object.fromEntries(await Promise.all(['en', 'zh'].map(async language =>
   [language, JSON.parse(await readSource(`locale/${language}.json`)).ui])));

@@ -75,7 +75,10 @@ export function createWhalePainter(scene, config) {
       let alpha = glyphOpacity(opacity, light, grid.visibility[cell], attenuation(x, y, width, height, quietCenter)) * (0.3 + coverage * 0.7);
       if (fade) alpha *= fade(x, y);
       if (alpha < 0.01) continue;
-      const shade = glyphInkIndex(light, pose.cameraZ / pose.focal);
+      // Clouds tint the ink, while the original surface light still selects
+      // literal/ASCII glyphs and coverage. A passing shadow cannot change text.
+      const inkLight = grid.atmosphereLights ? grid.atmosphereLights[cell] : light;
+      const shade = glyphInkIndex(inkLight, pose.cameraZ / pose.focal);
       const solid = tiles && coverage >= 0.6 && grid.sampleOwners[cell * 5] >= 0;
       const material = cells[shade + (surfaceKey(particle) % 4) * 512];
       if (solid) {

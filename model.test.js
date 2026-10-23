@@ -20,7 +20,7 @@ test('configuration preserves saved text and sizes, with readable new defaults a
   assert.equal(DEFAULTS.whaleSize, 1);
   assert.equal(DEFAULTS.composerGlass, false);
   assert.equal(DEFAULTS.composerAvoid, false);
-  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'quietCenter', 'leftInset', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'spout', 'reefs', 'ripples']);
+  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'quietCenter', 'leftInset', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'spout', 'ripples', 'wind', 'clouds']);
   // `glass` is now the frosted-content-box option and is on by default; the old
   // separate input-box switch survives only as a hidden compatibility field.
   assert.equal(DEFAULTS.glass, true);
@@ -223,13 +223,19 @@ test('canvas allocations respect DPR and pixel caps, and reading and input areas
   close(attenuation(-1, 100, 800, 600, true), 0);
   close(attenuation(801, 100, 800, 600, true), 0);
   assert.ok(attenuation(400, 300, 800, 600, true) < attenuation(400, 300, 800, 600, false));
+  // The same distance from the top, bottom, left and right fades the same way.
+  const edge = attenuation(40, 300, 800, 600, false);
+  close(edge, attenuation(800 - 40, 300, 800, 600, false));
+  close(edge, attenuation(400, 40, 800, 600, false));
+  close(edge, attenuation(400, 600 - 40, 800, 600, false));
+  assert.ok(edge < 0.55 && attenuation(400, 300, 800, 600, false) > 0.95);
 });
 
 test('manifest ships the glyph-whale runtime and matching configuration locales without install scripts', async () => {
   const root = new URL('./', import.meta.url), read = name => readFile(new URL(name, root), 'utf8');
   const manifest = JSON.parse(await read('package.json'));
   assert.equal(manifest.name, '@local/dsh-ascii-ocean');
-  assert.equal(manifest.version, '0.13.0');
+  assert.equal(manifest.version, '0.14.0');
   assert.equal(manifest.dependencies['@deepseek-ai/schemastery'], '3.18.5');
   assert.equal(manifest.dsh.client.platform, 'web');
   assert.deepEqual(Object.keys(manifest.scripts).sort(), ['build', 'check', 'test']);

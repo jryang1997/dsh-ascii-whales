@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWaterField, stepWater, drawWater } from './water.js';
-import { createScene, resizeScene, stepScene } from './model.js';
+import { createScene, resizeScene, stepScene, whalePose, projectParticle } from './model.js';
+import { DIVE_TAIL_CONTACT, DIVE_NOSE_CONTACT } from './motion.js';
 
 const dt = 1 / 60;
 function whale() {
@@ -102,8 +103,15 @@ test('one actual dive makes exactly one tail impact and one nose-breaking wave',
         contacts.push({ kind: ring.kind, elapsed: state.age - startedAt });
         const nodes = w.rig.nodes;
         const index = ring.kind === 'dive' ? nodes.length - 2 : 0;
-        assert.equal(ring.x, nodes[index]);
-        assert.equal(ring.y, nodes[index + 1]);
+        const probe = ring.kind === 'dive' ? DIVE_TAIL_CONTACT : DIVE_NOSE_CONTACT;
+        const pose = whalePose(w, scene.time, scene.width, scene.height, 1);
+        const contact = projectParticle(probe, pose);
+        assert.equal(ring.x, contact.x, 'water uses the actual pitched surface contact');
+        assert.equal(ring.y, contact.y);
+        if (ring.kind === 'dive') {
+          assert.ok(Math.hypot(ring.x - nodes[index], ring.y - nodes[index + 1]) > 2,
+            'a raised and pitched tail does not splash at its flat historical spine node');
+        }
       }
     }
   }

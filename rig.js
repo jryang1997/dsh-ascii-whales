@@ -168,12 +168,27 @@ export function deformWhaleParticle(p, pose, out) {
   if (Number.isFinite(dive) && dive !== 0) {
     const cd = Number.isFinite(pose.diveCos) ? pose.diveCos : Math.cos(dive);
     const sd = Number.isFinite(pose.diveSin) ? pose.diveSin : Math.sin(dive);
-    const ox = out.x, oy = out.y;
-    out.x = cd * ox - sd * oy;
-    out.y = sd * ox + cd * oy;
-    const nx = out.nx, ny = out.ny;
-    out.nx = cd * nx - sd * ny;
-    out.ny = sd * nx + cd * ny;
+    if (Math.abs(cy) < 1e-12 && Math.abs(ty) < 1e-12 && Math.abs(tx - 1) < 1e-12) {
+      // Preserve the original straight-body path, including its arithmetic.
+      const ox = out.x, oy = out.y;
+      out.x = cd * ox - sd * oy;
+      out.y = sd * ox + cd * oy;
+      const nx = out.nx, ny = out.ny;
+      out.nx = cd * nx - sd * ny;
+      out.ny = sd * nx + cd * ny;
+    } else {
+      // Both components of the historical centreline foreshorten together.
+      // Rotate along/vertical in the local tangent frame; lateral width and
+      // follow-through remain attached to that same unmodified spine.
+      const pitchedAlong = cd * localX - sd * verticalY;
+      const pitchedNormal = cd * localNX - sd * verticalNormal;
+      out.x = cd * cx + tx * pitchedAlong + ty * lateral;
+      out.z = -cd * cy - ty * pitchedAlong + tx * lateral;
+      out.y = sd * (bind + localX) + cd * verticalY;
+      out.nx = tx * pitchedNormal + ty * lateralNormal;
+      out.nz = -ty * pitchedNormal + tx * lateralNormal;
+      out.ny = sd * localNX + cd * verticalNormal;
+    }
   }
   if (Number.isFinite(pose.diveDepth) && pose.diveDepth !== 0) out.y += pose.diveDepth;
   return out;
