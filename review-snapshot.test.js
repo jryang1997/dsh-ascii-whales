@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, readFile, writeFile, readdir, lstat, readlink, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, readdir, lstat, readlink, realpath, rm, symlink } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -132,7 +132,8 @@ test('clean worktrees retain committed changes since the fixed merge-base and no
   await mkdir(join(root, 'nested'));
   const before = await repoState(root);
   const output = JSON.parse((await command(process.execPath, [reviewCLI, '--base', base], join(root, 'nested'))).stdout);
-  assert.equal(resolve(output.root), resolve(root));
+  // Windows runners may expose TEMP via an 8.3 alias while Git returns its long path.
+  assert.equal(await realpath(output.root), await realpath(root));
   assert.equal(output.head, head);
   assert.equal(output.mergeBase, base);
   assert.deepEqual(output.commits, [{ hash: head, subject: 'changed renderer' }]);
