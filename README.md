@@ -23,13 +23,13 @@
 从海面正上方看，五种鲸鱼用文字和字格组成身体，缓缓摆尾、转向、滑行。鱼身可以使用你自己的文字，也可以按明暗填入 ASCII 字符。鲸体在本地绘制，无需图片素材或外部服务。
 
 <p align="center">
-  <img src="./docs/cruise.gif" width="960" alt="DeepSeek Harness 空白对话页上，文字鲸鱼围着输入框巡游">
+  <img src="./docs/images/cruise.gif" width="960" alt="DeepSeek Harness 空白对话页上，文字鲸鱼围着输入框巡游">
 </p>
 
 <p align="center"><sub>桌面窗口里的空白对话页。鲸鱼围着输入框游，这是实际运行的画面。</sub></p>
 
 <p align="center">
-  <img src="./docs/modes.png" width="960" alt="同一头蓝鲸的四种组合：纯字符或彩色字格，搭配自定义文字或 ASCII">
+  <img src="./docs/images/modes.png" width="960" alt="同一头蓝鲸的四种组合：纯字符或彩色字格，搭配自定义文字或 ASCII">
 </p>
 
 <p align="center"><sub>纯字符与彩色字格、自定义文字与 ASCII，可以自由组合。</sub></p>
@@ -49,20 +49,20 @@
 - 用纯字符呈现轻淡轮廓，或加上彩色字格，显示背部、侧身与鳍尾的明暗。
 - 调整数量、体长、速度、浓度和配色。改变体长不会改变游速与摆尾节奏。
 - 保存设置后更新鲸群状态，切换模型时继续巡游。
-- 本地 0.14.0 加入海面风纹与慢移云影，两个开关独立控制；鲸鱼从四边穿屏，提前避开另一侧的障碍。实现与来源见 [海面风云研究](./ATMOSPHERE-RESEARCH.md)。
+- 本地 0.14.0 加入海面风纹与慢移云影，两个开关独立控制；鲸鱼从四边穿屏，提前避开另一侧的障碍。实现与来源见 [海面风云研究](./docs/research/ATMOSPHERE-RESEARCH.md)。
 - 鲸会各自下潜再浮上来。吻端先入水，尾鳍抬起后拍一下。水下仍沿原航线游，只是看不见。浮出时鼻端先回来。不是整群一起，也没有单独开关。详见[更新日志](./CHANGELOG.md)。
 - 跟随深浅主题与系统偏好。减少动态效果时显示静态姿态，页面隐藏时暂停，装饰层不拦截鼠标操作。
 
 ## 动作
 
 <p align="center">
-  <img src="./docs/dive.gif" width="640" alt="蓝鲸吻端先入水，尾鳍留在水面上，再从鼻端浮出">
+  <img src="./docs/images/dive.gif" width="640" alt="蓝鲸吻端先入水，尾鳍留在水面上，再从鼻端浮出">
 </p>
 
 <p align="center"><sub>下潜再浮出。吻端先入水，尾鳍还留在上面。完全看不见的那几秒被剪掉了。上来时鼻端先回来。</sub></p>
 
 <p align="center">
-  <img src="./docs/tail.gif" width="460" alt="座头鲸尾叶上下拍动">
+  <img src="./docs/images/tail.gif" width="460" alt="座头鲸尾叶上下拍动">
 </p>
 
 <p align="center"><sub>座头鲸的尾叶。向前游的时候，两片尾叶一起上下拍。</sub></p>
@@ -73,7 +73,7 @@
 
 | 浅色主题 | 深色主题 |
 | :---: | :---: |
-| <img src="./docs/reading-glass.png" width="420" alt="浅色主题下的磨砂阅读区"> | <img src="./docs/dark.png" width="420" alt="深色主题下的鲸鱼与阅读区"> |
+| <img src="./docs/images/reading-glass.png" width="420" alt="浅色主题下的磨砂阅读区"> | <img src="./docs/images/dark.png" width="420" alt="深色主题下的鲸鱼与阅读区"> |
 
 输入框可以保留模糊鲸影，也可以让鲸鱼绕开它。
 
@@ -88,18 +88,18 @@
 <details>
 <summary>查看输入框避让效果</summary>
 
-<p><img src="./docs/avoid.png" width="960" alt="开启避让后，鲸鱼在输入框外巡游"></p>
+<p><img src="./docs/images/avoid.png" width="960" alt="开启避让后，鲸鱼在输入框外巡游"></p>
 
 </details>
 
 <details>
 <summary>比较三档鲸鱼大小</summary>
 
-<p><img src="./docs/sizes.png" width="960" alt="鲸鱼大小 0.55、1.00 和 1.55 的对照"></p>
+<p><img src="./docs/images/sizes.png" width="960" alt="鲸鱼大小 0.55、1.00 和 1.55 的对照"></p>
 
 </details>
 
-这里的截图来自独立预览或仿真环境。真实 DSH 桌面窗口中的最终观感与验证边界见 [SOURCE-NOTES.md](./SOURCE-NOTES.md)。
+这里的截图来自独立预览或仿真环境。真实 DSH 桌面窗口中的最终观感与验证边界见 [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md)。
 
 ## 设置
 
@@ -130,17 +130,28 @@
 <details>
 <summary>查看设置页</summary>
 
-<p><img src="./docs/settings.png" width="480" alt="文字蓝鲸的滑杆、选项和保存按钮"></p>
+<p><img src="./docs/images/settings.png" width="480" alt="文字蓝鲸的滑杆、选项和保存按钮"></p>
 
 </details>
 
 ## 本地预览
 
-下载或克隆仓库后，用浏览器打开 [whale-preview.html](./whale-preview.html)。页面使用插件的正式渲染器，不需要启动服务器。
+下载或克隆仓库后，用浏览器打开 [whale-preview.html](./preview/whale-preview.html)。页面使用插件的正式渲染器，不需要启动服务器。
 
 预览包含四种渲染组合和实时鲸群，可以切换鲸类、鱼身文字、大小、速度、玻璃与深浅主题。页面底部的模拟输入框用于比较毛玻璃和避让效果。
 
 ## 开发
+
+```text
+src/             实现源码
+tests/           测试与 helpers/ 适配器
+scripts/         构建、验证和审查工具
+preview/         独立预览入口与生成页面
+docs/research/   研究与设计记录
+docs/images/     截图和动图
+```
+
+根目录保留插件公开入口 `index.js`、DSH 客户端产物 `client.js`、安装配置及项目说明。历史截图仍在 `docs/archive/`。
 
 <details>
 <summary>构建、检查与打包</summary>
@@ -152,38 +163,38 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
-修改浏览器源码后，先用 `pnpm build` 和 `node preview.mjs` 更新两个生成产物，再运行 `pnpm verify`。验证只检查、不重建，过期产物会直接失败。测试只发现根目录 `*.test.js`，不会运行临时备份、参考项目或 worktree 副本。GitHub Actions 在 Windows 与 Linux 执行同一验证入口。
+修改浏览器源码后，先用 `pnpm build` 和 `pnpm preview` 更新两个生成产物，再运行 `pnpm verify`。验证只检查、不重建，过期产物会直接失败。测试只递归发现 `tests/` 下的 `*.test.js`，排除隐藏目录与 `node_modules/`；不会扫描仓库中的临时备份、参考项目或 worktree 副本。GitHub Actions 在 Windows 与 Linux 执行同一验证入口。
 
 `pnpm check` 仅查语法，`pnpm test` 仅跑测试。`pnpm --silent review:snapshot --base <ref>` 输出包含新增文件的 JSON 审查清单；`pnpm --silent agent:probe` 探测当前命令进程能否读取入口文件。派单前的原生工具读取预检、审查范围与浏览器证据要求见 [工程说明](./docs/agents/engineering.md)。
 
-打包使用 `pnpm pack --ignore-scripts`。
+打包使用 `pnpm --config.ignore-scripts=true pack`。
 
-`pnpm build` 从 [browser-entry.js](./browser-entry.js) 生成 [client.js](./client.js)，`node preview.mjs` 从 [preview-client.js](./preview-client.js) 生成独立预览页。两个入口共用 [browser-build.mjs](./browser-build.mjs) 和开发依赖 esbuild，自动解析依赖并隔离文件作用域；正式插件运行不依赖 esbuild。两种产物都支持 `--check` 检查是否与源码一致。包名为 `@local/dsh-ascii-ocean`，Host 行 id 为 `ascii-whale-background`。
+`pnpm build` 运行 [build.mjs](./scripts/build.mjs)，从 [browser-entry.js](./src/browser-entry.js) 生成 [client.js](./client.js)；`pnpm preview` 运行 [preview.mjs](./scripts/preview.mjs)，从 [preview-client.js](./preview/preview-client.js) 生成 [独立预览页](./preview/whale-preview.html)。两个入口共用 [browser-build.mjs](./scripts/browser-build.mjs) 和开发依赖 esbuild，自动解析依赖并隔离文件作用域；正式插件运行不依赖 esbuild。两种产物都支持 `--check` 检查是否与源码一致。包名为 `@local/dsh-ascii-ocean`，Host 行 id 为 `ascii-whale-background`。
 
 | 文件 | 职责 |
 | --- | --- |
-| [species.js](./species.js) | 五种鲸类的体型与动作参数 |
-| [model.js](./model.js) | 表面、投影、字格覆盖与配置指纹 |
-| [motion.js](./motion.js) | 巡游、转向、滑行与输入框避让 |
-| [rig.js](./rig.js) | 身体转向与上下尾拍 |
-| [shading.js](./shading.js) | 背部隆起与水深字色 |
-| [surface.js](./surface.js) | 字符选择、色表与字格绘制 |
-| [glass.js](./glass.js) | 阅读区与输入框的面板几何及材质 |
-| [engine.js](./engine.js) | Canvas 绘制与原地更新 |
-| [reading-layout.js](./reading-layout.js) | 真实对话与演示卡片共用的玻璃、遮罩和避让规则 |
-| [simulation.js](./simulation.js) | 鲸群状态接续、尺寸变化以及动作与海面效果的推进顺序 |
-| [config-editor.js](./config-editor.js) | 草稿互斥、校验、差量保存和版本冲突处理 |
-| [browser-build.mjs](./browser-build.mjs) | 两种浏览器产物的依赖组装与一致性检查 |
-| [settings.js](./settings.js) | DSH 原生设置页 |
+| [species.js](./src/species.js) | 五种鲸类的体型与动作参数 |
+| [model.js](./src/model.js) | 表面、投影、字格覆盖与配置指纹 |
+| [motion.js](./src/motion.js) | 巡游、转向、滑行与输入框避让 |
+| [rig.js](./src/rig.js) | 身体转向与上下尾拍 |
+| [shading.js](./src/shading.js) | 背部隆起与水深字色 |
+| [surface.js](./src/surface.js) | 字符选择、色表与字格绘制 |
+| [glass.js](./src/glass.js) | 阅读区与输入框的面板几何及材质 |
+| [engine.js](./src/engine.js) | Canvas 绘制与原地更新 |
+| [reading-layout.js](./src/reading-layout.js) | 真实对话与演示卡片共用的玻璃、遮罩和避让规则 |
+| [simulation.js](./src/simulation.js) | 鲸群状态接续、尺寸变化以及动作与海面效果的推进顺序 |
+| [config-editor.js](./src/config-editor.js) | 草稿互斥、校验、差量保存和版本冲突处理 |
+| [browser-build.mjs](./scripts/browser-build.mjs) | 两种浏览器产物的依赖组装与一致性检查 |
+| [settings.js](./src/settings.js) | DSH 原生设置页 |
 
 </details>
 
 ## 文档与参考
 
 - [更新日志](./CHANGELOG.md)：版本历史与升级变化。
-- [实现与验证记录](./SOURCE-NOTES.md)：实现细节、问题根因与验证边界。
-- [ASCII 渲染研究](./ASCII-RENDER-NOTES.md)：字格与字符密度的机制核对。
-- [鲸类造型参考](./WHALE-REFERENCES.md)：五种鲸类的俯视照片依据。
+- [实现与验证记录](./docs/research/SOURCE-NOTES.md)：实现细节、问题根因与验证边界。
+- [ASCII 渲染研究](./docs/research/ASCII-RENDER-NOTES.md)：字格与字符密度的机制核对。
+- [鲸类造型参考](./docs/research/WHALE-REFERENCES.md)：五种鲸类的俯视照片依据。
 - [历史截图](./docs/archive)：早期版本的视觉记录。
 
 真实参考照片、本地验证证据与第三方参考仓库不随项目发布，目录规则见 [.gitignore](./.gitignore)。

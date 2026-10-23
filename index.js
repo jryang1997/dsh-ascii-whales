@@ -1,5 +1,5 @@
 import z from '@deepseek-ai/schemastery';
-import { FIELDS } from './model.js';
+import { FIELDS } from './src/model.js';
 
 export const Config = z.object(Object.fromEntries(Object.entries(FIELDS).map(([key, field]) => {
   let schema;

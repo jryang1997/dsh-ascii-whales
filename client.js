@@ -1,5 +1,5 @@
 (() => {
-  // species.js
+  // src/species.js
   var WHALE_SPECIES = Object.freeze({
     blue: {
       name: "蓝鲸",
@@ -82,7 +82,7 @@
     return WHALE_SPECIES[id] || WHALE_SPECIES.blue;
   }
 
-  // rig.js
+  // src/rig.js
   var RIG_NODES = 18;
   var RIG_SPAN = 2.24;
   var RIG_NOSE = 1.04;
@@ -283,7 +283,7 @@
     return out;
   }
 
-  // motion.js
+  // src/motion.js
   var motionTick = 1 / 60;
   var DIVE_WATERLINE = 0.1;
   var motionWhaleSizeFloor = 0.55;
@@ -1250,7 +1250,7 @@
     return writeWhaleRigPose(whale, out);
   }
 
-  // shading.js
+  // src/shading.js
   var GLYPH_INK_LIGHT_LEVELS = 32;
   var GLYPH_INK_DEPTH_LEVELS = 16;
   var GLYPH_INK_NEAR_DEPTH = 0.14;
@@ -1303,7 +1303,7 @@
     return Math.max(0.14, Math.min(0.9, tone));
   }
 
-  // model.js
+  // src/model.js
   var FIELDS = Object.freeze({
     enabled: { kind: "boolean", default: true },
     count: { kind: "number", min: 1, max: 8, step: 1, default: 3 },
@@ -1816,7 +1816,7 @@
     return clamp(vertical * horizontal * central, 0, 1);
   }
 
-  // config-editor.js
+  // src/config-editor.js
   var exclusiveConfig = { glass: "composerAvoid", composerAvoid: "glass" };
   function changeConfigDraft(draft, key, value) {
     const next = { ...draft, [key]: value };
@@ -1862,7 +1862,7 @@
     return configEditorState(base, { ...base }, snapshot.revision);
   }
 
-  // glass.js
+  // src/glass.js
   var GLASS_CONTENT_MIN_WIDTH = 40;
   var GLASS_CONTENT_MIN_HEIGHT = 24;
   var GLASS_CONTENT_FEATHER = 10;
@@ -2001,7 +2001,7 @@
     return t * t * (3 - 2 * t);
   }
 
-  // reading-layout.js
+  // src/reading-layout.js
   function readingExpandedRect(canvas, card, margin) {
     const x = Math.max(0, card.left - canvas.left - margin);
     const y = Math.max(0, card.top - canvas.top - margin);
@@ -2053,7 +2053,7 @@
     return { canvas, boxes: composer ? [composer] : [], composer };
   }
 
-  // surface.js
+  // src/surface.js
   var ASCII_RAMP = ".:-=+*ox%#@";
   var surfaceClamp = (value) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0.5));
   var surfacePalettes = /* @__PURE__ */ new Map();
@@ -2154,7 +2154,7 @@
     return { font, alphabet, square: tiles || ascii, paint };
   }
 
-  // water.js
+  // src/water.js
   var WATER_BEAT = Math.PI * 2;
   var WATER_ACTIVE_STROKE = 0.42;
   var WATER_MAX_RIPPLES = 16;
@@ -2491,7 +2491,7 @@
     return drawn;
   }
 
-  // atmosphere.js
+  // src/atmosphere.js
   var ATMOS_MAX_WIND = 192;
   var ATMOS_MAX_CLOUD = 1100;
   var atmosFinite = (value, fallback) => Number.isFinite(value) ? value : fallback;
@@ -2672,7 +2672,7 @@
     return result;
   }
 
-  // simulation.js
+  // src/simulation.js
   var sceneConfigKeys = Object.freeze(["count", "text", "species", "whaleSize"]);
   function sceneConfigChanged(previous = {}, next = {}) {
     return sceneConfigKeys.some((key) => previous[key] !== next[key]);
@@ -2734,7 +2734,7 @@
     };
   }
 
-  // spout.js
+  // src/spout.js
   var SPOUT_LIMIT = 3;
   var SPOUT_PHASES = /* @__PURE__ */ new Set(["jet", "bush", "droplets"]);
   var SPOUT_MARK = Object.freeze({
@@ -3025,7 +3025,7 @@
     return { paint, detach };
   }
 
-  // engine.js
+  // src/engine.js
   var SCROLL_SELECTOR = "[data-conversation-scroll]";
   var COMPOSER_CARD_SELECTOR = "[data-composer-card]";
   var COMPOSER_SEAT_SELECTOR = "[data-composer-seat]";
@@ -3572,7 +3572,7 @@
     return { update, dispose };
   }
 
-  // settings.js
+  // src/settings.js
   function previewConfigOf(draft) {
     return normalizeConfig({ ...draft, enabled: true, quietCenter: false });
   }
@@ -4084,7 +4084,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
     }
   };
 
-  // browser-entry.js
+  // src/browser-entry.js
   window.__ModuleLoader__.load({
     id: "@local/dsh-ascii-ocean",
     factory(require2) {

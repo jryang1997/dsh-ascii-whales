@@ -107,7 +107,7 @@ export async function reviewSnapshot({ root = process.cwd(), base = 'HEAD' } = {
       staged: ![' ', '?'].includes(worktreeStatus[0]),
       unstaged: ![' ', '?'].includes(worktreeStatus[1]),
       untracked: change.status === '??',
-      generated: ['client.js', 'whale-preview.html'].includes(change.path),
+      generated: ['client.js', 'preview/whale-preview.html'].includes(change.path),
       ...await fileBytes(repoRoot, change.path),
     });
   }

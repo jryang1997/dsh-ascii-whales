@@ -23,13 +23,13 @@
 Five whale species cruise, turn, and glide through the conversation page, seen from directly above. Their bodies consist of your text or ASCII characters chosen by shading. Whales are drawn locally, without image assets or external services.
 
 <p align="center">
-  <img src="./docs/cruise.gif" width="960" alt="Glyph whales cruising around the input box on an empty DeepSeek Harness page">
+  <img src="./docs/images/cruise.gif" width="960" alt="Glyph whales cruising around the input box on an empty DeepSeek Harness page">
 </p>
 
 <p align="center"><sub>An empty conversation page in the desktop window. The whales swim around the input box. This is the running app.</sub></p>
 
 <p align="center">
-  <img src="./docs/modes.png" width="960" alt="Four views of the same blue whale: glyphs or colored cells, each with custom text or ASCII">
+  <img src="./docs/images/modes.png" width="960" alt="Four views of the same blue whale: glyphs or colored cells, each with custom text or ASCII">
 </p>
 
 <p align="center"><sub>Combine glyphs or colored cells with custom text or ASCII.</sub></p>
@@ -49,20 +49,20 @@ The current published package is [v0.14.0](https://github.com/jryang1997/dsh-asc
 - Draw glyphs alone for a lighter outline, or add colored cells to shade the back, flanks, flippers, and flukes.
 - Adjust the count, body size, speed, opacity, and palette. Body size does not change swimming speed or tail-beat timing.
 - Apply saved settings while preserving the group's movement. Switching models keeps the whales swimming.
-- Version 0.14.0 adds sea-surface wind streaks and slow cloud shadows, each with its own switch. Whales leave through any edge and return on the opposite side, steering clear of obstacles there before they cross. See [atmosphere research](./ATMOSPHERE-RESEARCH.md).
+- Version 0.14.0 adds sea-surface wind streaks and slow cloud shadows, each with its own switch. Whales leave through any edge and return on the opposite side, steering clear of obstacles there before they cross. See [atmosphere research](./docs/research/ATMOSPHERE-RESEARCH.md).
 - Each whale dives and comes back up on its own. The nose goes under first, the tail lifts and slaps, and the whale keeps its course while it is hidden. The nose returns first. The school does not dive together, and there is no separate dive switch. See the [changelog](./CHANGELOG.md).
 - Follow light and dark themes and system preferences. Reduced motion shows a static pose. Hidden pages pause the animation, and the decorative layer lets pointer events pass through.
 
 ## Motion
 
 <p align="center">
-  <img src="./docs/dive.gif" width="640" alt="A blue whale puts its nose under first, leaves the tail up, then surfaces nose first">
+  <img src="./docs/images/dive.gif" width="640" alt="A blue whale puts its nose under first, leaves the tail up, then surfaces nose first">
 </p>
 
 <p align="center"><sub>Dive and return. The nose goes under while the tail is still up. The fully hidden seconds are cut. The nose comes back first.</sub></p>
 
 <p align="center">
-  <img src="./docs/tail.gif" width="460" alt="A humpback fluke beating up and down">
+  <img src="./docs/images/tail.gif" width="460" alt="A humpback fluke beating up and down">
 </p>
 
 <p align="center"><sub>A humpback fluke. Both lobes beat up and down together while the whale swims forward.</sub></p>
@@ -73,7 +73,7 @@ A frosted reading pane softens the whales behind the text column. Light and dark
 
 | Light theme | Dark theme |
 | :---: | :---: |
-| <img src="./docs/reading-glass.png" width="420" alt="Frosted reading pane in the light theme"> | <img src="./docs/dark.png" width="420" alt="Whales and the reading pane in the dark theme"> |
+| <img src="./docs/images/reading-glass.png" width="420" alt="Frosted reading pane in the light theme"> | <img src="./docs/images/dark.png" width="420" alt="Whales and the reading pane in the dark theme"> |
 
 For the input box, you can show blurred whale silhouettes or have the whales swim around it.
 
@@ -88,18 +88,18 @@ For the input box, you can show blurred whale silhouettes or have the whales swi
 <details>
 <summary>View input-box avoidance</summary>
 
-<p><img src="./docs/avoid.png" width="960" alt="Whales swimming outside the input box with avoidance enabled"></p>
+<p><img src="./docs/images/avoid.png" width="960" alt="Whales swimming outside the input box with avoidance enabled"></p>
 
 </details>
 
 <details>
 <summary>Compare three whale sizes</summary>
 
-<p><img src="./docs/sizes.png" width="960" alt="Whale sizes 0.55, 1.00, and 1.55 compared"></p>
+<p><img src="./docs/images/sizes.png" width="960" alt="Whale sizes 0.55, 1.00, and 1.55 compared"></p>
 
 </details>
 
-Screenshots use the Chinese UI and come from the standalone preview or simulated environments. See [SOURCE-NOTES.md](./SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
+Screenshots use the Chinese UI and come from the standalone preview or simulated environments. See [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
 
 ## Settings
 
@@ -130,17 +130,28 @@ The desktop app follows the sidebar width automatically. In a regular browser, a
 <details>
 <summary>View the settings page</summary>
 
-<p><img src="./docs/settings.png" width="480" alt="Glyph whales sliders, options, and Save button in the Chinese UI"></p>
+<p><img src="./docs/images/settings.png" width="480" alt="Glyph whales sliders, options, and Save button in the Chinese UI"></p>
 
 </details>
 
 ## Local preview
 
-Download or clone the repository, then open [whale-preview.html](./whale-preview.html) in your browser. It uses the plugin's renderer and does not need a server.
+Download or clone the repository, then open [whale-preview.html](./preview/whale-preview.html) in your browser. It uses the plugin's renderer and does not need a server.
 
 The page includes all four rendering combinations and a live group of whales. Change the species, body text, size, speed, glass, and theme. A simulated input box at the bottom lets you compare frosted glass with avoidance.
 
 ## Development
+
+```text
+src/             Implementation sources
+tests/           Tests and helpers/ adapters
+scripts/         Build, verification, and review tools
+preview/         Standalone entry and generated page
+docs/research/   Research and design records
+docs/images/     Screenshots and clips
+```
+
+The root keeps the public plugin entry `index.js`, the DSH client artifact `client.js`, installation configuration, and project documentation. Historical screenshots remain in `docs/archive/`.
 
 <details>
 <summary>Build, check, and package</summary>
@@ -152,29 +163,29 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
-After changing browser sources, run `pnpm build` and `node preview.mjs` to update both artifacts, then run `pnpm verify`. Verification checks committed output without rebuilding it, so stale artifacts fail. Test discovery includes only root `*.test.js` files and excludes backups, reference projects, and worktree copies. GitHub Actions runs the same verification on Windows and Linux.
+After changing browser sources, run `pnpm build` and `pnpm preview` to update both artifacts, then run `pnpm verify`. Verification checks committed output without rebuilding it, so stale artifacts fail. Test discovery recursively includes `*.test.js` under `tests/`, excluding hidden directories and `node_modules/`. It does not scan repository backups, reference projects, or worktree copies. GitHub Actions runs the same verification on Windows and Linux.
 
 `pnpm check` checks syntax; `pnpm test` runs tests. `pnpm --silent review:snapshot --base <ref>` outputs a JSON review inventory including untracked files. `pnpm --silent agent:probe` checks whether its process can read the entry files. See the [engineering guide](./docs/agents/engineering.md) for native-tool read preflight, review scope, and browser evidence requirements.
 
-Package with `pnpm pack --ignore-scripts`.
+Package with `pnpm --config.ignore-scripts=true pack`.
 
-`pnpm build` generates [client.js](./client.js) from [browser-entry.js](./browser-entry.js). `node preview.mjs` generates the standalone preview from [preview-client.js](./preview-client.js). Both entries use [browser-build.mjs](./browser-build.mjs) and the esbuild development dependency to resolve imports and isolate file scopes; the installed plugin does not need esbuild. Both generators support `--check` to verify source consistency. The package name is `@local/dsh-ascii-ocean`, and the Host row id is `ascii-whale-background`.
+`pnpm build` runs [build.mjs](./scripts/build.mjs) to generate [client.js](./client.js) from [browser-entry.js](./src/browser-entry.js). `pnpm preview` runs [preview.mjs](./scripts/preview.mjs) to generate the [standalone page](./preview/whale-preview.html) from [preview-client.js](./preview/preview-client.js). Both entries use [browser-build.mjs](./scripts/browser-build.mjs) and the esbuild development dependency to resolve imports and isolate file scopes; the installed plugin does not need esbuild. Both generators support `--check` to verify source consistency. The package name is `@local/dsh-ascii-ocean`, and the Host row id is `ascii-whale-background`.
 
 | File | Purpose |
 | --- | --- |
-| [species.js](./species.js) | Body shapes and movement parameters for the five species |
-| [model.js](./model.js) | Surfaces, projection, cell coverage, and configuration fingerprints |
-| [motion.js](./motion.js) | Cruising, turning, gliding, and input-box avoidance |
-| [rig.js](./rig.js) | Body turns and vertical tail strokes |
-| [shading.js](./shading.js) | Raised-back and depth shading |
-| [surface.js](./surface.js) | Character selection, palettes, and cell drawing |
-| [glass.js](./glass.js) | Reading-pane and input-box geometry and materials |
-| [engine.js](./engine.js) | Canvas drawing and updates in place |
-| [reading-layout.js](./reading-layout.js) | Shared glass, masks, and avoidance rules for conversation and demo cards |
-| [simulation.js](./simulation.js) | Scene adoption, resizing, and advancement of motion and sea effects |
-| [config-editor.js](./config-editor.js) | Draft rules, validation, differential saves, and revision conflicts |
-| [browser-build.mjs](./browser-build.mjs) | Shared browser artifact assembly and consistency checks |
-| [settings.js](./settings.js) | Native DSH settings page |
+| [species.js](./src/species.js) | Body shapes and movement parameters for the five species |
+| [model.js](./src/model.js) | Surfaces, projection, cell coverage, and configuration fingerprints |
+| [motion.js](./src/motion.js) | Cruising, turning, gliding, and input-box avoidance |
+| [rig.js](./src/rig.js) | Body turns and vertical tail strokes |
+| [shading.js](./src/shading.js) | Raised-back and depth shading |
+| [surface.js](./src/surface.js) | Character selection, palettes, and cell drawing |
+| [glass.js](./src/glass.js) | Reading-pane and input-box geometry and materials |
+| [engine.js](./src/engine.js) | Canvas drawing and updates in place |
+| [reading-layout.js](./src/reading-layout.js) | Shared glass, masks, and avoidance rules for conversation and demo cards |
+| [simulation.js](./src/simulation.js) | Scene adoption, resizing, and advancement of motion and sea effects |
+| [config-editor.js](./src/config-editor.js) | Draft rules, validation, differential saves, and revision conflicts |
+| [browser-build.mjs](./scripts/browser-build.mjs) | Shared browser artifact assembly and consistency checks |
+| [settings.js](./src/settings.js) | Native DSH settings page |
 
 </details>
 
@@ -183,9 +194,9 @@ Package with `pnpm pack --ignore-scripts`.
 The following reference documents are in Chinese:
 
 - [Changelog](./CHANGELOG.md): version history and upgrade changes.
-- [Implementation and verification notes](./SOURCE-NOTES.md): implementation details, root causes, and testing limits.
-- [ASCII rendering research](./ASCII-RENDER-NOTES.md): cell rendering and character density.
-- [Whale references](./WHALE-REFERENCES.md): overhead photographs used as species references.
+- [Implementation and verification notes](./docs/research/SOURCE-NOTES.md): implementation details, root causes, and testing limits.
+- [ASCII rendering research](./docs/research/ASCII-RENDER-NOTES.md): cell rendering and character density.
+- [Whale references](./docs/research/WHALE-REFERENCES.md): overhead photographs used as species references.
 - [Screenshot archive](./docs/archive): visual records of earlier versions.
 
 Reference photographs, local verification evidence, and the third-party reference checkout are kept outside the published project. See [.gitignore](./.gitignore) for the directory rules.

@@ -3,13 +3,13 @@ import { createHash } from 'node:crypto';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const usage = 'Usage: node scripts/read-probe.mjs [--root <directory>] [relative-file ...]\nDefaults: AGENTS.md engine.js. Reports only path/readability/byte count/SHA256. This command does not establish native file-tool access.';
+const usage = 'Usage: node scripts/read-probe.mjs [--root <directory>] [relative-file ...]\nDefaults: AGENTS.md src/engine.js. Reports only path/readability/byte count/SHA256. This command does not establish native file-tool access.';
 const inside = (root, target) => {
   const path = relative(root, target);
   return path === '' || (!isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`));
 };
 
-export async function readProbe({ root = process.cwd(), paths = ['AGENTS.md', 'engine.js'] } = {}) {
+export async function readProbe({ root = process.cwd(), paths = ['AGENTS.md', 'src/engine.js'] } = {}) {
   const declaredRoot = resolve(root), actualRoot = await realpath(declaredRoot);
   const files = [];
   for (const path of paths) {

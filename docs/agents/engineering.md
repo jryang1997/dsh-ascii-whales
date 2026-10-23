@@ -6,11 +6,11 @@
 执行 `pnpm install --frozen-lockfile` 安装依赖。项目只维护 pnpm 锁文件。
 esbuild 从对应平台的 optional dependency 取得二进制，安装策略不运行它的 postinstall。
 
-日常验证运行 `pnpm verify`。它依次检查根目录和 `scripts/` 的 JS/MJS 语法、已生成插件和预览的一致性、根目录的全部 `*.test.js`。
-测试发现不递归进入 `.scratch/`、`.agents/`、参考项目或依赖；新增测试放在根目录即可被执行。
+日常验证运行 `pnpm verify`。它检查根目录入口以及 `src/`、`tests/`、`scripts/`、`preview/` 中的 JS/MJS 语法，再检查已生成插件和预览的一致性，最后运行 `tests/` 下的全部 `*.test.js`。
+测试发现只递归进入 `tests/`，跳过隐藏目录与 `node_modules/`；不会扫描仓库中的 `.scratch/`、`.agents/`、参考项目或依赖。新增测试放入 `tests/` 即可被执行，`tests/helpers/` 的适配器参与语法检查。
 `pnpm check` 仅查语法，`pnpm test` 仅运行测试。
 
-修改浏览器实现后，先运行 `pnpm build` 和 `node preview.mjs` 更新两个产物，再运行 `pnpm verify`。
+修改浏览器实现后，先运行 `pnpm build` 和 `pnpm preview` 更新 `client.js` 与 `preview/whale-preview.html`，再运行 `pnpm verify`。构建入口位于 `scripts/build.mjs` 和 `scripts/preview.mjs`。
 验证命令本身不重建产物：发现过期就失败，使漏提交生成文件在本地与 CI 都能被发现。
 GitHub Actions 在 Windows 与 Linux 使用锁定依赖运行同一条验证命令，不安装插件、不发布 Release。
 
@@ -27,7 +27,7 @@ GitHub Actions 在 Windows 与 Linux 使用锁定依赖运行同一条验证命�
 
 ## 子代理读取预检
 
-第一次使用某个子代理执行路径时，先派一个小任务，用该代理自己的原生文件工具读取 `AGENTS.md` 和 `engine.js` 前十行。
+第一次使用某个子代理执行路径时，先派一个小任务，用该代理自己的原生文件工具读取 `AGENTS.md` 和 `src/engine.js` 前十行。
 得到成功回报后再在同一执行路径批量派任务。回报应区分直接读取成功、调用方转述与未核实信息。
 读取拒绝时保留工具错误，暂停依赖该读取的任务；查明对应权限或执行路径配置后再继续，不换 shell 绕过拒绝。
 

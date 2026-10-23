@@ -5,15 +5,26 @@ import { resolve } from 'node:path';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
-/** Only root tests and root/scripts sources belong to this project's checks. */
+/** Scan only the declared project directories, never backups or dependencies. */
 export async function projectFiles(root = projectRoot) {
-  const atRoot = await readdir(root, { withFileTypes: true });
-  const scripts = await readdir(resolve(root, 'scripts'), { withFileTypes: true });
-  const source = entries => entries.filter(entry => entry.isFile() && /\.(?:mjs|js)$/.test(entry.name));
-  return {
-    tests: source(atRoot).map(entry => entry.name).filter(name => name.endsWith('.test.js')).sort(),
-    sources: [...source(atRoot).map(entry => entry.name), ...source(scripts).map(entry => `scripts/${entry.name}`)].sort(),
-  };
+  const sources = [], tests = [];
+  const sourceFile = name => /\.(?:mjs|js)$/.test(name);
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    if (entry.isFile() && sourceFile(entry.name)) sources.push(entry.name);
+  }
+  async function visit(directory) {
+    for (const entry of await readdir(resolve(root, directory), { withFileTypes: true })) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const relative = `${directory}/${entry.name}`;
+      if (entry.isDirectory()) await visit(relative);
+      else if (entry.isFile() && sourceFile(entry.name)) {
+        sources.push(relative);
+        if (relative.startsWith('tests/') && entry.name.endsWith('.test.js')) tests.push(relative);
+      }
+    }
+  }
+  for (const directory of ['src', 'tests', 'scripts', 'preview']) await visit(directory);
+  return { tests: tests.sort(), sources: sources.sort() };
 }
 
 function run(root, args) {
@@ -28,15 +39,15 @@ function run(root, args) {
 export async function checkProject(mode, root = projectRoot) {
   if (!['check', 'test', 'verify'].includes(mode)) throw new Error('Usage: node scripts/project-check.mjs <check|test|verify>');
   const files = await projectFiles(root);
-  if (!files.tests.length) throw new Error('No root test files found; refusing an empty verification.');
+  if (!files.tests.length) throw new Error('No tests found in tests/; refusing an empty verification.');
   if (mode === 'check' || mode === 'verify') {
     for (const source of files.sources) run(root, ['--check', source]);
-    console.log(`Syntax checked ${files.sources.length} root/scripts source files.`);
+    console.log(`Syntax checked ${files.sources.length} project source files.`);
   }
   if (mode === 'verify') {
     // Never rebuild here: stale committed output must remain a failing check.
-    run(root, ['build.mjs', '--check']);
-    run(root, ['preview.mjs', '--check']);
+    run(root, ['scripts/build.mjs', '--check']);
+    run(root, ['scripts/preview.mjs', '--check']);
   }
   if (mode === 'test' || mode === 'verify') run(root, ['--test', ...files.tests]);
 }
