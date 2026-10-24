@@ -87,7 +87,7 @@ function attributes(text) {
 function environment(html, initial, seed, reducedMotion) {
   const viewport = { left: 0, top: 0, width: 800, height: 600 };
   const controls = new Map(), samples = [], canvases = [], themeObservers = new Set(), media = new Map();
-  const clock = { now: 1000, next: 1, queue: new Map() };
+  const clock = { now: 1000, next: 1, queue: new Map(), timers: new Map() };
   let random = seed >>> 0;
   const math = Object.create(Math);
   math.random = () => { random = (Math.imul(random, 1664525) + 1013904223) >>> 0; return random / 4294967296; };
@@ -153,6 +153,8 @@ function environment(html, initial, seed, reducedMotion) {
   const globals = { window, document, Math: math, performance: { now: () => clock.now }, devicePixelRatio: 1,
     requestAnimationFrame(callback) { const id = clock.next++; clock.queue.set(id, callback); return id; },
     cancelAnimationFrame(id) { clock.queue.delete(id); },
+    setTimeout(callback, delay) { const id = clock.next++; clock.timers.set(id, { callback, due: clock.now + delay }); return id; },
+    clearTimeout(id) { clock.timers.delete(id); },
     ResizeObserver: class { constructor(callback) { this.callback = callback; } observe() {} disconnect() {} },
     MutationObserver: class {
       constructor(callback) { this.callback = callback; }
@@ -166,6 +168,9 @@ function environment(html, initial, seed, reducedMotion) {
     advance(frames = 1) {
       for (let i = 0; i < frames; i++) {
         clock.now += 1000 / 60;
+        for (const [id, timer] of [...clock.timers]) if (timer.due <= clock.now) {
+          clock.timers.delete(id); timer.callback();
+        }
         const callbacks = [...clock.queue.values()]; clock.queue.clear();
         for (const callback of callbacks) callback(clock.now);
       }
@@ -254,6 +259,18 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
   let snapshot = { status: 'ready', writable: true, revision: 1, value: expectedInitial };
   const subscribers = new Set(), slots = new Map();
   const adapter = reactAdapter(host);
+  const pluginCleanups = [], watchedJobs = new Map();
+  function store(initialValue) {
+    let value = initialValue;
+    const listeners = new Set();
+    return { getSnapshot: () => value, subscribe(callback) { listeners.add(callback); return () => listeners.delete(callback); },
+      set(next) { value = next; for (const listener of [...listeners]) listener(); } };
+  }
+  const activityList = store(options.activity?.list ?? { byId: {} });
+  const activityStatuses = store(options.activity?.statuses ?? new Map());
+  const activityJobs = store({ rows: options.activity?.rows ?? {} });
+  const useSource = source => selector => selector(adapter.React.useSyncExternalStore(source.subscribe, source.getSnapshot));
+  const effect = callback => { const cleanup = callback(); if (typeof cleanup === 'function') pluginCleanups.push(cleanup); return cleanup; };
   let registration;
   host.window.__ModuleLoader__ = { load(value) { registration = value; } };
   runInNewContext(client, host.globals, { filename: 'shipped-client.js' });
@@ -265,12 +282,20 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
     configForms: { get() { return { getSnapshot: () => snapshot,
       subscribe(callback) { subscribers.add(callback); return () => subscribers.delete(callback); } }; } },
     locale: { register() {}, bind: () => key => key },
-    effect: callback => callback(),
+    effect,
+    inject(names, callback) {
+      if (!options.activity || names[0] !== 'jobs') return;
+      callback({ effect, jobs: { state: activityJobs, watchRows(id) {
+        watchedJobs.set(id, (watchedJobs.get(id) ?? 0) + 1);
+        return () => { const refs = watchedJobs.get(id) - 1; if (refs) watchedJobs.set(id, refs); else watchedJobs.delete(id); };
+      } } });
+    },
     slots: { inject: (_name, callback) => callback(), register: (slot, view) => slots.set(slot.name, view) },
   });
   const overlay = slots.get('shell.overlay');
   if (!overlay) throw new Error('Client did not register the public overlay slot');
-  adapter.mount(overlay, { usePanelInfo: selector => selector({ activePanelId: 'conversation' }) });
+  adapter.mount(overlay, { usePanelInfo: selector => selector({ activePanelId: 'conversation' }),
+    ...(options.activity ? { useSessions: useSource(activityList), useSessionStatus: useSource(activityStatuses) } : {}) });
   const live = preview.controls.get('live');
   const hostLive = host.liveCanvas;
   return {
@@ -297,6 +322,16 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
     },
     pause() { host.setReducedMotion(true); preview.setReducedMotion(true); },
     retainedCanvases() { return host.liveCanvas === hostLive && preview.controls.get('live') === live; },
-    dispose() { adapter.dispose(); preview.window.dispatchEvent({ type: 'pagehide' }); },
+    setHostActivity(next) {
+      if (next.list) activityList.set(next.list);
+      if (next.statuses) activityStatuses.set(next.statuses);
+      if (next.rows) activityJobs.set({ rows: next.rows });
+    },
+    watchedJobs: () => [...watchedJobs.keys()],
+    dispose() {
+      adapter.dispose();
+      for (const cleanup of pluginCleanups.reverse()) cleanup();
+      preview.window.dispatchEvent({ type: 'pagehide' });
+    },
   };
 }

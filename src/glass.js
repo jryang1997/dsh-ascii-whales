@@ -200,6 +200,14 @@ export function glassContentTone(strength = 0.55, options = {}) {
   };
 }
 
+/** A structural panel keeps a quieter whale silhouette than a message card. */
+export function glassSidebarTone(strength = 0.55, options = {}) {
+  const tone = glassContentTone(strength, options);
+  if (tone.mode !== 'frost') return tone;
+  return { ...tone, blur: 20 + 12 * tone.strength, mist: 0.12 + 0.04 * tone.strength,
+    veil: 0.025, crest: 'rgba(255, 255, 255, 0)', shade: 'rgba(0, 0, 0, 0)' };
+}
+
 /**
  * Downsampling factor for the shared blurred sea, 4–6 depending on strength.
  *

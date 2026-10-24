@@ -20,7 +20,12 @@ test('configuration preserves saved text and sizes, with readable new defaults a
   assert.equal(DEFAULTS.whaleSize, 1);
   assert.equal(DEFAULTS.composerGlass, false);
   assert.equal(DEFAULTS.composerAvoid, false);
-  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'quietCenter', 'leftInset', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'spout', 'ripples', 'wind', 'clouds']);
+  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'activity', 'quietCenter', 'leftInset', 'readingEffect', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity']);
+  assert.equal(DEFAULTS.rain, false);
+  assert.equal(DEFAULTS.rainIntensity, 0.45);
+  assert.equal(normalizeConfig({ rainIntensity: -1 }).rainIntensity, 0);
+  assert.equal(normalizeConfig({ rainIntensity: 9 }).rainIntensity, 1);
+  assert.equal(normalizeConfig({ rainIntensity: NaN }).rainIntensity, 0.45);
   // `glass` is now the frosted-content-box option and is on by default; the old
   // separate input-box switch survives only as a hidden compatibility field.
   assert.equal(DEFAULTS.glass, true);

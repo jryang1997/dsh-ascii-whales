@@ -56,6 +56,24 @@ export function stepAtmosphere(field, delta) {
   return field;
 }
 
+/** Shared sea-plane breeze, in CSS pixels per simulated second. */
+export function atmosphereWindAt(field, x = 0, y = 0, out = {}) {
+  const width = Math.max(1, atmosFinite(field?.width, 1));
+  const height = Math.max(1, atmosFinite(field?.height, 1));
+  const time = atmosFinite(field?.time, 0), seed = atmosFinite(field?.seed, 0);
+  const phase = atmosHash(seed, 17, 91) * Math.PI * 2;
+  const u = atmosFinite(x, 0) / width, v = atmosFinite(y, 0) / height;
+  // Slow shared veering and a broad local gust keep wind strokes and rain in
+  // agreement. Periodic coordinates agree across the wrapping sea's edges.
+  const angle = -0.14 + 0.15 * Math.sin(time * 0.065 + phase)
+    + 0.045 * Math.sin(Math.PI * 2 * v + time * 0.09 + phase);
+  const strength = 0.86 + 0.14 * Math.sin(time * 0.21 + phase + Math.PI * 2 * u);
+  const speed = Math.min(width, height) * 0.027 * strength;
+  out.x = Math.cos(angle) * speed;
+  out.y = Math.sin(angle) * speed;
+  return out;
+}
+
 /** Normalized, broad shadow coverage. The coordinate field is continuous in time. */
 export function atmosphereCloudAt(field, x, y) {
   if (!field || !(field.width > 0 && field.height > 0)
@@ -253,9 +271,7 @@ export function drawAtmosphere(target, field, options = {}) {
   if (options.clouds) result.clouds = atmosDrawClouds(target, field, width, height,
     opacity, palette, options.dark, fade);
   if (options.wind) {
-    const size = Math.min(width, height), angle = -0.14;
-    const fx = Math.cos(angle), fy = Math.sin(angle), nx = -fy, ny = fx;
-    const speed = size * 0.027;
+    const size = Math.min(width, height), breeze = {};
     for (let i = 0; i < field.gusts.length && result.wind < ATMOS_MAX_WIND; i++) {
       const gust = field.gusts[i];
       const clock = time + gust.phase, cycle = Math.floor(clock / gust.life), age = clock - cycle * gust.life;
@@ -264,6 +280,9 @@ export function drawAtmosphere(target, field, options = {}) {
       if (envelope < 0.02) continue;
       const anchorX = atmosWrap(gust.u + atmosHash(i, cycle, field.seed) * 0.25) * width;
       const anchorY = atmosWrap(gust.v + atmosHash(i, cycle, field.seed + 1) * 0.2) * height;
+      atmosphereWindAt(field, anchorX, anchorY, breeze);
+      const speed = Math.hypot(breeze.x, breeze.y) || 1;
+      const fx = breeze.x / speed, fy = breeze.y / speed, nx = -fy, ny = fx;
       const length = Math.max(cellWidth * 4, size * gust.length);
       const count = Math.min(16, Math.max(4, Math.ceil(length / (cellWidth * 0.85))));
       for (let j = 0; j < count && result.wind < ATMOS_MAX_WIND; j++) {

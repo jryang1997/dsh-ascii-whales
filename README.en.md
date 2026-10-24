@@ -58,6 +58,7 @@ The current published package is [v0.14.0](https://github.com/jryang1997/dsh-asc
 - Adjust the count, body size, speed, opacity, and palette. Body size does not change swimming speed or tail-beat timing.
 - Apply saved settings while preserving the group's movement. Switching models keeps the whales swimming.
 - Version 0.14.0 adds sea-surface wind streaks and slow cloud shadows, each with its own switch. Whales leave through any edge and return on the opposite side, steering clear of obstacles there before they cross. See [atmosphere research](./docs/research/ATMOSPHERE-RESEARCH.md).
+- Rain has an independent switch and intensity from 0 to 1. Fine streaks follow the slowly changing sea breeze and make small splashes and spreading ripples at their landing points. Rain settles naturally when switched off. Turning wind off returns the rain to vertical; rain ripples and swimming wakes have separate controls.
 - Each whale dives and comes back up on its own. The nose goes under first, the tail lifts and slaps, and the whale keeps its course while it is hidden. The nose returns first. The school does not dive together, and there is no separate dive switch. See the [changelog](./CHANGELOG.md).
 - Follow light and dark themes and system preferences. Reduced motion shows a static pose. Hidden pages pause the animation, and the decorative layer lets pointer events pass through.
 
@@ -77,7 +78,7 @@ The current published package is [v0.14.0](https://github.com/jryang1997/dsh-asc
 
 ## Whales around your conversation
 
-A frosted reading pane softens the whales behind the text column. Light and dark themes use their own glass materials.
+Text edge effect offers Glow, Soft blur and Frosted glass, with Frosted glass as the default. Glow clears whales around text; blur and frost retain translucent silhouettes so the whale remains continuous behind a paragraph. This choice is independent of the content-box glass switch. Whales briefly hide during reading scrolls and resume from the same position afterward. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones.
 
 | Light theme | Dark theme |
 | :---: | :---: |
@@ -87,11 +88,10 @@ For the input box, you can show blurred whale silhouettes or have the whales swi
 
 | Option | Effect | Default |
 | --- | --- | --- |
-| Rounded glass pane | A continuous frosted pane behind the text column | On |
-| Frosted input box | Whales appear as blurred silhouettes inside the input box | Off |
+| Frosted content boxes | Blurred whales in content cards, the input box and right sidebar, with clear text regions | On |
 | Whales avoid the input box | Whales swim around the input box as an obstacle | Off |
 
-**Frosted input box** and **Whales avoid the input box** are mutually exclusive. Enabling either turns the other off. The reading pane's glass is independent.
+**Frosted content boxes** and **Whales avoid the input box** are mutually exclusive. Enabling either turns the other off. Text protection stays active with either option disabled.
 
 <details>
 <summary>View input-box avoidance</summary>
@@ -121,6 +121,7 @@ Dragging a slider updates the static sample in the settings page. Select **Save*
 | Character size | 4–16 | 11 |
 | Whale size | 0.55–1.55 | 1 |
 | Glass strength | 0–1 | 0.55 |
+| Rain intensity | 0–1 | 0.45, rain off by default |
 | Browser left inset | 0–500 px | 280 px |
 
 | Style setting | Choices |
@@ -128,8 +129,21 @@ Dragging a slider updates the static sample in the settings page. Select **Save*
 | Whale species | Mixed group, blue, humpback, sperm, fin, or bowhead |
 | Drawing style | Glyphs only, colored cells |
 | Fill content | Custom text, ASCII characters |
-| Ocean palette | Ocean, Azure, Indigo |
-| Other switches | Show whales, Quieter reading area |
+| Whale colors | Ocean, Azure, Indigo, random color per whale |
+| Other switches | Show whales, Follow task activity, Quieter reading area |
+
+Random color per whale assigns distinct hues from eight palettes and retains body shading. Painting, saving settings, resizing, and changing count, text, species or size preserve each whale's color. Reopening the background generates a new set.
+
+Follow task activity is on by default. The first whale represents the current session. The remaining whales keep stable bindings to subagents, other active sessions, and background jobs visible to the current session.
+
+| Actual state | Whale behavior |
+| --- | --- |
+| Running session, subagent or job | Stronger swimming, more sustained tail strokes, `···` |
+| Idle or stopped turn | Calm gliding; an inactive subagent does not imply success |
+| Waiting for an answer, approval or plan review | Smooth surfacing, slow swimming, `!` and the task name; no new dives |
+| Observed job completion / failure | `✓` / `×` and the job name for six seconds of playback |
+
+When there are more active tasks than whales, the first whale summarizes the extra count and the most urgent reminder. Disabling the switch restores decorative swimming. Reduced motion keeps the pose still while state changes update static badges. The plugin only reads published DSH state. It does not answer questions, approve operations or follow job output. Historical job results do not produce new badges when the background opens.
 
 Custom text supports Chinese characters, English, emoji, and combined glyphs. Whitespace is ignored. The input limit is 40 UTF-16 code units, so some emoji use more than one unit. Switching to ASCII preserves your saved custom text.
 
@@ -190,6 +204,8 @@ Package with `pnpm --config.ignore-scripts=true pack`.
 | [glass.js](./src/glass.js) | Reading-pane and input-box geometry and materials |
 | [engine.js](./src/engine.js) | Canvas drawing and updates in place |
 | [reading-layout.js](./src/reading-layout.js) | Shared glass, masks, and avoidance rules for conversation and demo cards |
+| [activity.js](./src/activity.js) | Published DSH state, stable task bindings, job subscriptions, and badges |
+| [rain.js](./src/rain.js) | Wind-driven rain, intensity transitions, and impact ripples |
 | [simulation.js](./src/simulation.js) | Scene adoption, resizing, and advancement of motion and sea effects |
 | [config-editor.js](./src/config-editor.js) | Draft rules, validation, differential saves, and revision conflicts |
 | [browser-build.mjs](./scripts/browser-build.mjs) | Shared browser artifact assembly and consistency checks |

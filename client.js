@@ -301,14 +301,14 @@
     state.seed = Math.imul(state.seed, 1664525) + 1013904223 >>> 0;
     return state.seed / 4294967296;
   }
-  function motionGeometry(whale, width, height, count, size = 1) {
+  function motionGeometry(whale, width, height, count, size2 = 1) {
     const areaScale = Math.min(width / 1600, height / 900, 1.25);
     const density = Math.min(1, Math.sqrt(3 / Math.max(1, count)));
     const depth = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5);
     const variation = 0.98 + Math.sin(motionFinite(whale.phase, 0) + 0.7) * 0.035;
     const anatomy = whaleSpecies(whale.species);
-    const scale = 495 / (1 + depth * 0.48) * variation * areaScale * density * anatomy.size * size;
-    whale.length = Math.min(560 * Math.max(1, size), scale);
+    const scale = 495 / (1 + depth * 0.48) * variation * areaScale * density * anatomy.size * size2;
+    whale.length = Math.min(560 * Math.max(1, size2), scale);
     whale.halfLength = whale.length * 0.5;
     whale.bodyRadius = whale.length * Math.max(...anatomy.profile.map((point) => point[1])) / 2.24;
     whale.bodyWidth = whale.bodyRadius * 2;
@@ -621,7 +621,7 @@
     height = Math.max(1, motionFinite(height, 1));
     const oldWidth = scene.width > 0 ? scene.width : width;
     const oldHeight = scene.height > 0 ? scene.height : height;
-    const size = motionLimit(motionFinite(scene.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling);
+    const size2 = motionLimit(motionFinite(scene.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling);
     scene.time = motionFinite(scene.time, 0);
     scene.accumulator = motionFinite(scene.accumulator, 0);
     if (scene.obstacles && scene.obstacles.length) {
@@ -640,7 +640,7 @@
     const whales = scene.whales || [];
     for (let i = 0; i < whales.length; i++) {
       const whale = whales[i];
-      motionGeometry(whale, width, height, whales.length, size);
+      motionGeometry(whale, width, height, whales.length, size2);
       if (whale._motion) {
         whale.x *= width / oldWidth;
         whale.y *= height / oldHeight;
@@ -725,16 +725,16 @@
     }
     return adopted;
   }
-  function motionWrap(value, size) {
-    if (!(size > 0) || !Number.isFinite(value)) return value;
-    const wrapped = value % size;
-    return wrapped < 0 ? wrapped + size : wrapped;
+  function motionWrap(value, size2) {
+    if (!(size2 > 0) || !Number.isFinite(value)) return value;
+    const wrapped = value % size2;
+    return wrapped < 0 ? wrapped + size2 : wrapped;
   }
-  function motionTorusDelta(delta2, size) {
-    if (!(size > 0) || !Number.isFinite(delta2)) return delta2;
-    const half = size * 0.5;
-    if (delta2 > half) return delta2 - size;
-    if (delta2 < -half) return delta2 + size;
+  function motionTorusDelta(delta2, size2) {
+    if (!(size2 > 0) || !Number.isFinite(delta2)) return delta2;
+    const half = size2 * 0.5;
+    if (delta2 > half) return delta2 - size2;
+    if (delta2 < -half) return delta2 + size2;
     return delta2;
   }
   function motionShiftWhale(whale, dx, dy) {
@@ -925,9 +925,11 @@
       const whale = whales[i], state = whale._motion, force = forces[i];
       const startX = whale.x, startY = whale.y, startHeading = whale.heading;
       const anatomy = whaleSpecies(whale.species);
+      const activityKind = whale.activity?.kind;
+      const activityPace = activityKind === "running" ? 1.35 : activityKind === "waiting" ? 0.32 : activityKind === "idle" ? 0.62 : 1;
       const travelTick = motionTick * speed;
       state.age += travelTick;
-      motionPrepareDive(whale, i, scene.diveSeed, anatomy, travelTick);
+      motionPrepareDive(whale, i, scene.diveSeed, anatomy, travelTick, activityKind === "waiting");
       const bearingHold = motionDiveBearingHold(state.dive, state.age);
       if (state.age >= state.targetDue || Math.hypot(state.targetX - whale.x, state.targetY - whale.y) < Math.max(8, whale.length * 0.14)) {
         motionTarget(whale, width, height, false, obstacles);
@@ -953,7 +955,7 @@
             const closing = contact ? -(whale.vx * contact.nx + whale.vy * contact.ny) : 0;
             if (contact && closing > 0.1) {
               const gap = Math.max(0, -contact.depth);
-              const cruise2 = state.cruise * environmentSpeed * speed;
+              const cruise2 = state.cruise * environmentSpeed * speed * activityPace;
               const safePace = Math.max(cruise2 * 0.15, gap / 2.8);
               seamBrake = Math.max(seamBrake, 1 - motionLimit(safePace / Math.max(1, cruise2), 0.15, 1));
             }
@@ -974,7 +976,7 @@
       let desiredX = dx / targetDistance * 1.5 + forwardX * 0.85 + Math.cos(whale.heading + state.wander) * 0.35 + force.x;
       let desiredY = dy / targetDistance * 1.5 + forwardY * 0.85 + Math.sin(whale.heading + state.wander) * 0.35 + force.y;
       const turnLimit = state.agility * Math.sqrt(speed);
-      const cruise = state.cruise * environmentSpeed * speed;
+      const cruise = state.cruise * environmentSpeed * speed * activityPace;
       const lookAhead = whale.length * 0.35 + cruise / Math.max(0.08, turnLimit);
       const lookX = whale.x + forwardX * lookAhead, lookY = whale.y + forwardY * lookAhead;
       if (lookX < 0 || lookX > width) {
@@ -1015,13 +1017,15 @@
         return t * t * (3 - 2 * t);
       };
       const envelope = gait < active ? easeStroke(gait / 1.1) * easeStroke((active - gait) / 1.1) : 0;
-      state.stroke += (envelope - state.stroke) * (1 - Math.exp(-travelTick * 2.2));
+      const activityStroke = activityKind === "running" ? 0.35 + envelope * 0.65 : envelope * (activityKind === "waiting" ? 0.35 : activityKind === "idle" ? 0.6 : 1);
+      state.stroke += (activityStroke - state.stroke) * (1 - Math.exp(-travelTick * 2.2));
       state.wave += travelTick * anatomy.beat * (0.7 + 0.3 * Math.min(1.4, Math.sqrt(effort))) * (0.08 + 0.92 * state.stroke);
       motionStepDive(whale);
     }
     scene.time += motionTick;
   }
   function motionDiveBearingHold(dive, age) {
+    if (Number.isFinite(dive.returnStartedAt)) return 1;
     if (dive.startedAt === null) {
       return Number.isFinite(dive.bearingReleaseAt) ? 1 - diveSmoothstep((age - dive.bearingReleaseAt) / 0.6) : 0;
     }
@@ -1049,7 +1053,7 @@
     seed = Math.imul(seed ^ seed >>> 13, 3266489909);
     return (seed ^ seed >>> 16) >>> 0;
   }
-  function motionPrepareDive(whale, index, sceneSeed, anatomy, dt) {
+  function motionPrepareDive(whale, index, sceneSeed, anatomy, dt, waiting) {
     const state = whale._motion;
     if (!state.dive) {
       const dive2 = state.dive = {
@@ -1074,14 +1078,28 @@
     }
     const dive = state.dive;
     const surfacePace = motionLimit(22 / anatomy.cruise, 0.75, 1.3);
-    if (dive.startedAt !== null && state.age >= dive.startedAt + dive.entry + dive.under + dive.exit) {
-      const endedAt = dive.startedAt + dive.entry + dive.under + dive.exit;
+    if (waiting && dive.startedAt !== null && !Number.isFinite(dive.returnStartedAt)) {
+      dive.returnStartedAt = state.age - dt;
+      dive.returnSubmergence = state.submergence;
+      dive.returnPitch = state.pitch;
+      dive.returnDepth = state.depth;
+      dive.returnTailKick = state.tailKick;
+      dive.returnArch = state.arch;
+      dive.returnNoseFirst = state.noseFirst;
+      if (dive.contactStage < 2) {
+        dive.contactStage = motionDiveContactHeight(whale, DIVE_NOSE_CONTACT) > DIVE_WATERLINE ? 1 : 2;
+      }
+    }
+    const endedAt = Number.isFinite(dive.returnStartedAt) ? dive.returnStartedAt + dive.exit : dive.startedAt + dive.entry + dive.under + dive.exit;
+    if (dive.startedAt !== null && state.age >= endedAt) {
       dive.startedAt = null;
+      dive.returnStartedAt = null;
       dive.bearingReleaseAt = endedAt;
       dive.completed++;
       dive.nextDecision = endedAt + (10 + motionRandom(dive) * 16) * surfacePace;
     }
-    if (dive.startedAt === null && state.age >= dive.nextDecision) {
+    if (waiting && dive.startedAt === null) dive.nextDecision = Math.max(dive.nextDecision, state.age);
+    if (!waiting && dive.startedAt === null && state.age >= dive.nextDecision) {
       dive.decisions++;
       if (motionRandom(dive) < dive.activity) {
         dive.startedAt = dive.nextDecision;
@@ -1098,28 +1116,29 @@
   }
   function motionStepDive(whale) {
     const state = whale._motion, dive = state.dive;
-    const pose = dive.startedAt === null ? diveLevel() : divePose(state.age - dive.startedAt, dive);
-    state.submergence = pose.submergence;
-    state.pitch = pose.pitch;
-    state.noseFirst = pose.noseFirst;
-    state.depth = pose.depth;
-    state.tailKick = pose.tailKick;
-    state.arch = pose.arch;
+    const returning = Number.isFinite(dive.returnStartedAt);
+    if (returning) {
+      const remaining = 1 - diveSmoothstep((state.age - dive.returnStartedAt) / dive.exit);
+      state.submergence = dive.returnSubmergence * remaining;
+      state.pitch = dive.returnPitch * remaining;
+      state.depth = dive.returnDepth * remaining;
+      state.tailKick = dive.returnTailKick * remaining;
+      state.arch = dive.returnArch * remaining;
+      state.noseFirst = remaining > 0 && dive.returnNoseFirst;
+    } else {
+      const pose = dive.startedAt === null ? diveLevel() : divePose(state.age - dive.startedAt, dive);
+      state.submergence = pose.submergence;
+      state.pitch = pose.pitch;
+      state.noseFirst = pose.noseFirst;
+      state.depth = pose.depth;
+      state.tailKick = pose.tailKick;
+      state.arch = pose.arch;
+    }
     if (dive.startedAt !== null && dive.contactStage < 2) {
       const elapsed = state.age - dive.startedAt;
       const isTail = dive.contactStage === 0;
-      if (elapsed >= (isTail ? dive.entry * 0.46 : dive.entry + dive.under)) {
-        const contactPose = motionDiveContactPose;
-        contactPose.wave = state.wave;
-        contactPose.turn = whale.turn;
-        contactPose.submergence = state.submergence;
-        contactPose.divePitch = state.pitch;
-        contactPose.diveDepth = state.depth;
-        contactPose.diveKick = state.tailKick;
-        contactPose.diveArch = state.arch;
-        writeWhaleRigPose(whale, contactPose);
-        const point = isTail ? DIVE_TAIL_CONTACT : DIVE_NOSE_CONTACT;
-        const height = deformWhaleParticle(point, contactPose, motionDiveContactOut).y;
+      if (returning || elapsed >= (isTail ? dive.entry * 0.46 : dive.entry + dive.under)) {
+        const height = motionDiveContactHeight(whale, isTail ? DIVE_TAIL_CONTACT : DIVE_NOSE_CONTACT);
         if (isTail ? height >= DIVE_WATERLINE : height <= DIVE_WATERLINE) {
           dive.splashSerial++;
           dive.splashKind = isTail ? "dive" : "surface";
@@ -1149,6 +1168,18 @@
   });
   var motionDiveContactPose = {};
   var motionDiveContactOut = {};
+  function motionDiveContactHeight(whale, point) {
+    const state = whale._motion, pose = motionDiveContactPose;
+    pose.wave = state.wave;
+    pose.turn = whale.turn;
+    pose.submergence = state.submergence;
+    pose.divePitch = state.pitch;
+    pose.diveDepth = state.depth;
+    pose.diveKick = state.tailKick;
+    pose.diveArch = state.arch;
+    writeWhaleRigPose(whale, pose);
+    return deformWhaleParticle(point, pose, motionDiveContactOut).y;
+  }
   function motionEnsureDive(state) {
     if (!Number.isFinite(state.submergence)) state.submergence = 0;
     if (!Number.isFinite(state.pitch)) state.pitch = 0;
@@ -1255,11 +1286,25 @@
   var GLYPH_INK_DEPTH_LEVELS = 16;
   var GLYPH_INK_NEAR_DEPTH = 0.14;
   var GLYPH_INK_FAR_DEPTH = 1.35;
+  var RAINBOW_COLOR_STOPS = Object.freeze([
+    [[87, 42, 40], [158, 94, 83], [225, 192, 181]],
+    [[80, 57, 29], [154, 121, 68], [225, 207, 167]],
+    [[51, 66, 33], [110, 135, 80], [196, 216, 175]],
+    [[25, 68, 63], [64, 137, 125], [170, 218, 204]],
+    [[32, 62, 88], [76, 127, 158], [169, 207, 226]],
+    [[48, 55, 83], [109, 116, 153], [199, 202, 224]],
+    [[69, 44, 87], [130, 99, 158], [209, 190, 227]],
+    [[87, 40, 65], [160, 88, 129], [231, 183, 209]]
+  ].map((stops) => Object.freeze(stops.map((stop) => Object.freeze(stop)))));
+  function rainbowColorStops(index) {
+    return Number.isInteger(index) && index >= 0 && index < RAINBOW_COLOR_STOPS.length ? RAINBOW_COLOR_STOPS[index] : null;
+  }
   var GLYPH_INK_PALETTES = (() => {
     const ramps = {
       ocean: [[38, 63, 88], [94, 119, 141], [187, 205, 218]],
       azure: [[32, 62, 88], [76, 127, 158], [169, 207, 226]],
-      indigo: [[48, 55, 83], [109, 116, 153], [199, 202, 224]]
+      indigo: [[48, 55, 83], [109, 116, 153], [199, 202, 224]],
+      ...Object.fromEntries(RAINBOW_COLOR_STOPS.map((stops, index) => [`rainbow:${index}`, stops]))
     };
     const palettes = {};
     for (const [name, [shadow, mid, highlight]] of Object.entries(ramps)) {
@@ -1281,7 +1326,8 @@
     }
     return Object.freeze(palettes);
   })();
-  function createInkPalette(name) {
+  function createInkPalette(name, colorIndex) {
+    if (name === "rainbow" && rainbowColorStops(colorIndex)) return GLYPH_INK_PALETTES[`rainbow:${colorIndex}`];
     return name === "azure" ? GLYPH_INK_PALETTES.azure : name === "indigo" ? GLYPH_INK_PALETTES.indigo : GLYPH_INK_PALETTES.ocean;
   }
   function glyphInkIndex(light, depth) {
@@ -1315,9 +1361,11 @@
     opacity: { kind: "number", min: 0.04, max: 0.9, step: 0.01, default: 0.6 },
     glyphSize: { kind: "number", min: 4, max: 16, step: 1, default: 11 },
     whaleSize: { kind: "number", min: 0.55, max: 1.55, step: 0.05, default: 1 },
-    color: { kind: "enum", values: ["ocean", "azure", "indigo"], default: "ocean" },
+    color: { kind: "enum", values: ["ocean", "azure", "indigo", "rainbow"], default: "ocean" },
+    activity: { kind: "boolean", default: true },
     quietCenter: { kind: "boolean", default: true },
     leftInset: { kind: "number", min: 0, max: 500, step: 1, default: 280 },
+    readingEffect: { kind: "enum", values: ["glow", "blur", "frost"], default: "frost" },
     glass: { kind: "boolean", default: true },
     glassStrength: { kind: "number", min: 0, max: 1, step: 0.05, default: 0.55 },
     // Folded into `glass` in 0.11.0: every content box, the composer included, is
@@ -1329,7 +1377,9 @@
     spout: { kind: "boolean", default: true },
     ripples: { kind: "boolean", default: true },
     wind: { kind: "boolean", default: true },
-    clouds: { kind: "boolean", default: true }
+    clouds: { kind: "boolean", default: true },
+    rain: { kind: "boolean", default: false },
+    rainIntensity: { kind: "number", min: 0, max: 1, step: 0.01, default: 0.45 }
   });
   var DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
   var clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -1436,17 +1486,30 @@
       };
     };
   }
-  function createScene(count, text = DEFAULTS.text, species = DEFAULTS.species, whaleSize = DEFAULTS.whaleSize) {
+  function whaleColorOrder(seed) {
+    const colors = Array.from({ length: 8 }, (_, index) => index);
+    let state = seed;
+    for (let i = colors.length - 1; i > 0; i--) {
+      state = Math.imul(state, 1664525) + 1013904223 >>> 0;
+      const j = Math.floor(state / 4294967296 * (i + 1));
+      [colors[i], colors[j]] = [colors[j], colors[i]];
+    }
+    return colors;
+  }
+  function createScene(count, text = DEFAULTS.text, species = DEFAULTS.species, whaleSize = DEFAULTS.whaleSize, colorSeed = 0) {
     const alphabet = glyphSequence(text);
     count = clamp(Math.round(count), 1, 8);
-    const size = clamp(
+    colorSeed = typeof colorSeed === "number" && Number.isFinite(colorSeed) ? colorSeed >>> 0 : 0;
+    const colorOrder = whaleColorOrder(colorSeed);
+    const size2 = clamp(
       typeof whaleSize === "number" && Number.isFinite(whaleSize) ? whaleSize : DEFAULTS.whaleSize,
       FIELDS.whaleSize.min,
       FIELDS.whaleSize.max
     );
-    const total = Math.min(8e3, Math.round(count * 2200 * Math.max(0.36, size * size)));
+    const total = Math.min(8e3, Math.round(count * 2200 * Math.max(0.36, size2 * size2)));
     const whales = Array.from({ length: count }, (_, id) => ({
       id,
+      colorIndex: colorOrder[id],
       species: species === "mixed" || !WHALE_SPECIES[species] ? SPECIES_IDS[id % SPECIES_IDS.length] : species,
       depth: [0.14, 0.52, 0.72, 0.95, 0.38][id % 5],
       phase: noise(id + 80) * Math.PI * 2
@@ -1524,7 +1587,7 @@
       }
     }
     for (const p of particles) p.glyph = alphabet[p.id % alphabet.length];
-    const scene = { whales, particles, triangles: new Uint16Array(triangles), decals, time: 0, accumulator: 0, width: 0, height: 0, whaleSize: size };
+    const scene = { whales, particles, triangles: new Uint16Array(triangles), decals, time: 0, accumulator: 0, width: 0, height: 0, whaleSize: size2, colorSeed };
     resizeScene(scene, 1600, 900);
     return scene;
   }
@@ -1976,6 +2039,18 @@
       shade: dark ? `rgba(0, 0, 0, ${(0.14 + 0.16 * s) * GLASS_CONTENT_SHADE_SCALE})` : `rgba(30, 43, 58, ${(0.045 + 0.05 * s) * GLASS_CONTENT_SHADE_SCALE})`
     };
   }
+  function glassSidebarTone(strength = 0.55, options = {}) {
+    const tone = glassContentTone(strength, options);
+    if (tone.mode !== "frost") return tone;
+    return {
+      ...tone,
+      blur: 20 + 12 * tone.strength,
+      mist: 0.12 + 0.04 * tone.strength,
+      veil: 0.025,
+      crest: "rgba(255, 255, 255, 0)",
+      shade: "rgba(0, 0, 0, 0)"
+    };
+  }
   function glassSeaFactor(strength = 0.55) {
     const s = glassClamp(Number.isFinite(strength) ? strength : 0.55, 0, 1);
     return glassClamp(Math.round(4 + 2 * s), 4, 6);
@@ -2005,14 +2080,20 @@
     return right - x > 0 && bottom - y > 0 ? { x, y, width: right - x, height: bottom - y } : null;
   }
   function createReadingLayout(snapshot, config, material = {}) {
-    const { canvas, boxes = [], composer = null } = snapshot;
-    const panes = config.glass ? glassContentPanes({ canvas, boxes, max: 16 }) : [];
+    const { canvas, boxes = [], sidebars = [], composer = null } = snapshot;
+    const contentPanes = config.glass ? glassContentPanes({ canvas, boxes, max: 16 }) : [];
+    const sidebarPanes = config.glass ? glassContentPanes({ canvas, boxes: sidebars, max: 4 }) : [];
+    const panes = [...contentPanes, ...sidebarPanes];
     const tone = config.glass ? glassContentTone(config.glassStrength, material) : null;
+    const sidebarTone = config.glass ? glassSidebarTone(config.glassStrength, material) : null;
     const avoidRect = config.composerAvoid && composer ? readingExpandedRect(canvas, composer, 8) : null;
     const fade = !avoidRect ? null : (x, y) => x > avoidRect.x && x < avoidRect.x + avoidRect.width && y > avoidRect.y && y < avoidRect.y + avoidRect.height ? 0 : 1;
     return {
       panes,
+      contentPanes,
+      sidebarPanes,
       tone,
+      sidebarTone,
       fade,
       sceneryFade(x, y) {
         return attenuation(x, y, canvas.width, canvas.height, config.quietCenter) * (fade ? fade(x, y) : 1);
@@ -2054,15 +2135,16 @@
     const index = Math.round(density * (ASCII_RAMP.length - 1));
     return ASCII_RAMP[index];
   }
-  function createCellPalette(name = "ocean") {
-    name = name === "azure" || name === "indigo" ? name : "ocean";
+  function createCellPalette(name = "ocean", colorIndex) {
+    const rainbow = name === "rainbow" ? rainbowColorStops(colorIndex) : null;
+    name = rainbow ? `rainbow:${colorIndex}` : name === "azure" || name === "indigo" ? name : "ocean";
     if (surfacePalettes.has(name)) return surfacePalettes.get(name);
     const stops = {
       ocean: [[25, 47, 66], [99, 128, 146], [219, 231, 236]],
       azure: [[21, 55, 73], [83, 138, 160], [210, 234, 241]],
       indigo: [[38, 43, 68], [114, 123, 155], [225, 228, 241]]
     };
-    const [shadow, mid, highlight] = stops[name];
+    const [shadow, mid, highlight] = rainbow || stops[name];
     const variations = [[0, 0, 0], [-5, 4, 5], [7, 3, -6], [3, -3, 6]];
     const palette = [];
     for (const variation of variations) for (let depth = 0; depth < 16; depth++) for (let shade = 0; shade < 32; shade++) {
@@ -2081,7 +2163,11 @@
     const ascii = config.fillMode === "ascii", tiles = config.renderStyle === "cells";
     const font = ascii ? `600 ${config.glyphSize}px Consolas, "Cascadia Mono", "Courier New", monospace` : `600 ${config.glyphSize}px "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
     const alphabet = ascii ? Array.from(ASCII_RAMP) : Array.from(new Set(scene.particles.map((p) => p.glyph)));
-    const inkPalette = createInkPalette(config.color), cells = createCellPalette(config.color);
+    const palette = { ink: createInkPalette(config.color), cells: createCellPalette(config.color) };
+    const whalePalettes = config.color === "rainbow" ? (scene.whales || []).map((whale) => ({
+      ink: createInkPalette(config.color, whale.colorIndex),
+      cells: createCellPalette(config.color, whale.colorIndex)
+    })) : null;
     const textDark = "#122635", textLight = "#f2f6fa";
     function paint(target, grid, poses, width, height, ratio = 1, fade = null, dark = false) {
       const opacity = config.opacity, quietCenter = config.quietCenter;
@@ -2106,7 +2192,8 @@
         const inkLight = grid.atmosphereLights ? grid.atmosphereLights[cell] : light;
         const shade = glyphInkIndex(inkLight, pose.cameraZ / pose.focal);
         const solid = tiles && coverage >= 0.6 && grid.sampleOwners[cell * 5] >= 0;
-        const material = cells[shade + surfaceKey(particle) % 4 * 512];
+        const colors = whalePalettes?.[particle.whale] || palette;
+        const material = colors.cells[shade + surfaceKey(particle) % 4 * 512];
         if (solid) {
           const gap = 1 / ratio;
           const left = Math.round((x - grid.cellWidth / 2) * ratio) / ratio + gap / 2;
@@ -2123,7 +2210,7 @@
           useFill(luminance < 145 ? textLight : textDark);
           target.globalAlpha = Math.min(1, alpha * 1.2);
         } else {
-          useFill(inkPalette[shade]);
+          useFill(colors.ink[shade]);
           target.globalAlpha = alpha;
         }
         target.fillText(
@@ -2155,10 +2242,10 @@
   }
   function seedAt(key, sequence) {
     const text = String(key);
-    let hash = 2166136261;
-    for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
-    hash = Math.imul(hash ^ sequence, 1274126177);
-    return ((hash ^ hash >>> 16) >>> 0) / 4294967296;
+    let hash2 = 2166136261;
+    for (let i = 0; i < text.length; i++) hash2 = Math.imul(hash2 ^ text.charCodeAt(i), 16777619);
+    hash2 = Math.imul(hash2 ^ sequence, 1274126177);
+    return ((hash2 ^ hash2 >>> 16) >>> 0) / 4294967296;
   }
   function trailingFrame(whale) {
     const nodes = whale.rig?.nodes;
@@ -2344,9 +2431,9 @@
   var waterFinite = (value, fallback) => Number.isFinite(value) ? value : fallback;
   var waterClamp = (value, low, high) => value < low ? low : value > high ? high : value;
   function waterHash(a, b, salt = 0) {
-    let hash = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(salt | 0, 1442695041);
-    hash = Math.imul(hash ^ hash >>> 13, 1274126177);
-    return ((hash ^ hash >>> 16) >>> 0) / 4294967296;
+    let hash2 = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(salt | 0, 1442695041);
+    hash2 = Math.imul(hash2 ^ hash2 >>> 13, 1274126177);
+    return ((hash2 ^ hash2 >>> 16) >>> 0) / 4294967296;
   }
   function waterKeySeed(index, beat) {
     return waterHash(index + 1, beat);
@@ -2732,6 +2819,19 @@
     if (field && Number.isFinite(delta2) && delta2 > 0) field.time += delta2;
     return field;
   }
+  function atmosphereWindAt(field, x = 0, y = 0, out = {}) {
+    const width = Math.max(1, atmosFinite(field?.width, 1));
+    const height = Math.max(1, atmosFinite(field?.height, 1));
+    const time = atmosFinite(field?.time, 0), seed = atmosFinite(field?.seed, 0);
+    const phase = atmosHash(seed, 17, 91) * Math.PI * 2;
+    const u = atmosFinite(x, 0) / width, v = atmosFinite(y, 0) / height;
+    const angle = -0.14 + 0.15 * Math.sin(time * 0.065 + phase) + 0.045 * Math.sin(Math.PI * 2 * v + time * 0.09 + phase);
+    const strength = 0.86 + 0.14 * Math.sin(time * 0.21 + phase + Math.PI * 2 * u);
+    const speed = Math.min(width, height) * 0.027 * strength;
+    out.x = Math.cos(angle) * speed;
+    out.y = Math.sin(angle) * speed;
+    return out;
+  }
   function atmosphereCloudAt(field, x, y) {
     if (!field || !(field.width > 0 && field.height > 0) || !Number.isFinite(x) || !Number.isFinite(y)) return 0;
     const time = atmosFinite(field.time, 0);
@@ -2809,7 +2909,7 @@
       const top = Math.floor(row * pixelsY / rows), bottom = Math.floor((row + 1) * pixelsY / rows);
       let start = 0, previous = 0;
       for (let col = 0; col <= columns; col++) {
-        let rank = 0;
+        let rank2 = 0;
         if (col < columns) {
           const left = Math.floor(col * pixelsX / columns), right = Math.floor((col + 1) * pixelsX / columns);
           let mask = 1;
@@ -2819,15 +2919,15 @@
               (top + (bottom - top) * iy / 2) * height / pixelsY
             ), 0)));
           }
-          rank = Math.floor(mask * ATMOS_MASK_LEVELS);
+          rank2 = Math.floor(mask * ATMOS_MASK_LEVELS);
         }
-        if (rank !== previous) {
+        if (rank2 !== previous) {
           if (previous > 0) {
             const left = Math.floor(start * pixelsX / columns), right = Math.floor(col * pixelsX / columns);
             runs.push(left, top, right - left, bottom - top, previous / ATMOS_MASK_LEVELS);
           }
           start = col;
-          previous = rank;
+          previous = rank2;
         }
       }
     }
@@ -2861,8 +2961,8 @@
       if (canvas.width !== pixelsX) canvas.width = pixelsX;
       if (canvas.height !== pixelsY) canvas.height = pixelsY;
       context.clearRect(0, 0, pixelsX, pixelsY);
-      const size = atmosRasterSize(width, height, ATMOS_MASK_TILES, 8);
-      const columns = Math.min(pixelsX, size.columns), rows = Math.min(pixelsY, size.rows);
+      const size2 = atmosRasterSize(width, height, ATMOS_MASK_TILES, 8);
+      const columns = Math.min(pixelsX, size2.columns), rows = Math.min(pixelsY, size2.rows);
       const runs = atmosMaskRuns(buffer, fade, width, height, pixelsX, pixelsY, columns, rows);
       if (!runs.length) {
         context.globalAlpha = 1;
@@ -2933,9 +3033,7 @@
       fade
     );
     if (options.wind) {
-      const size = Math.min(width, height), angle = -0.14;
-      const fx = Math.cos(angle), fy = Math.sin(angle), nx = -fy, ny = fx;
-      const speed = size * 0.027;
+      const size2 = Math.min(width, height), breeze = {};
       for (let i = 0; i < field.gusts.length && result.wind < ATMOS_MAX_WIND; i++) {
         const gust = field.gusts[i];
         const clock = time + gust.phase, cycle = Math.floor(clock / gust.life), age = clock - cycle * gust.life;
@@ -2943,11 +3041,14 @@
         if (envelope < 0.02) continue;
         const anchorX = atmosWrap(gust.u + atmosHash(i, cycle, field.seed) * 0.25) * width;
         const anchorY = atmosWrap(gust.v + atmosHash(i, cycle, field.seed + 1) * 0.2) * height;
-        const length = Math.max(cellWidth * 4, size * gust.length);
+        atmosphereWindAt(field, anchorX, anchorY, breeze);
+        const speed = Math.hypot(breeze.x, breeze.y) || 1;
+        const fx = breeze.x / speed, fy = breeze.y / speed, nx = -fy, ny = fx;
+        const length = Math.max(cellWidth * 4, size2 * gust.length);
         const count = Math.min(16, Math.max(4, Math.ceil(length / (cellWidth * 0.85))));
         for (let j = 0; j < count && result.wind < ATMOS_MAX_WIND; j++) {
           const u = j / (count - 1), along = length * (u - 0.5) + speed * age;
-          const bend = Math.sin(u * Math.PI) * size * gust.bend * 0.025;
+          const bend = Math.sin(u * Math.PI) * size2 * gust.bend * 0.025;
           const x = atmosWrap((anchorX + fx * along + nx * bend) / width) * width;
           const y = atmosWrap((anchorY + fy * along + ny * bend) / height) * height;
           const feather = Math.sin(Math.PI * (0.08 + 0.84 * u));
@@ -2967,6 +3068,475 @@
     return result;
   }
 
+  // src/activity.js
+  var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]) });
+  var emptyJobs = Object.freeze({ rows: Object.freeze({}) });
+  var rank = (entity) => entity.kind === "waiting" ? 0 : entity.kind === "failed" ? 1 : entity.kind === "completed" ? 2 : entity.kind === "running" ? 3 : 4;
+  var record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+  var sessionKind = (row, status) => status?.pendingInteraction ? "waiting" : (status?.running ?? row?.running) === true ? "running" : "idle";
+  function currentSessionId(list) {
+    return Object.values(list?.byId ?? {}).find((row) => (row?.retainedBy?.mainView ?? 0) > 0)?.id ?? null;
+  }
+  function readActivitySnapshot(list, statuses, jobs = emptyJobs) {
+    const scope = currentSessionId(list);
+    if (!scope) return EMPTY_ACTIVITY;
+    const rows = new Map(Object.entries(list?.byId ?? {}));
+    for (const [parentId, projection] of Object.entries(list?.projectionsBySession ?? {})) {
+      for (const entry of projection?.values?.subagentCatalog ?? []) {
+        if (!record(entry) || entry.mode === "external" || typeof entry.id !== "string") continue;
+        if (!rows.has(entry.id)) rows.set(entry.id, { id: entry.id, parentId, origin: "subagent", displayTitle: entry.label });
+      }
+    }
+    const related = /* @__PURE__ */ new Set([scope]);
+    for (let pass = 0; pass < rows.size; pass++) {
+      let added = false;
+      for (const [id, row] of rows) if (related.has(row?.parentId) && !related.has(id)) {
+        related.add(id);
+        added = true;
+      }
+      if (!added) break;
+    }
+    const entities = [];
+    for (const [id, row] of rows) {
+      if (!record(row) || typeof id !== "string") continue;
+      const kind = sessionKind(row, statuses?.get?.(id));
+      if (!related.has(id) && kind === "idle") continue;
+      entities.push({
+        key: `session:${id}`,
+        type: row.origin === "subagent" || row.parentId ? "subagent" : "session",
+        label: String(row.displayTitle ?? row.title ?? id),
+        kind,
+        primary: id === scope
+      });
+    }
+    const seen = /* @__PURE__ */ new Set();
+    for (const job of jobs?.rows?.[scope] ?? []) {
+      if (!record(job) || typeof job.id !== "string" && typeof job.id !== "number") continue;
+      const key = `job:${job.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const kind = job.status === "running" || job.status === "stopping" ? "running" : job.status === "completed" ? "completed" : job.status === "failed" ? "failed" : "idle";
+      entities.push({ key, type: "job", label: String(job.label ?? job.id), kind, primary: false });
+    }
+    return { scope, entities };
+  }
+  function createActivityTracker() {
+    let snapshot = EMPTY_ACTIVITY, scope = null, seats = [], now = 0;
+    let dirty = true, appliedWhales = null, appliedEnabled = null, nextExpiry = Infinity;
+    const runningJobs = /* @__PURE__ */ new Set(), terminal = /* @__PURE__ */ new Map();
+    function update(next = EMPTY_ACTIVITY) {
+      if (next.scope !== scope) {
+        scope = next.scope;
+        seats = [];
+        runningJobs.clear();
+        terminal.clear();
+      }
+      snapshot = next;
+      dirty = true;
+      const present = /* @__PURE__ */ new Set();
+      for (const entity of snapshot.entities) {
+        if (entity.type !== "job") continue;
+        present.add(entity.key);
+        if (entity.kind === "running") {
+          runningJobs.add(entity.key);
+          terminal.delete(entity.key);
+        } else if (runningJobs.delete(entity.key) && (entity.kind === "completed" || entity.kind === "failed")) {
+          terminal.set(entity.key, { ...entity, until: now + 6 });
+        }
+      }
+      for (const key of runningJobs) if (!present.has(key)) runningJobs.delete(key);
+      for (const key of terminal.keys()) if (!present.has(key)) terminal.delete(key);
+    }
+    function apply(whales, time, enabled = true) {
+      now = time;
+      if (!dirty && appliedWhales === whales && appliedEnabled === enabled && now < nextExpiry) return;
+      dirty = false;
+      appliedWhales = whales;
+      appliedEnabled = enabled;
+      if (!enabled || !scope) {
+        for (const whale of whales) delete whale.activity;
+        return;
+      }
+      for (const [key, entity] of terminal) if (entity.until <= now) terminal.delete(key);
+      nextExpiry = Infinity;
+      for (const entity of terminal.values()) nextExpiry = Math.min(nextExpiry, entity.until);
+      const candidates = snapshot.entities.filter((entity) => entity.type !== "job" || entity.kind === "running");
+      candidates.push(...terminal.values());
+      const primary = candidates.find((entity) => entity.primary);
+      const rest = candidates.filter((entity) => !entity.primary).sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
+      const chosen = primary ? [primary, ...rest.slice(0, Math.max(0, whales.length - 1))] : rest.slice(0, whales.length);
+      const wanted = new Map(chosen.map((entity) => [entity.key, entity]));
+      seats = whales.map((_, index) => index === 0 && primary ? primary.key : seats[index] !== primary?.key && wanted.has(seats[index]) ? seats[index] : null);
+      const seated = new Set(seats.filter(Boolean));
+      for (const entity of chosen) if (!seated.has(entity.key)) {
+        const index = seats.indexOf(null);
+        if (index < 0) break;
+        seats[index] = entity.key;
+        seated.add(entity.key);
+      }
+      const overflow = candidates.filter((entity) => !seated.has(entity.key) && entity.kind !== "idle");
+      const urgent = overflow.sort((a, b) => rank(a) - rank(b))[0];
+      for (let i = 0; i < whales.length; i++) {
+        const entity = wanted.get(seats[i]);
+        if (!entity) {
+          delete whales[i].activity;
+          continue;
+        }
+        whales[i].activity = i === 0 && overflow.length ? {
+          ...entity,
+          overflow: overflow.length,
+          ...urgent && rank(urgent) < rank(entity) ? { kind: urgent.kind, attention: urgent.label } : {}
+        } : entity;
+      }
+    }
+    return { update, apply };
+  }
+  function createJobsBridge() {
+    let service = null, scope = null, release = null, unsubscribe = null, snapshot = emptyJobs;
+    const listeners = /* @__PURE__ */ new Set();
+    const publish = () => {
+      snapshot = service?.state.getSnapshot() ?? emptyJobs;
+      for (const listener of listeners) listener();
+    };
+    function watch(next) {
+      if (next === scope) return;
+      release?.();
+      release = null;
+      scope = next;
+      if (scope && service) release = service.watchRows(scope);
+    }
+    function attach(next) {
+      service = next;
+      unsubscribe = service.state.subscribe(publish);
+      if (scope) release = service.watchRows(scope);
+      publish();
+      return () => {
+        release?.();
+        unsubscribe?.();
+        release = unsubscribe = null;
+        service = null;
+        publish();
+      };
+    }
+    return {
+      attach,
+      watch,
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      getSnapshot: () => snapshot
+    };
+  }
+  function drawActivityBadges(ink, whales, width, height, { dark = false, opacity = 1, fade = () => 1 } = {}) {
+    ink.save();
+    ink.font = "600 13px system-ui, sans-serif";
+    ink.textAlign = "center";
+    ink.textBaseline = "middle";
+    for (const whale of whales) {
+      const activity = whale.activity;
+      if (!activity || activity.kind === "idle") continue;
+      const symbol = activity.kind === "waiting" ? "!" : activity.kind === "failed" ? "×" : activity.kind === "completed" ? "✓" : "···";
+      const label = activity.kind === "running" ? "" : ` ${Array.from(activity.attention ?? activity.label).slice(0, 18).join("")}`;
+      const text = `${symbol}${label}${activity.overflow ? ` +${activity.overflow}` : ""}`;
+      ink.fillStyle = activity.kind === "waiting" ? dark ? "#ffd27d" : "#875000" : activity.kind === "failed" ? dark ? "#ffaaaa" : "#a82b36" : activity.kind === "completed" ? dark ? "#9ee6c5" : "#17654e" : dark ? "#a9c6d6" : "#42667a";
+      for (const ox of [-width, 0, width]) for (const oy of [-height, 0, height]) {
+        const x = whale.x + ox, y = whale.y + oy - whale.bodyRadius - 16;
+        if (x < 0 || x > width || y < 8 || y > height - 8) continue;
+        ink.globalAlpha = opacity * fade(x, y);
+        ink.fillText(text, x, y, 180);
+      }
+    }
+    ink.restore();
+  }
+
+  // src/rain.js
+  var MAX_DROPS = 320;
+  var MAX_IMPACTS = 160;
+  var RESPONSE = 0.26;
+  var storage = /* @__PURE__ */ new WeakMap();
+  var finite2 = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
+  var clamp3 = (value, low = 0, high = 1) => Math.max(low, Math.min(high, value));
+  var size = (value) => clamp3(finite2(value), 0, 1e7);
+  function hash(id, seed, salt) {
+    let value = Math.imul(id | 0, 374761393) ^ Math.imul(seed | 0, 668265263) ^ Math.imul(salt | 0, 1442695041);
+    value = Math.imul(value ^ value >>> 13, 1274126177);
+    return ((value ^ value >>> 16) >>> 0) / 4294967296;
+  }
+  function createRainField({ seed = 0, width = 0, height = 0, intensity = 0 } = {}) {
+    const field = {
+      seed: finite2(seed) >>> 0,
+      width: size(width),
+      height: size(height),
+      intensity: clamp3(finite2(intensity)),
+      time: 0,
+      drops: [],
+      impacts: []
+    };
+    storage.set(field, {
+      dropPool: Array.from({ length: MAX_DROPS }, () => ({})),
+      impactPool: Array.from({ length: MAX_IMPACTS }, () => ({})),
+      credit: 0,
+      nextId: 0,
+      width: field.width,
+      height: field.height,
+      wind: { x: 0, y: 0 },
+      segments: new Float64Array(32)
+    });
+    return field;
+  }
+  function resizeRainField(field, width, height) {
+    const state = storage.get(field);
+    if (!state) return field;
+    field.width = size(width);
+    field.height = size(height);
+    if (!(field.width > 0 && field.height > 0)) return field;
+    const sx = state.width > 0 ? field.width / state.width : 1;
+    const sy = state.height > 0 ? field.height / state.height : 1;
+    for (const drop of field.drops) {
+      drop.x *= sx;
+      drop.y *= sy;
+      drop.landY *= sy;
+      drop.vx *= sx;
+      drop.vy *= sy;
+      drop.speed *= sy;
+    }
+    for (const impact of field.impacts) {
+      impact.x *= sx;
+      impact.y *= sy;
+    }
+    state.width = field.width;
+    state.height = field.height;
+    return field;
+  }
+  function resetRainField(field) {
+    const state = storage.get(field);
+    if (!state) return field;
+    for (const drop of field.drops) state.dropPool.push(drop);
+    for (const impact of field.impacts) state.impactPool.push(impact);
+    field.drops.length = 0;
+    field.impacts.length = 0;
+    field.intensity = 0;
+    field.time = 0;
+    state.credit = 0;
+    state.nextId = 0;
+    return field;
+  }
+  function velocity(state, drop, options, dt = 0, initialize = false) {
+    const vector = state.wind;
+    vector.x = 0;
+    vector.y = 0;
+    if (options.wind && options.atmosphere) atmosphereWindAt(options.atmosphere, drop.x, drop.y, vector);
+    const side = clamp3(finite2(vector.x) * 3.2, -drop.speed * 0.8, drop.speed * 0.8);
+    const down = Math.max(drop.speed * 0.5, drop.speed + finite2(vector.y) * 3.2);
+    const normal = drop.speed / Math.hypot(side, down);
+    const targetX = side * normal, targetY = down * normal;
+    if (initialize) {
+      drop.vx = targetX;
+      drop.vy = targetY;
+      return;
+    }
+    const blend = 1 - Math.exp(-dt / RESPONSE);
+    const vx = drop.vx + (targetX - drop.vx) * blend, vy = drop.vy + (targetY - drop.vy) * blend;
+    const speed = drop.speed / Math.hypot(vx, vy);
+    drop.vx = vx * speed;
+    drop.vy = vy * speed;
+  }
+  function impactAt(field, state, drop, x, age) {
+    if (!state.impactPool.length) return;
+    const impact = state.impactPool.pop();
+    impact.dropId = drop.id;
+    impact.x = x;
+    impact.y = drop.landY;
+    impact.age = age;
+    impact.life = 0.48 + drop.variation * 0.32;
+    impact.energy = drop.energy;
+    impact.scale = drop.scale;
+    impact.radius = (3.5 + 6 * drop.energy) * drop.scale;
+    impact.shape = drop.variation * Math.PI * 2;
+    if (age < impact.life) field.impacts.push(impact);
+    else state.impactPool.push(impact);
+  }
+  function moveDrop(field, state, drop, dt, options, feedback = true) {
+    velocity(state, drop, options, dt);
+    const remaining = Math.max(0, (drop.landY - drop.y) / drop.vy);
+    if (remaining <= dt) {
+      if (feedback) impactAt(field, state, drop, drop.x + drop.vx * remaining, dt - remaining);
+      return false;
+    }
+    drop.x += drop.vx * dt;
+    drop.y += drop.vy * dt;
+    drop.age += dt;
+    return true;
+  }
+  function spawn(field, state, options, age) {
+    if (!state.dropPool.length) return;
+    const drop = state.dropPool.pop(), id = state.nextId++;
+    const u = hash(id, field.seed, 1), v = hash(id, field.seed, 2);
+    drop.id = id;
+    drop.variation = hash(id, field.seed, 3);
+    drop.scale = 0.68 + v * 0.48;
+    drop.energy = (0.24 + 0.76 * field.intensity) * (0.8 + drop.variation * 0.2);
+    drop.speed = (260 + drop.variation * 100) * drop.scale;
+    drop.life = 0.38 + hash(id, field.seed, 4) * 0.32;
+    drop.landY = v * field.height;
+    drop.x = u * field.width;
+    drop.y = drop.landY;
+    velocity(state, drop, options, 0, true);
+    drop.x -= drop.vx * drop.life;
+    drop.y -= drop.vy * drop.life;
+    drop.age = 0;
+    if (moveDrop(field, state, drop, age, options)) field.drops.push(drop);
+    else state.dropPool.push(drop);
+  }
+  function advance(field, state, dt, options, target, emit) {
+    field.time += dt;
+    const before = field.intensity, decay = Math.exp(-dt / RESPONSE);
+    field.intensity = target + (before - target) * decay;
+    if (target === 0 && field.intensity < 2e-3) field.intensity = 0;
+    let live = 0;
+    for (const impact of field.impacts) {
+      impact.age += dt;
+      if (impact.age < impact.life) field.impacts[live++] = impact;
+      else state.impactPool.push(impact);
+    }
+    field.impacts.length = live;
+    live = 0;
+    for (const drop of field.drops) {
+      if (moveDrop(field, state, drop, dt, options, emit)) field.drops[live++] = drop;
+      else state.dropPool.push(drop);
+    }
+    field.drops.length = live;
+    if (!emit) {
+      state.credit = 0;
+      return;
+    }
+    const rate = Math.min(260, 180 * Math.sqrt(field.width * field.height / (960 * 600)));
+    const amount = field.intensity === 0 ? 0 : rate * (target * dt + (before - target) * RESPONSE * (1 - decay));
+    const previous = state.credit, total = previous + Math.max(0, amount), count = Math.floor(total);
+    state.credit = total - count;
+    for (let i = 1; i <= count && i <= MAX_DROPS; i++) {
+      const age = amount > 0 ? dt * (1 - (i - previous) / amount) : 0;
+      spawn(field, state, options, Math.max(0, age));
+    }
+  }
+  function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere } = {}) {
+    const state = storage.get(field);
+    if (!state || !(Number.isFinite(delta2) && delta2 > 0 && field.width > 0 && field.height > 0)) return field;
+    const target = enabled ? clamp3(finite2(intensity, 0.45)) : 0, options = { wind, atmosphere };
+    if (delta2 > 2) advance(field, state, delta2 - 2, options, target, false);
+    const window2 = Math.min(delta2, 2), steps = Math.ceil(window2 * 60), dt = window2 / steps;
+    for (let i = 0; i < steps; i++) advance(field, state, dt, options, target, true);
+    return field;
+  }
+  function maskAt(segments, count, fade, width, height, thickness) {
+    let mask = 1;
+    const pad = thickness * 0.5;
+    for (let i = 0; i < count * 4; i += 4) {
+      const x = segments[i], y = segments[i + 1], dx = segments[i + 2] - x, dy = segments[i + 3] - y;
+      const length = Math.hypot(dx, dy), steps = Math.max(1, Math.min(32, Math.ceil(length)));
+      const nx = length > 0 ? -dy / length * pad : pad, ny = length > 0 ? dx / length * pad : 0;
+      for (let j = 0; j <= steps; j++) {
+        const px = x + dx * j / steps, py = y + dy * j / steps;
+        if (px - pad < 0 || py - pad < 0 || px + pad > width || py + pad > height) return 0;
+        if (fade) {
+          mask = Math.min(
+            mask,
+            clamp3(finite2(fade(px, py))),
+            clamp3(finite2(fade(px + nx, py + ny))),
+            clamp3(finite2(fade(px - nx, py - ny)))
+          );
+          if (mask <= 0) return 0;
+        }
+      }
+    }
+    return mask;
+  }
+  function strokeSegments(target, segments, count) {
+    target.beginPath();
+    for (let i = 0; i < count * 4; i += 4) {
+      target.moveTo(segments[i], segments[i + 1]);
+      target.lineTo(segments[i + 2], segments[i + 3]);
+    }
+    target.stroke();
+  }
+  function drawRain(target, field, options = {}) {
+    const result = { drops: 0, impacts: 0, glyphs: 0 }, state = storage.get(field);
+    if (!state || !target || typeof target.beginPath !== "function" || typeof target.moveTo !== "function" || typeof target.lineTo !== "function" || typeof target.stroke !== "function") return result;
+    const width = size(options.width ?? field.width), height = size(options.height ?? field.height);
+    const opacity = clamp3(finite2(options.opacity, 0.6));
+    if (!(width > 0 && height > 0 && field.width > 0 && field.height > 0 && opacity > 0)) return result;
+    const phase = options.phase, reduced = !!options.reduced;
+    const sx = width / field.width, sy = height / field.height, ratio = clamp3(finite2(options.ratio, 1), 0.1, 8);
+    const cellHeight = clamp3(finite2(options.cellHeight, 13), 5, 32), cellWidth = clamp3(finite2(options.cellWidth, 11), 5, 32);
+    const palette = options.palette || createInkPalette("ocean"), segments = state.segments;
+    const fade = typeof options.fade === "function" ? options.fade : null;
+    const alpha = target.globalAlpha, ink = target.strokeStyle, lineWidth = target.lineWidth;
+    const lineCap = target.lineCap, lineJoin = target.lineJoin;
+    try {
+      target.lineCap = "butt";
+      target.lineJoin = "round";
+      if (!phase || phase === "surface") for (const impact of field.impacts) {
+        if (reduced && impact.dropId % 4) continue;
+        const progress = clamp3(impact.age / impact.life);
+        const envelope = Math.min(1, impact.age / 0.035) * (1 - progress) ** 1.7;
+        const radius = (1 + impact.radius * (1 - (1 - progress) ** 1.6)) * cellWidth / 11;
+        const x = impact.x * sx, y = impact.y * sy;
+        let count = 0;
+        for (let arc = 0; arc < 3; arc++) for (let part = 0; part < 2; part++) {
+          const a = impact.shape + arc * Math.PI * 2 / 3 + part * 0.35, b = a + 0.35, i = count++ * 4;
+          segments[i] = x + Math.cos(a) * radius;
+          segments[i + 1] = y + Math.sin(a) * radius * 0.42;
+          segments[i + 2] = x + Math.cos(b) * radius;
+          segments[i + 3] = y + Math.sin(b) * radius * 0.42;
+        }
+        if (impact.age < 0.16 && !reduced) {
+          const lift = Math.sin(impact.age / 0.16 * Math.PI) * (1 + impact.energy * 3) * impact.scale;
+          for (let side = -1; side <= 1; side += 2) {
+            const i = count++ * 4;
+            segments[i] = x + side * radius * 0.3;
+            segments[i + 1] = y - lift;
+            segments[i + 2] = x + side * (radius * 0.3 + 1);
+            segments[i + 3] = y - lift - 1.3;
+          }
+        }
+        target.lineWidth = Math.max(0.55, 0.7 / ratio) * impact.scale;
+        const mask = maskAt(segments, count, fade, width, height, target.lineWidth);
+        const amount = opacity * (options.dark ? 0.34 : 0.3) * envelope * mask * (reduced ? 0.55 : 1);
+        if (!(amount > 1e-3)) continue;
+        target.globalAlpha = amount;
+        target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.72 : 0.42, 0.16)];
+        strokeSegments(target, segments, count);
+        result.impacts++;
+      }
+      if (!phase || phase === "fall") for (const drop of field.drops) {
+        if (reduced && drop.id % 4) continue;
+        const x = drop.x * sx, y = drop.y * sy;
+        const length = cellHeight * (0.55 + drop.scale * 0.35) * (reduced ? 0.65 : 1);
+        const speed = Math.hypot(drop.vx * sx, drop.vy * sy) || 1;
+        segments[0] = x;
+        segments[1] = y;
+        segments[2] = x - drop.vx * sx / speed * length;
+        segments[3] = y - drop.vy * sy / speed * length;
+        target.lineWidth = Math.max(0.5, 0.68 / ratio) * drop.scale;
+        const mask = maskAt(segments, 1, fade, width, height, target.lineWidth);
+        const amount = opacity * (options.dark ? 0.28 : 0.25) * Math.min(1, drop.age / 0.055) * (0.65 + 0.35 * drop.energy) * mask * (reduced ? 0.5 : 1);
+        if (!(amount > 1e-3)) continue;
+        target.globalAlpha = amount;
+        target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.76 : 0.34, 0.16)];
+        strokeSegments(target, segments, 1);
+        result.drops++;
+      }
+    } finally {
+      target.globalAlpha = alpha;
+      target.strokeStyle = ink;
+      target.lineWidth = lineWidth;
+      target.lineCap = lineCap;
+      target.lineJoin = lineJoin;
+    }
+    return result;
+  }
+
   // src/simulation.js
   var sceneConfigKeys = Object.freeze(["count", "text", "species", "whaleSize"]);
   function sceneConfigChanged(previous = {}, next = {}) {
@@ -2974,23 +3544,27 @@
   }
   function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
     let disposed = false;
+    let activityTime = 0;
     let config = { ...initialConfig };
-    let scene = createScene(config.count, config.text, config.species, config.whaleSize);
+    let scene = createScene(config.count, config.text, config.species, config.whaleSize, seed);
     scene.diveSeed = seed;
     const water = createWaterField();
     const atmosphere = createAtmosphereField({ seed });
+    const rain = createRainField({ seed });
+    const activity = createActivityTracker();
     return {
       get scene() {
         return scene;
       },
       water,
       atmosphere,
+      rain,
       update(next) {
         if (disposed) return false;
         const rebuild = sceneConfigChanged(config, next);
         if (rebuild) {
           const previous = scene;
-          scene = createScene(next.count, next.text, next.species, next.whaleSize);
+          scene = createScene(next.count, next.text, next.species, next.whaleSize, previous.colorSeed);
           scene.diveSeed = seed;
           resizeScene(
             scene,
@@ -3001,12 +3575,19 @@
         }
         if (rebuild || config.ripples !== next.ripples) resetWaterField(water);
         config = { ...next };
+        activity.apply(scene.whales, activityTime, config.activity);
         return rebuild;
+      },
+      setActivity(snapshot) {
+        if (disposed) return;
+        activity.update(snapshot);
+        activity.apply(scene.whales, activityTime, config.activity);
       },
       resize(width, height) {
         if (disposed) return;
         resizeScene(scene, width, height);
         resizeAtmosphereField(atmosphere, width, height);
+        resizeRainField(rain, width, height);
         if (width > 0 && height > 0) resetWaterField(water);
       },
       setObstacles(obstacles) {
@@ -3015,15 +3596,24 @@
       advance(delta2) {
         if (disposed) return 0;
         const before = scene.time;
+        activity.apply(scene.whales, activityTime, config.activity);
         stepScene(scene, delta2, config.speed);
         const elapsed = scene.time - before;
+        activityTime += elapsed;
         if (config.ripples) stepWater(water, scene, elapsed);
         stepAtmosphere(atmosphere, elapsed);
+        stepRain(rain, elapsed, {
+          enabled: config.rain,
+          intensity: config.rainIntensity,
+          wind: config.wind,
+          atmosphere
+        });
         return elapsed;
       },
       dispose() {
         disposed = true;
         resetWaterField(water);
+        resetRainField(rain);
         scene = null;
       }
     };
@@ -3408,7 +3998,7 @@
     const events = ["load", "loadedmetadata", "error"];
     let resizeObserver = new ResizeObserver(invalidate);
     const mutationObserver = new MutationObserver((records) => {
-      if (!records || records.some((record) => record.target !== canvas)) invalidate();
+      if (!records || records.some((record2) => record2.target !== canvas)) invalidate();
     });
     function detachRoot() {
       for (const type of events) root?.removeEventListener?.(type, invalidate, true);
@@ -3461,6 +4051,256 @@
     target.clip();
     target.clearRect(0, 0, width, height);
     target.restore();
+  }
+
+  // src/reading-protection.js
+  function readingEffectTone(effect = "frost", strength = 0.55, options = {}) {
+    const base = glassContentTone(strength, options);
+    if (effect === "glow" || options.reducedTransparency) return { ...base, mode: "glow" };
+    const frost = effect !== "blur";
+    return {
+      ...base,
+      mode: frost ? "frost" : "blur",
+      blur: frost ? 16 + 6 * base.strength : 8 + 4 * base.strength,
+      mist: frost ? 0.24 : 0.3,
+      veil: frost ? 0.025 : 0
+    };
+  }
+  var MAX_NODES = 6e3;
+  var MAX_LINES = 1200;
+  var SKIP_TEXT = 'script,style,noscript,svg,[aria-hidden="true"]';
+  var intersects = (a, b) => a && b && a.left < b.left + b.width && a.left + a.width > b.left && a.top < b.top + b.height && a.top + a.height > b.top;
+  var boundsOf = (element) => {
+    try {
+      return element?.getBoundingClientRect();
+    } catch {
+      return null;
+    }
+  };
+  var intersect = (a, b) => {
+    if (!intersects(a, b)) return null;
+    const left = Math.max(a.left, b.left), top = Math.max(a.top, b.top);
+    return {
+      left,
+      top,
+      width: Math.min(a.left + a.width, b.left + b.width) - left,
+      height: Math.min(a.top + a.height, b.top + b.height) - top
+    };
+  };
+  function collectRightbarSurfaces(canvasRect) {
+    const surfaces = [];
+    for (const root of document.querySelectorAll("[data-rightbar-col]")) {
+      const queue = [...root.children || []];
+      if (!queue.length) queue.push(root);
+      for (let i = 0; i < queue.length && i < 80; i++) {
+        const element = queue[i], rect = boundsOf(element);
+        if (element.hidden || element.isConnected === false || element.getAttribute?.("aria-hidden") === "true") continue;
+        const style = getComputedStyle(element);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+        if (element.hasAttribute?.("data-sidebar-right-panel") && !element.hasAttribute("data-sidebar-right-open")) {
+          for (const floating of element.querySelectorAll("[data-dockkit-float]")) queue.push(floating);
+          continue;
+        }
+        if (rect?.width >= 160 && rect?.height >= 120 && intersects(rect, canvasRect)) {
+          const radius = Math.max(0, parseFloat(style.borderTopLeftRadius || style.borderRadius) || 0);
+          surfaces.push({ element, left: rect.left, top: rect.top, width: rect.width, height: rect.height, radius });
+          continue;
+        }
+        for (const child of element.children || []) queue.push(child);
+      }
+    }
+    return surfaces;
+  }
+  function measureReadingText(roots, canvasRect) {
+    if (typeof document.createTreeWalker !== "function" || typeof document.createRange !== "function") return [];
+    const groups = [], seen = /* @__PURE__ */ new Set(), styles = /* @__PURE__ */ new Map();
+    const styleOf = (element) => {
+      if (!styles.has(element)) styles.set(element, getComputedStyle(element));
+      return styles.get(element);
+    };
+    for (const root of roots) {
+      if (!root || seen.has(root)) continue;
+      seen.add(root);
+      const clip = intersect(boundsOf(root), canvasRect);
+      if (!clip) continue;
+      const regions = [];
+      const walker = document.createTreeWalker(root, 4);
+      const range = document.createRange();
+      let visited = 0, overflow = false, text;
+      while (text = walker.nextNode()) {
+        if (++visited > MAX_NODES || regions.length >= MAX_LINES) {
+          overflow = true;
+          break;
+        }
+        if (!text.textContent?.trim()) continue;
+        const parent = text.parentElement;
+        if (!parent || parent.closest?.(SKIP_TEXT) || !intersects(boundsOf(parent), clip)) continue;
+        let visible = true, textClip = clip;
+        for (let ancestor = parent; ancestor; ancestor = ancestor.parentElement) {
+          const style = styleOf(ancestor);
+          if (ancestor.hidden || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || Number(style.opacity) === 0) {
+            visible = false;
+            break;
+          }
+          const x = /hidden|clip|auto|scroll/.test(style.overflowX || style.overflow || "");
+          const y = /hidden|clip|auto|scroll/.test(style.overflowY || style.overflow || "");
+          if (x || y) {
+            const rect = boundsOf(ancestor);
+            if (rect) textClip = intersect(textClip, {
+              left: x ? rect.left : textClip.left,
+              top: y ? rect.top : textClip.top,
+              width: x ? rect.width : textClip.width,
+              height: y ? rect.height : textClip.height
+            });
+            if (!textClip) {
+              visible = false;
+              break;
+            }
+          }
+          if (ancestor === root) break;
+        }
+        if (!visible) continue;
+        range.selectNodeContents(text);
+        for (const line of range.getClientRects()) {
+          const rect = intersect({
+            left: line.left - 3,
+            top: line.top - 2,
+            width: line.width + 6,
+            height: line.height + 4
+          }, textClip);
+          if (rect && line.width > 0 && line.height > 0) regions.push({
+            x: rect.left - canvasRect.left,
+            y: rect.top - canvasRect.top,
+            width: rect.width,
+            height: rect.height,
+            radius: 3
+          });
+          if (regions.length >= MAX_LINES) {
+            overflow = true;
+            break;
+          }
+        }
+        if (overflow) break;
+      }
+      for (const input of root.querySelectorAll?.('input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),textarea') || []) {
+        const rect = intersect(boundsOf(input), clip);
+        const style = styleOf(input);
+        if (rect && style.visibility !== "hidden" && Number(style.opacity) !== 0) regions.push({
+          x: rect.left - canvasRect.left,
+          y: rect.top - canvasRect.top,
+          width: rect.width,
+          height: rect.height,
+          radius: 4
+        });
+      }
+      const localClip = {
+        x: clip.left - canvasRect.left,
+        y: clip.top - canvasRect.top,
+        width: clip.width,
+        height: clip.height,
+        radius: 0
+      };
+      groups.push({ clip: localClip, regions: overflow ? [localClip] : regions });
+    }
+    return groups;
+  }
+  function createReadingProtection() {
+    let mask = null, key = "", replacement = null, replacementInk = null;
+    function setRegions(groups, canvasRect, effect = "glow") {
+      const nextKey = JSON.stringify([canvasRect.width, canvasRect.height, effect, groups]);
+      if (nextKey === key) return;
+      key = nextKey;
+      if (!groups.some((group) => group.regions.length)) {
+        mask = null;
+        return;
+      }
+      mask ??= document.createElement("canvas");
+      mask.width = Math.max(1, Math.ceil(canvasRect.width));
+      mask.height = Math.max(1, Math.ceil(canvasRect.height));
+      const target = mask.getContext("2d");
+      if (!target) {
+        mask = null;
+        return;
+      }
+      const through = effect !== "glow", padding = through ? 5 : 0;
+      target.fillStyle = "#000";
+      target.shadowColor = "#000";
+      target.shadowBlur = through ? 12 : 8;
+      for (const { clip, regions } of groups) {
+        if (!regions.length) continue;
+        target.save();
+        target.beginPath();
+        glassRoundedSubpath(target, clip);
+        target.clip();
+        target.beginPath();
+        for (const region of regions) glassRoundedSubpath(target, {
+          x: region.x - padding,
+          y: region.y - padding,
+          width: region.width + padding * 2,
+          height: region.height + padding * 2,
+          radius: through ? 7 : region.radius
+        });
+        target.fill();
+        target.restore();
+      }
+    }
+    return {
+      get active() {
+        return Boolean(mask);
+      },
+      measure(roots, canvasRect, effect = "glow") {
+        setRegions(measureReadingText(roots, canvasRect), canvasRect, effect);
+      },
+      setRegions,
+      paint(target, width, height, { material = { mode: "glow" }, source = null, sourceRect = null, underlay = null } = {}) {
+        if (!mask) return;
+        target.save();
+        target.globalAlpha = 1;
+        target.globalCompositeOperation = "destination-out";
+        target.drawImage(mask, 0, 0, width, height);
+        target.restore();
+        const through = material.mode !== "glow" && source && sourceRect;
+        if (!through && !underlay) return;
+        if (!replacement) {
+          replacement = document.createElement("canvas");
+          replacementInk = replacement.getContext("2d");
+        }
+        if (!replacementInk) return;
+        if (replacement.width !== mask.width || replacement.height !== mask.height) {
+          replacement.width = mask.width;
+          replacement.height = mask.height;
+        }
+        const ink = replacementInk;
+        ink.clearRect(0, 0, replacement.width, replacement.height);
+        ink.save();
+        if (underlay) {
+          ink.fillStyle = underlay;
+          ink.fillRect(0, 0, width, height);
+        }
+        if (through) {
+          ink.imageSmoothingEnabled = true;
+          ink.imageSmoothingQuality = "high";
+          ink.globalAlpha = material.mist;
+          ink.drawImage(source, ...sourceRect, 0, 0, width, height);
+          ink.globalAlpha = 1;
+          if (material.veil) {
+            ink.fillStyle = `rgba(${material.tint}, ${material.veil})`;
+            ink.fillRect(0, 0, width, height);
+          }
+        }
+        ink.globalCompositeOperation = "destination-in";
+        ink.drawImage(mask, 0, 0, width, height);
+        ink.restore();
+        target.save();
+        target.globalAlpha = 1;
+        target.drawImage(replacement, 0, 0, width, height);
+        target.restore();
+      },
+      dispose() {
+        mask = replacement = replacementInk = null;
+        key = "";
+      }
+    };
   }
 
   // src/engine.js
@@ -3523,9 +4363,9 @@
   var DEMO_LINE_HEIGHT = 7;
   var METRIC_KEYS = Object.freeze(["glyphSize", "fillMode", "renderStyle"]);
   var PALETTE_KEYS = Object.freeze(["color"]);
-  var GLASS_KEYS = Object.freeze(["glass", "glassStrength"]);
+  var GLASS_KEYS = Object.freeze(["glass", "glassStrength", "readingEffect"]);
   var COMPOSER_KEYS = Object.freeze(["composerGlass", "composerAvoid"]);
-  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds"]);
+  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds", "rain", "rainIntensity", "activity"]);
   var anyChanged = (keys, previous, next) => keys.some((key) => previous[key] !== next[key]);
   var noChange = (changes) => !changes.scene && !changes.metrics && !changes.palette && !changes.glass && !changes.composer && !changes.live;
   function diffWhaleConfig(previous, next) {
@@ -3559,11 +4399,35 @@
     return best;
   }
   function colorAlpha(value) {
-    const match = String(value || "").match(/^rgba?\(([^)]+)\)$/i);
+    const text = String(value || "").trim();
+    const modern = text.match(/^(?:color|lab|lch|oklab|oklch|hwb|hsla?)\(([^)]+)\)$/i);
+    if (modern) {
+      const alpha = modern[1].split("/")[1]?.trim() ?? "1";
+      const number = parseFloat(alpha);
+      return Number.isFinite(number) ? Math.max(0, Math.min(1, alpha.endsWith("%") ? number / 100 : number)) : null;
+    }
+    const match = text.match(/^rgba?\(([^)]+)\)$/i);
     if (!match) return null;
     const parts = match[1].split(/[,/ ]+/).filter(Boolean).map(Number);
     if (parts.length < 3 || !parts.slice(0, 3).every(Number.isFinite)) return null;
     return parts.length >= 4 && Number.isFinite(parts[3]) ? parts[3] : 1;
+  }
+  function isContentMaterial(style) {
+    if (!style || style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
+    const alpha = colorAlpha(style.backgroundColor);
+    if (alpha >= CONTENT_MIN_ALPHA) return true;
+    return alpha > 0 && [style.backdropFilter, style.webkitBackdropFilter].some((value) => typeof value === "string" && Number(value.match(/\bblur\(\s*([\d.]+)px\s*\)/i)?.[1]) > 0);
+  }
+  function hasContentMaterial(element, style, readStyle) {
+    if (Number(style.opacity) === 0) return false;
+    if (isContentMaterial(style)) return true;
+    for (const pseudo of ["::before", "::after"]) {
+      const material = readStyle(element, pseudo);
+      if (!material || !material.content || material.content === "none" || material.content === "normal" || material.position !== "absolute") continue;
+      if (!["top", "right", "bottom", "left"].every((side) => parseFloat(material[side]) === 0)) continue;
+      if (isContentMaterial(material)) return true;
+    }
+    return false;
   }
   function cornerRadius(style) {
     const values = [
@@ -3590,6 +4454,15 @@
     if (scroller) {
       const queue = [scroller.element];
       let visited = 0, styled = 0;
+      const readStyle = (element, pseudo) => {
+        if (styled >= CONTENT_MAX_SCAN) return null;
+        styled++;
+        try {
+          return getComputedStyle(element, pseudo);
+        } catch {
+          return null;
+        }
+      };
       while (queue.length && visited < CONTENT_MAX_VISIT && styled < CONTENT_MAX_SCAN) {
         const element = queue.shift();
         visited++;
@@ -3630,20 +4503,13 @@
         if (clippedWidth >= canvasRect.width * CONTENT_MAX_WIDTH_RATIO && clippedHeight >= canvasRect.height * CONTENT_MAX_HEIGHT_RATIO) continue;
         const area = rect.width * rect.height;
         if (!(area >= CONTENT_MIN_AREA) || rect.width < 32 || rect.height < 24) continue;
-        let style;
-        try {
-          style = getComputedStyle(element);
-          styled++;
-        } catch {
-          continue;
-        }
-        if (style.position === "fixed") continue;
+        const style = readStyle(element);
+        if (!style || style.position === "fixed") continue;
         if (style.visibility === "hidden" || style.display === "none") continue;
-        const alpha = colorAlpha(style.backgroundColor);
-        if (alpha === null || alpha < CONTENT_MIN_ALPHA) continue;
         const radius = cornerRadius(style);
         if (!(radius > 0)) continue;
         if (rect.width < 40 && !(rect.height >= 36 && radius >= 16)) continue;
+        if (!hasContentMaterial(element, style, readStyle)) continue;
         const width = Math.max(40, rect.width);
         const left = rect.left - (width - rect.width) / 2;
         boxes.push({ left, top: rect.top, width, height: rect.height, radius });
@@ -3668,16 +4534,18 @@
   function createWhaleLayer(canvas, initialConfig, options = {}) {
     const ink = canvas.getContext("2d");
     if (!ink) return { update() {
+    }, setActivity() {
     }, dispose() {
     } };
     const config = normalizeLayerConfig(initialConfig);
     const demo = options.demoCard || null;
+    const readingProtection = createReadingProtection();
     const scenerySeed = Math.floor(Math.random() * 4294967296) >>> 0;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reducedTransparency = window.matchMedia("(prefers-reduced-transparency: reduce)");
     const simulation = createWhaleSimulation(config, { seed: scenerySeed });
     let scene = simulation.scene;
-    const { water, atmosphere } = simulation;
+    const { water, atmosphere, rain } = simulation;
     let sceneryPalette = createInkPalette(config.color);
     let poses = scene.whales.map(() => ({}));
     let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
@@ -3689,8 +4557,11 @@
     const viewport = options.viewport;
     let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
     let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
-    let panes = [], tone = null, readingLayout = null, foreground = null;
+    let panes = [], tone = null, readingLayout = null, foreground = null, sidebarForegrounds = [];
     let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+    let readingTextDirty = true, readingRoots = [], scrolling = false, scrollTimer = 0;
+    const originalOpacity = canvas.style?.opacity ?? "", originalTransition = canvas.style?.transition ?? "";
+    const SCROLL_IDLE_MS = 140;
     const spout = attachSpout(canvas, () => ({
       enabled: config.spout,
       reduced: reduced.matches,
@@ -3766,11 +4637,21 @@
         clouds: config.clouds,
         dark
       });
+      const rainScenery = {
+        width,
+        height,
+        palette: sceneryPalette,
+        dark,
+        reduced: reduced.matches,
+        opacity: config.opacity * (reduced.matches ? config.rain ? config.rainIntensity : 0 : 1)
+      };
+      drawRain(seaInk, rain, { ...rainScenery, phase: "surface" });
       if (config.renderStyle !== "cells") paintSeaSilhouette(seaInk, material);
       const savedQuietCenter = config.quietCenter;
       config.quietCenter = false;
       painter.paint(seaInk, grid, poses, width, height, 1, null, dark);
       config.quietCenter = savedQuietCenter;
+      drawRain(seaInk, rain, { ...rainScenery, phase: "fall" });
       blurredSeaInk.setTransform(1, 0, 0, 1, 0, 0);
       blurredSeaInk.clearRect(0, 0, blurredSea.width, blurredSea.height);
       blurredSeaInk.filter = blurSupport ? `blur(${Math.max(0.4, seaBlurRadius).toFixed(2)}px)` : "none";
@@ -3820,30 +4701,45 @@
       tone = null;
       readingLayout = null;
       foreground = null;
+      sidebarForegrounds = [];
       if (!width || !height || !scene || disposed) return;
       if (demo) {
         applyReadingSnapshot(demoReadingSnapshot(demo, width, height));
+        const card = demoCardRect();
+        const groups = card && config.glass ? [{
+          clip: { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius },
+          regions: demoTextRegions(card)
+        }] : [];
+        readingProtection.setRegions(groups, { width, height }, config.readingEffect);
         return;
       }
       const canvasRect = rectOf2(canvas);
       if (!canvasRect) return;
       const scroller = pick(SCROLL_SELECTOR, canvasRect)?.element;
+      const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
+      const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
+      const sidebars = collectRightbarSurfaces(canvasRect);
+      sidebarForegrounds = sidebars.map((panel) => measureForeground(panel.element, canvasRect, canvas));
+      readingRoots = [scroller, composer?.element, ...sidebars.map((panel) => panel.element)].filter(Boolean);
+      if (readingTextDirty) {
+        readingProtection.measure(readingRoots, canvasRect, config.readingEffect);
+        readingTextDirty = false;
+      }
       foreground = measureForeground(scroller, canvasRect, canvas);
       foregroundObserver?.update(scroller, foreground.regions);
       if (!config.glass && !config.composerAvoid) {
-        applyReadingSnapshot({ canvas: { left: 0, top: 0, width, height }, boxes: [] });
+        applyReadingSnapshot({ canvas: canvasRect, boxes: [] });
         return;
       }
-      const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
-      const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
       applyReadingSnapshot({
         canvas: canvasRect,
         boxes: config.glass ? collectContentBoxes(canvasRect, cardHit) : [],
+        sidebars: config.glass ? sidebars : [],
         composer: composer ? composer.rect : null
       });
     }
     function draw() {
-      if (!width || !height || !scene || !grid) return;
+      if (scrolling || !width || !height || !scene || !grid) return;
       if (performance.now() - measuredAt > MEASURE_INTERVAL) measure();
       if (viewport) {
         ink.setTransform(1, 0, 0, 1, 0, 0);
@@ -3880,20 +4776,49 @@
         dark: document.body.hasAttribute("data-ds-dark-theme")
       });
       if (config.ripples) drawWater(ink, water, scenery);
+      const rainScenery = {
+        ...scenery,
+        dark: document.body.hasAttribute("data-ds-dark-theme"),
+        reduced: reduced.matches,
+        opacity: config.opacity * (reduced.matches ? config.rain ? config.rainIntensity : 0 : 1)
+      };
+      drawRain(ink, rain, { ...rainScenery, phase: "surface" });
       paintGlyphs(ink, fade);
+      drawRain(ink, rain, { ...rainScenery, phase: "fall" });
       spout.paint(ink, fade);
+      if (config.activity) drawActivityBadges(ink, scene.whales, width, height, {
+        dark: document.body.hasAttribute("data-ds-dark-theme"),
+        opacity: config.opacity,
+        fade: sceneryFade
+      });
       ink.restore();
+      const readingMaterial = readingEffectTone(config.readingEffect, config.glassStrength, {
+        dark: document.body.hasAttribute("data-ds-dark-theme"),
+        reducedTransparency: reducedTransparency.matches
+      });
+      const seaReady = prepareBlurredSea(readingMaterial);
+      const readingOptions = {
+        material: readingMaterial,
+        source: seaReady ? blurredSea : null,
+        sourceRect: [seaPad, seaPad, width / seaFactor, height / seaFactor]
+      };
       if (demo && (config.glass || config.composerAvoid)) {
         const card = demoCardRect();
         if (card) {
           paintDemoCardBody(card);
-          paintGlassMaterial();
+          paintGlassMaterial(seaReady);
+          readingProtection.paint(ink, width, height, {
+            ...readingOptions,
+            underlay: document.body.hasAttribute("data-ds-dark-theme") ? DEMO_CARD_BODY_DARK : DEMO_CARD_BODY_LIGHT
+          });
           paintDemoCardText(card);
         }
         return;
       }
-      paintGlassMaterial();
+      paintGlassMaterial(seaReady);
+      readingProtection.paint(ink, width, height, readingOptions);
       clearForeground(ink, foreground, width, height);
+      for (const media of sidebarForegrounds) clearForeground(ink, media, width, height);
     }
     function paintPaneSeaUnion(list, material) {
       if (!list.length) return;
@@ -3932,39 +4857,69 @@
       ink.fillRect(panel.x, panel.y + panel.height - material.shadeHeight, panel.width, material.shadeHeight);
       ink.restore();
     }
-    function paintGlassMaterial() {
-      if (!tone || tone.mode !== "frost" || !panes.length) return;
-      if (!seaBuffers(tone)) return;
-      paintBlurredSea(tone);
-      paintPaneSeaUnion(panes, tone);
-      for (const pane of panes) paintPaneSurface(pane, tone);
+    function prepareBlurredSea(readingMaterial) {
+      const materials = [];
+      if (tone?.mode === "frost" && panes.length) {
+        materials.push(tone);
+        if (readingLayout.sidebarPanes.length) materials.push(readingLayout.sidebarTone);
+      }
+      if (readingProtection.active && readingMaterial.mode !== "glow") materials.push(readingMaterial);
+      if (!materials.length) return false;
+      const shared = { ...materials[0], blur: Math.max(...materials.map((material) => material.blur)) };
+      if (!seaBuffers(shared)) return false;
+      paintBlurredSea(shared);
+      return true;
+    }
+    function paintGlassMaterial(seaReady) {
+      if (!seaReady || !tone || tone.mode !== "frost" || !panes.length) return;
+      const { contentPanes, sidebarPanes, sidebarTone } = readingLayout;
+      ink.save();
+      glassClipExterior(ink, sidebarPanes, width, height);
+      paintPaneSeaUnion(contentPanes, tone);
+      for (const pane of contentPanes) paintPaneSurface(pane, tone);
+      ink.restore();
+      paintPaneSeaUnion(sidebarPanes, sidebarTone);
+      for (const pane of sidebarPanes) {
+        paintPaneSurface(pane, sidebarTone);
+        ink.save();
+        glassRoundedPath(ink, pane);
+        ink.clip();
+        const edge = ink.createLinearGradient(pane.x, 0, pane.x + 18, 0);
+        edge.addColorStop(0, document.body.hasAttribute("data-ds-dark-theme") ? "rgba(205, 222, 245, 0.12)" : "rgba(255, 255, 255, 0.34)");
+        edge.addColorStop(1, "rgba(255, 255, 255, 0)");
+        ink.fillStyle = edge;
+        ink.fillRect(pane.x, pane.y, Math.min(18, pane.width), pane.height);
+        ink.restore();
+      }
     }
     function paintDemoCardBody(card) {
       glassRoundedPath(ink, { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius });
       ink.fillStyle = document.body.hasAttribute("data-ds-dark-theme") ? DEMO_CARD_BODY_DARK : DEMO_CARD_BODY_LIGHT;
       ink.fill();
     }
-    function paintDemoCardText(card) {
+    function demoTextRegions(card) {
       const inner = Math.max(0, card.height - DEMO_LINE_INSET * 2);
       const count = Math.min(4, Math.floor(inner / DEMO_LINE_HEIGHT));
-      if (count < 1 || !(card.width > DEMO_LINE_INSET * 2 + 2)) return;
+      if (count < 1 || !(card.width > DEMO_LINE_INSET * 2 + 2)) return [];
       const step = count > 1 ? (inner - DEMO_LINE_HEIGHT) / (count - 1) : 0;
+      return Array.from({ length: count }, (_, line) => ({
+        x: card.left + DEMO_LINE_INSET,
+        y: card.top + DEMO_LINE_INSET + step * line,
+        width: (card.width - DEMO_LINE_INSET * 2) * (line === count - 1 ? 0.7 : 1),
+        height: DEMO_LINE_HEIGHT,
+        radius: DEMO_LINE_HEIGHT / 2
+      }));
+    }
+    function paintDemoCardText(card) {
       ink.fillStyle = document.body.hasAttribute("data-ds-dark-theme") ? DEMO_LINE_DARK : DEMO_LINE_LIGHT;
-      for (let line = 0; line < count; line++) {
-        const width2 = (card.width - DEMO_LINE_INSET * 2) * (line === count - 1 ? 0.7 : 1);
-        glassRoundedPath(ink, {
-          x: card.left + DEMO_LINE_INSET,
-          y: card.top + DEMO_LINE_INSET + step * line,
-          width: width2,
-          height: DEMO_LINE_HEIGHT,
-          radius: DEMO_LINE_HEIGHT / 2
-        });
+      for (const line of demoTextRegions(card)) {
+        glassRoundedPath(ink, line);
         ink.fill();
       }
     }
     function frame(now) {
       raf = 0;
-      if (disposed || document.hidden || reduced.matches || !width || !height || !scene) return;
+      if (disposed || scrolling || document.hidden || reduced.matches || !width || !height || !scene) return;
       if (previous !== null) {
         simulation.advance(Math.min(0.1, (now - previous) / 1e3));
       }
@@ -3981,7 +4936,8 @@
       previous = null;
       lastPaint = -Infinity;
       measuredAt = -Infinity;
-      if (!disposed && !document.hidden && width && height) {
+      readingTextDirty = true;
+      if (!disposed && !scrolling && !document.hidden && width && height) {
         draw();
         if (!reduced.matches) raf = requestAnimationFrame(frame);
       }
@@ -4008,24 +4964,52 @@
       }
       if (changes.glass || changes.composer) {
         measuredAt = -Infinity;
-        if (width && height) measure();
+        readingTextDirty = true;
+        if (!scrolling && width && height) measure();
       }
       if (changes.palette) sceneryPalette = createInkPalette(config.color);
       if (viewport) resize();
       lastPaint = -Infinity;
-      if (!document.hidden && width && height) {
+      if (!scrolling && !document.hidden && width && height) {
         if (!reduced.matches && !raf) raf = requestAnimationFrame(frame);
         draw();
         lastPaint = performance.now();
       }
     }
-    function onScroll() {
+    function finishScroll() {
+      scrollTimer = 0;
+      if (disposed) return;
+      scrolling = false;
+      sync();
+      if (canvas.style) {
+        canvas.style.transition = reduced.matches ? "none" : "opacity 120ms ease-out";
+        canvas.style.opacity = originalOpacity;
+      }
+    }
+    function onScroll(event) {
+      if (demo || disposed || document.hidden || event?.ctrlKey) return;
+      const target = event?.target;
+      if (target && target !== document && target !== document.body && target !== document.documentElement && !readingRoots.some((root) => root === target || root.contains?.(target))) return;
       measuredAt = -Infinity;
-      if (reduced.matches) sync();
+      readingTextDirty = true;
+      if (!scrolling) {
+        scrolling = true;
+        cancelAnimationFrame(raf);
+        cancelAnimationFrame(foregroundRaf);
+        raf = foregroundRaf = 0;
+        previous = null;
+        if (canvas.style) {
+          canvas.style.transition = "none";
+          canvas.style.opacity = "0";
+        }
+      }
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(finishScroll, SCROLL_IDLE_MS);
     }
     function onForegroundChange() {
       measuredAt = -Infinity;
-      if (disposed || document.hidden || !reduced.matches || foregroundRaf) return;
+      readingTextDirty = true;
+      if (disposed || scrolling || document.hidden || !reduced.matches || foregroundRaf) return;
       foregroundRaf = requestAnimationFrame(() => {
         foregroundRaf = 0;
         if (!disposed && !document.hidden) {
@@ -4063,13 +5047,28 @@
     const observer = new ResizeObserver(resize);
     const themeObserver = new MutationObserver(sync);
     const foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+    const readingObserver = demo ? null : new MutationObserver((records) => {
+      if (!records || records.some((record2) => record2.target !== canvas)) onForegroundChange();
+    });
+    readingObserver?.observe(document.body, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "hidden"]
+    });
     observer.observe(canvas);
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
     document.addEventListener("visibilitychange", sync);
     reduced.addEventListener("change", sync);
     reducedTransparency.addEventListener("change", sync);
     window.addEventListener("resize", resize);
-    document.addEventListener("scroll", onScroll, true);
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    document.addEventListener("wheel", onScroll, { capture: true, passive: true });
+    document.addEventListener("touchmove", onScroll, { capture: true, passive: true });
+    document.fonts?.addEventListener("loadingdone", onForegroundChange);
+    document.addEventListener("transitionend", onForegroundChange, true);
+    document.addEventListener("animationend", onForegroundChange, true);
     resize();
     function dispose() {
       spout.detach();
@@ -4081,12 +5080,26 @@
       raf = 0;
       observer.disconnect();
       foregroundObserver?.dispose();
+      readingObserver?.disconnect();
+      readingProtection?.dispose();
       themeObserver.disconnect();
       document.removeEventListener("visibilitychange", sync);
       reduced.removeEventListener("change", sync);
       reducedTransparency.removeEventListener("change", sync);
       window.removeEventListener("resize", resize);
       document.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("wheel", onScroll, true);
+      document.removeEventListener("touchmove", onScroll, true);
+      document.fonts?.removeEventListener("loadingdone", onForegroundChange);
+      document.removeEventListener("transitionend", onForegroundChange, true);
+      document.removeEventListener("animationend", onForegroundChange, true);
+      clearTimeout(scrollTimer);
+      scrollTimer = 0;
+      readingRoots = [];
+      if (canvas.style) {
+        canvas.style.opacity = originalOpacity;
+        canvas.style.transition = originalTransition;
+      }
       grid = null;
       scene = previous = null;
       painter = null;
@@ -4099,9 +5112,15 @@
       tone = null;
       readingLayout = null;
       foreground = null;
+      sidebarForegrounds = [];
       canvas.width = canvas.height = 1;
     }
-    return { update, dispose };
+    function setActivity(snapshot) {
+      if (disposed) return;
+      simulation.setActivity(snapshot);
+      if (!document.hidden && width && height) draw();
+    }
+    return { update, setActivity, dispose };
   }
 
   // src/settings.js
@@ -4132,12 +5151,16 @@
     ctx.effect(() => ctx.locale.register("asciiWhales", "zh", dictionaries.zh));
     const t = ctx.locale.bind("asciiWhales");
     const useForm = () => React.useSyncExternalStore(formSubscribe, formSnapshot, formSnapshot);
-    function Canvas({ config }) {
+    const jobs = createJobsBridge();
+    ctx.inject?.(["jobs"], (child) => child.effect(() => jobs.attach(child.jobs)));
+    function Canvas({ config, activity = EMPTY_ACTIVITY }) {
       const ref = React.useRef(null);
       const configRef = React.useRef(config);
+      const activityRef = React.useRef(activity);
       const layer = React.useRef(null);
       React.useEffect(() => {
         const instance = createWhaleLayer(ref.current, configRef.current);
+        instance.setActivity(activityRef.current);
         layer.current = instance;
         return () => {
           instance.dispose();
@@ -4148,6 +5171,10 @@
         configRef.current = config;
         layer.current?.update(config);
       }, [config]);
+      React.useEffect(() => {
+        activityRef.current = activity;
+        layer.current?.setActivity(activity);
+      }, [activity]);
       return h("canvas", { ref, "aria-hidden": true, style: { display: "block", width: "100%", height: "100%" } });
     }
     function LivePreview({ draft }) {
@@ -4205,7 +5232,19 @@
       const snapshot = useForm();
       const signature = snapshot.status === "ready" ? configSignature(snapshot.value) : "";
       const config = React.useMemo(() => normalizeConfig(snapshot.value ?? {}), [signature]);
-      if (snapshot.status !== "ready" || !config.enabled || panelId !== null && panelId !== "conversation") return null;
+      const list = props.useSessions?.((state) => state);
+      const statuses = props.useSessionStatus?.((state) => state);
+      const jobSnapshot = React.useSyncExternalStore(jobs.subscribe, jobs.getSnapshot, jobs.getSnapshot);
+      const nextActivity = React.useMemo(() => readActivitySnapshot(list, statuses, jobSnapshot), [list, statuses, jobSnapshot]);
+      const activityKey = JSON.stringify(nextActivity);
+      const activity = React.useMemo(() => nextActivity, [activityKey]);
+      const scope = currentSessionId(list);
+      const visible = snapshot.status === "ready" && config.enabled && (panelId === null || panelId === "conversation");
+      React.useEffect(() => {
+        jobs.watch(visible && config.activity ? scope : null);
+        return () => jobs.watch(null);
+      }, [visible, config.activity, scope]);
+      if (!visible) return null;
       return h("div", { "aria-hidden": true, style: {
         position: "absolute",
         left: "var(--dsh-windows-sidebar-width, var(--ascii-whale-inset, 280px))",
@@ -4215,7 +5254,7 @@
         "--ascii-whale-inset": `${config.leftInset}px`,
         pointerEvents: "none",
         overflow: "hidden"
-      } }, h(Canvas, { config }));
+      } }, h(Canvas, { config, activity }));
     }
     function Settings() {
       const snapshot = useForm();
@@ -4267,7 +5306,7 @@
             !snapshot.writable && h("p", { role: "status" }, t("readOnly")),
             ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
               const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
-              const off = disabled || key === "text" && editor.draft.fillMode === "ascii";
+              const off = disabled || key === "text" && editor.draft.fillMode === "ascii" || key === "rainIntensity" && !editor.draft.rain;
               const common = { id, disabled: off, "aria-describedby": hint };
               let control;
               if (field.kind === "boolean") {
@@ -4325,7 +5364,7 @@
                   h(
                     "div",
                     { className: "aw-number-head" },
-                    h("output", { htmlFor: id, className: "aw-readout" }, readout(field, value))
+                    h("output", { htmlFor: id, className: "aw-readout" }, key === "rainIntensity" ? `${Math.round(number * 100)}%` : readout(field, value))
                   ),
                   h("input", {
                     ...common,
@@ -4335,6 +5374,7 @@
                     max: field.max,
                     step: field.step,
                     value: number,
+                    "aria-valuetext": key === "rainIntensity" ? `${Math.round(number * 100)}%` : void 0,
                     style: { "--aw-pct": trackFill((number - field.min) / (field.max - field.min || 1)) },
                     onChange: (event) => update(key, Number(event.target.value))
                   }),
@@ -4479,17 +5519,25 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       glyphSizeHint: "4 to 16. Default 11. Characters occupy separate, fixed grid cells.",
       whaleSize: "Whale size",
       whaleSizeHint: "0.55 to 1.55. Default 1. Changes body length only, not swimming speed; larger whales cover more cells.",
-      color: "Ocean palette",
-      colorHint: "Choose the ocean palette for both glyphs and colored cells.",
+      color: "Whale colors",
+      colorHint: "Choose a shared palette, or give each whale its own stable random color. Applies to glyphs and colored cells.",
       ocean: "Ocean",
       azure: "Azure",
       indigo: "Indigo",
+      rainbow: "Random color per whale",
+      activity: "Follow task activity",
+      activityHint: "Whales swim more actively while the current session and its subagents work. They slow down and show ! when waiting for a question, approval or plan review. A finished background task shows ✓; a failed one shows ×. Turn off for decoration only.",
       quietCenter: "Quieter reading area",
       quietCenterHint: "Fades whale bodies in the center. The bottom input area always fades out.",
       leftInset: "Browser left inset",
       leftInsetHint: "0 to 500 pixels. Default 280. Desktop follows the sidebar automatically. In a browser, adjust this to match its width.",
+      readingEffect: "Text edge effect",
+      readingEffectHint: "Glow clears whales around text. Soft blur keeps a translucent silhouette. Frosted glass adds a light mist while retaining the whale's shape. Defaults to frosted glass; independent of the content-box glass switch.",
+      glow: "Glow",
+      blur: "Soft blur",
+      frost: "Frosted glass",
       glass: "Frosted content boxes",
-      glassHint: "Every content card and the input box gets frosted: whales show through only as blurred shapes while the text stays crisp. On by default; use either this or input-box avoidance, not both.",
+      glassHint: "Frosts content cards, the input box and the right sidebar, with quieter whale silhouettes in the sidebar. Text uses the selected edge effect even when this switch is off. On by default; mutually exclusive with input-box avoidance.",
       glassStrength: "Glass strength",
       glassStrengthHint: "0 to 1. Default 0.55. Higher values make the glass thicker and blurrier, so less of the whale shows through.",
       composerGlass: "Frosted input box (folded into content boxes)",
@@ -4502,6 +5550,10 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       windHint: "Sparse aligned surface strokes drift with the breeze, appearing and fading gently. On by default.",
       clouds: "Passing cloud shadows",
       cloudsHint: "Soft, slow-moving ASCII shadows cross the sea and slightly shade whale ink while respecting reading areas. On by default.",
+      rain: "Rain over the sea",
+      rainHint: "Fine rain makes small splashes and spreading ripples. Its direction follows the sea breeze. Off by default; turning wind off gradually returns the rain to vertical.",
+      rainIntensity: "Rain intensity",
+      rainIntensityHint: "0 to 1. Default 0.45. Smoothly changes rain density, impacts and ripples. Zero stops the rain; switching rain off keeps this value. Rain ripples are independent of swimming wakes.",
       ripples: "Swimming wakes and splashes",
       ripplesHint: "Swimming and gliding leave an ASCII wake that spreads and fades along the trail. Strong tail strokes add a brief splash. Submerged whales stop making new wakes.",
       save: "Save",
@@ -4559,17 +5611,25 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       glyphSizeHint: "4 至 16，默认 11。文字按固定字格排列，不互相叠压。",
       whaleSize: "鲸鱼大小",
       whaleSizeHint: "0.55 至 1.55，默认 1。只改鲸体长度，不改游速与摆尾节奏；鲸体越大，占用的字格越多。",
-      color: "海洋色调",
-      colorHint: "选择字符与彩色字格使用的海洋色调。",
+      color: "鲸鱼配色",
+      colorHint: "选择统一色调，或为每条鲸鱼随机分配一种固定颜色。适用于字符与彩色字格。",
       ocean: "深海蓝",
       azure: "晴空蓝",
       indigo: "靛蓝",
+      rainbow: "每条随机配色",
+      activity: "跟随任务状态",
+      activityHint: "当前会话与子代理工作时加强巡游；等待提问、审批或计划审阅时慢游并显示 !；后台任务完成显示 ✓，失败显示 ×。关闭后只作装饰。",
       quietCenter: "减淡阅读区域",
       quietCenterHint: "降低中央鲸体的浓度。底部输入区始终保持淡出。",
       leftInset: "浏览器左侧留白",
       leftInsetHint: "0 至 500 像素，默认 280。桌面版自动跟随左侧栏；浏览器版按侧栏宽度手动调整。",
+      readingEffect: "文字边缘效果",
+      readingEffectHint: "微光让文字周围的鲸鱼隐去；柔和模糊保留通透鲸影；毛玻璃加上轻雾，让鲸影连续、文字易读。默认毛玻璃，独立于内容框毛玻璃开关。",
+      glow: "微光",
+      blur: "柔和模糊",
+      frost: "毛玻璃",
       glass: "内容框毛玻璃",
-      glassHint: "对话里的每个内容卡片和输入框都盖一块磨砂玻璃：框内鲸鱼只以模糊形态透出，文字保持清晰。默认开启；与「鱼群避让输入框」二选一。",
+      glassHint: "为内容卡片、输入框和右侧边栏添加磨砂玻璃，右侧栏的鲸影更淡。文字使用上方选择的边缘效果，关闭此开关也保留文字保护。默认开启；与「鱼群避让输入框」二选一。",
       glassStrength: "玻璃强度",
       glassStrengthHint: "0 至 1，默认 0.55。数值越大玻璃更厚、磨砂更重，透出的鲸影也更淡。",
       composerGlass: "输入框毛玻璃（已并入内容框毛玻璃）",
@@ -4582,6 +5642,10 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       windHint: "少量同向的短波纹随风掠过海面，缓缓出现和散去。默认开启。",
       clouds: "掠海云影",
       cloudsHint: "云层投下柔和、缓慢漂移的字符阴影，轻微压暗鲸体颜色，并让开阅读区域。默认开启。",
+      rain: "海上落雨",
+      rainHint: "细雨落海时带出小水花与扩散涟漪，方向随海面风纹缓慢偏转。默认关闭；关闭风纹后逐渐回到直雨。",
+      rainIntensity: "雨量",
+      rainIntensityHint: "0 至 1，默认 0.45。由疏雨到密雨，雨丝、落点与水纹平滑变化；0 为停雨，开关关闭时保留此数值。雨水纹不受游动尾流开关影响。",
       ripples: "游动尾流与水花",
       ripplesHint: "游过后留下逐渐展开、消散的 ASCII 尾流，滑行也有；用力拍尾时带少量碎水。潜入水下后停止生成新尾流。",
       save: "保存",

@@ -4,12 +4,12 @@ import { createWhaleLayer } from '../src/engine.js';
 import { normalizeConfig } from '../src/model.js';
 
 function events(value = {}) {
-  const listeners = new Map();
+  const listeners = new Map(), listenerOptions = new Map();
   return Object.assign(value, {
-    listeners,
-    addEventListener(type, callback) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(callback); },
+    listeners, listenerOptions,
+    addEventListener(type, callback, options) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(callback); listenerOptions.set(type, options); },
     removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
-    dispatch(type, target = this) { for (const fn of [...(listeners.get(type) || [])]) fn({ type, target }); },
+    dispatch(type, target = this, properties = {}) { for (const fn of [...(listeners.get(type) || [])]) fn({ type, target, ...properties }); },
   });
 }
 const defaults = { display: 'block', visibility: 'visible', opacity: '1', position: 'static',
@@ -40,7 +40,8 @@ function context() {
   return ctx;
 }
 function harness(t, options = {}) {
-  const saved = new Map(), observers = [], mutations = [], pending = new Map();
+  const saved = new Map(), observers = [], mutations = [], pending = new Map(), timers = new Map();
+  const work = { geometry: 0, style: 0, ranges: 0 };
   let now = 1000, next = 1, layer;
   const bounds = { left: 0, top: 0, width: 800, height: 600 };
   const scroller = node('DIV', { left: 20, top: 10, width: 700, height: 540 });
@@ -52,7 +53,9 @@ function harness(t, options = {}) {
     createElement() { const offscreen = node('CANVAS', bounds); const ctx = context(); offscreen.getContext = () => ctx; return offscreen; } });
   const reduced = events({ matches: options.reduced !== false }), transparency = events({ matches: Boolean(options.reducedTransparency) });
   const window = events({ devicePixelRatio: 1, matchMedia: query => query.includes('reduced-motion') ? reduced : transparency });
-  const globals = { document, window, performance: { now: () => now }, getComputedStyle: element => element.computed || defaults,
+  const globals = { document, window, performance: { now: () => now }, getComputedStyle: element => { work.style++; return element.computed || defaults; },
+    setTimeout: (fn, delay) => { const id = next++; timers.set(id, { fn, due: now + delay }); return id; },
+    clearTimeout: id => timers.delete(id),
     requestAnimationFrame: fn => { const id = next++; pending.set(id, fn); return id; }, cancelAnimationFrame: id => pending.delete(id),
     ResizeObserver: class {
       constructor(callback) { this.callback = callback; this.targets = new Set(); this.active = true; observers.push(this); }
@@ -67,12 +70,28 @@ function harness(t, options = {}) {
   for (const [key, value] of Object.entries(globals)) { saved.set(key, globalThis[key]); globalThis[key] = value; }
   const config = normalizeConfig({ count: 1, species: 'blue', glass: false, composerAvoid: false,
     clouds: false, wind: false, ripples: false, spout: false, ...options.config });
-  const api = { document, window, scroller, body, canvas, ink, observers, mutations, pending,
+  function step(milliseconds = 40) {
+    now += milliseconds;
+    for (const [id, timer] of [...timers]) if (timer.due <= now) { timers.delete(id); timer.fn(); }
+    const due = [...pending.values()]; pending.clear(); for (const fn of due) fn(now);
+  }
+  const api = { document, window, scroller, body, canvas, ink, observers, mutations, pending, timers, work, step,
+    text(count = 1) {
+      const lines = Array.from({ length: count }, (_, i) => {
+        const parent = append(scroller, node('P', { left: 50, top: 40 + i * 24, width: 500, height: 22 }));
+        const bounds = parent.getBoundingClientRect;
+        parent.getBoundingClientRect = () => { work.geometry++; return bounds.call(parent); };
+        return { textContent: '正文里的鲸鱼不能挡住滚动', parentElement: parent };
+      });
+      document.createTreeWalker = root => { let index = 0; return { nextNode: () => root === scroller ? lines[index++] : null }; };
+      document.createRange = () => { let text; return { selectNodeContents(value) { text = value; },
+        getClientRects() { work.ranges++; return [text.parentElement.getBoundingClientRect()]; } }; };
+    },
     media(tag = 'IMG', rect = { left: 140, top: 90, width: 260, height: 180 }, style = {}, parent = scroller) {
       return append(parent, node(tag, rect, style));
     },
     mount() { layer = createWhaleLayer(canvas, config, options.layerOptions); return layer; },
-    flush() { for (let frame = 0; frame < 4; frame++) { now += 40; const due = [...pending.values()]; pending.clear(); for (const fn of due) fn(now); } },
+    flush() { for (let frame = 0; frame < 4; frame++) step(); },
     mutate(target, attributeName = 'class', type = 'attributes') {
       for (const observer of mutations) if (observer.active && observer.bindings.some(({ element, settings }) =>
         (element === target || settings.subtree && element.contains(target))
@@ -89,6 +108,60 @@ function harness(t, options = {}) {
   });
   return api;
 }
+
+for (const readingEffect of ['glow', 'blur', 'frost']) test(`${readingEffect}: scroll bursts do not repeatedly measure text or repaint the sea on the input path`, t => {
+  const h = harness(t, { config: { glass: true, readingEffect }, reduced: false });
+  h.text(24); h.mount();
+  const before = { ...h.work }, paints = h.ink.calls.length;
+  for (let i = 0; i < 12; i++) { h.document.dispatch('scroll', h.scroller); h.step(16); }
+  const delta = Object.fromEntries(Object.keys(before).map(key => [key, h.work[key] - before[key]]));
+  t.diagnostic(`scroll work over 12 frames: ${JSON.stringify(delta)}, canvas commands: ${h.ink.calls.length - paints}`);
+  assert.deepEqual(delta, { geometry: 0, style: 0, ranges: 0 }, 'scrolling must yield the main thread instead of rebuilding text masks');
+  assert.equal(h.ink.calls.length, paints, 'no whale or blur work may compete with scrolling');
+  assert.equal(h.canvas.style.opacity, '0', 'a stale mask must not trail behind the scrolling text');
+  h.flush();
+  assert.notEqual(h.canvas.style.opacity, '0', 'the sea returns only after remeasuring the final scroll position');
+  assert.ok(h.work.ranges > before.ranges);
+});
+
+test('static text geometry is reused across ordinary animation frames', t => {
+  const h = harness(t, { config: { glass: true }, reduced: false });
+  h.text(24); h.mount();
+  const before = h.work.ranges;
+  for (let i = 0; i < 12; i++) h.step(40);
+  assert.equal(h.work.ranges, before, 'a moving whale does not change DOM text layout');
+});
+
+test('passive wheel input hides immediately, ignores unrelated scrolling and releases suspended work on disposal', t => {
+  const h = harness(t, { config: { glass: true } });
+  h.text(24); const layer = h.mount();
+  const before = { ...h.work }, paints = h.ink.calls.length;
+  assert.deepEqual(h.document.listenerOptions.get('wheel'), { capture: true, passive: true });
+  h.document.dispatch('wheel', h.scroller, { ctrlKey: true });
+  assert.notEqual(h.canvas.style.opacity, '0', 'browser zoom is not a reading scroll');
+  const otherSidebar = h.media('DIV', { left: -200, top: 0, width: 200, height: 600 }, {}, h.body);
+  h.document.dispatch('scroll', otherSidebar);
+  assert.notEqual(h.canvas.style.opacity, '0', 'scrolling the left sidebar must not interrupt the reading sea');
+  h.document.dispatch('wheel', h.scroller);
+  assert.equal(h.canvas.style.opacity, '0', 'hide in the wheel handler before the browser moves the text');
+  assert.deepEqual(h.work, before, 'even reduced motion performs no synchronous text measurement');
+  h.step(100);
+  h.document.dispatch('scroll', h.scroller);
+  h.mutate(h.scroller, undefined, 'childList');
+  layer.setActivity({ scope: 'scroll-test', entities: [] });
+  h.step(100);
+  assert.equal(h.canvas.style.opacity, '0', 'the quiet interval starts from the last scroll event');
+  assert.equal(h.ink.calls.length, paints, 'content and status updates cannot force a hidden redraw');
+  assert.deepEqual(h.work, before);
+  assert.equal(h.timers.size, 1, 'an input burst has just one pending resume');
+  h.dispose();
+  assert.equal(h.timers.size, 0);
+  assert.equal(h.pending.size, 0);
+  assert.notEqual(h.canvas.style.opacity, '0');
+  for (const event of ['wheel', 'scroll', 'touchmove']) assert.equal(h.document.listeners.get(event).size, 0);
+  h.step(200);
+  assert.equal(h.ink.calls.length, paints, 'a disposed scroll timer never revives the layer');
+});
 
 test('a transparent-background GIF fully holds the sea out even when glass and avoidance are disabled', t => {
   const h = harness(t);
@@ -225,6 +298,21 @@ test('demo previews never scan global conversation media and the media geometry 
   h.mount();
   assert.equal(h.document.queries, 0);
   assert.equal(h.masks().length, 0);
+});
+
+test('right sidebar glass uses the actual engine and embedded pages stay above the ocean', t => {
+  const h = harness(t, { config: { glass: true } });
+  const track = h.media('DIV', { left: 800, top: 0, width: 0, height: 600 }, {}, h.body);
+  const panel = h.media('DIV', { left: 560, top: 0, width: 240, height: 600 }, rounded(18), track);
+  h.media('IFRAME', { left: 580, top: 100, width: 200, height: 460 }, {}, panel);
+  const query = h.document.querySelectorAll.bind(h.document);
+  h.document.querySelectorAll = selector => selector === '[data-rightbar-col]' ? [track] : query(selector);
+  h.mount();
+  assert.ok(h.ink.calls.some(call => call.op === 'drawImage' && call.clips.some(clip =>
+    clip.path.some(command => command.op === 'moveTo' && command.args[0] === 578 && command.args[1] === 0))),
+  'the shared blurred sea is clipped to the actual right sidebar panel');
+  assert.deepEqual(starts(h.masks().at(-1)), [[580, 100]], 'embedded pages clear the completed glass as well as sharp whales');
+  assert.equal(h.ink.calls.at(-1).op, 'clearRect', 'no whale effect is painted over sidebar media afterward');
 });
 
 test('a late media node survives the glass style budget and a crowded media list has its own bounded mask', t => {

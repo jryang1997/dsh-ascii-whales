@@ -15,9 +15,11 @@ export const FIELDS = Object.freeze({
   opacity: { kind: 'number', min: 0.04, max: 0.9, step: 0.01, default: 0.6 },
   glyphSize: { kind: 'number', min: 4, max: 16, step: 1, default: 11 },
   whaleSize: { kind: 'number', min: 0.55, max: 1.55, step: 0.05, default: 1 },
-  color: { kind: 'enum', values: ['ocean', 'azure', 'indigo'], default: 'ocean' },
+  color: { kind: 'enum', values: ['ocean', 'azure', 'indigo', 'rainbow'], default: 'ocean' },
+  activity: { kind: 'boolean', default: true },
   quietCenter: { kind: 'boolean', default: true },
   leftInset: { kind: 'number', min: 0, max: 500, step: 1, default: 280 },
+  readingEffect: { kind: 'enum', values: ['glow', 'blur', 'frost'], default: 'frost' },
   glass: { kind: 'boolean', default: true },
   glassStrength: { kind: 'number', min: 0, max: 1, step: 0.05, default: 0.55 },
   // Folded into `glass` in 0.11.0: every content box, the composer included, is
@@ -30,6 +32,8 @@ export const FIELDS = Object.freeze({
   ripples: { kind: 'boolean', default: true },
   wind: { kind: 'boolean', default: true },
   clouds: { kind: 'boolean', default: true },
+  rain: { kind: 'boolean', default: false },
+  rainIntensity: { kind: 'number', min: 0, max: 1, step: 0.01, default: 0.45 },
 });
 export const DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -150,6 +154,17 @@ function bladeSurface(start, end, width, thickness, reference) {
   };
 }
 
+function whaleColorOrder(seed) {
+  const colors = Array.from({ length: 8 }, (_, index) => index);
+  let state = seed;
+  for (let i = colors.length - 1; i > 0; i--) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const j = Math.floor(state / 0x100000000 * (i + 1));
+    [colors[i], colors[j]] = [colors[j], colors[i]];
+  }
+  return colors;
+}
+
 /**
  * Build a full school at a virtual 1600x900 stage.
  *
@@ -158,14 +173,18 @@ function bladeSurface(start, end, width, thickness, reference) {
  * the default 1 reproduces the 0.8.0 budget exactly (`count * 2200`, capped at
  * 8000), so existing pictures are untouched.
  */
-export function createScene(count, text = DEFAULTS.text, species = DEFAULTS.species, whaleSize = DEFAULTS.whaleSize) {
+export function createScene(count, text = DEFAULTS.text, species = DEFAULTS.species, whaleSize = DEFAULTS.whaleSize, colorSeed = 0) {
   const alphabet = glyphSequence(text);
   count = clamp(Math.round(count), 1, 8);
+  colorSeed = typeof colorSeed === 'number' && Number.isFinite(colorSeed) ? colorSeed >>> 0 : 0;
+  // Shuffle all eight slots independently of count, text, size and species.
+  // Reusing this seed on reconstruction keeps every surviving whale's hue.
+  const colorOrder = whaleColorOrder(colorSeed);
   const size = clamp(typeof whaleSize === 'number' && Number.isFinite(whaleSize) ? whaleSize : DEFAULTS.whaleSize,
     FIELDS.whaleSize.min, FIELDS.whaleSize.max);
   const total = Math.min(8000, Math.round(count * 2200 * Math.max(0.36, size * size)));
   const whales = Array.from({ length: count }, (_, id) => ({
-    id, species: species === 'mixed' || !WHALE_SPECIES[species] ? SPECIES_IDS[id % SPECIES_IDS.length] : species,
+    id, colorIndex: colorOrder[id], species: species === 'mixed' || !WHALE_SPECIES[species] ? SPECIES_IDS[id % SPECIES_IDS.length] : species,
     depth: [0.14, 0.52, 0.72, 0.95, 0.38][id % 5], phase: noise(id + 80) * Math.PI * 2,
   }));
   const particles = [], triangles = [], decals = [];
@@ -221,7 +240,7 @@ export function createScene(count, text = DEFAULTS.text, species = DEFAULTS.spec
   // `whaleSize` is part of the scene because motion.js reads it from there when
   // it derives every body length; keeping it out of the whale objects means a
   // resize can never disagree with the scene the whales belong to.
-  const scene = { whales, particles, triangles: new Uint16Array(triangles), decals, time: 0, accumulator: 0, width: 0, height: 0, whaleSize: size };
+  const scene = { whales, particles, triangles: new Uint16Array(triangles), decals, time: 0, accumulator: 0, width: 0, height: 0, whaleSize: size, colorSeed };
   resizeScene(scene, 1600, 900);
   return scene;
 }

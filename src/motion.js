@@ -743,9 +743,12 @@ function motionIntegrate(scene, speed) {
     const whale = whales[i], state = whale._motion, force = forces[i];
     const startX = whale.x, startY = whale.y, startHeading = whale.heading;
     const anatomy = whaleSpecies(whale.species);
+    const activityKind = whale.activity?.kind;
+    const activityPace = activityKind === 'running' ? 1.35
+      : activityKind === 'waiting' ? 0.32 : activityKind === 'idle' ? 0.62 : 1;
     const travelTick = motionTick * speed;
     state.age += travelTick;
-    motionPrepareDive(whale, i, scene.diveSeed, anatomy, travelTick);
+    motionPrepareDive(whale, i, scene.diveSeed, anatomy, travelTick, activityKind === 'waiting');
     const bearingHold = motionDiveBearingHold(state.dive, state.age);
     if (state.age >= state.targetDue
       || Math.hypot(state.targetX - whale.x, state.targetY - whale.y) < Math.max(8, whale.length * 0.14)) {
@@ -776,7 +779,7 @@ function motionIntegrate(scene, speed) {
           const closing = contact ? -(whale.vx * contact.nx + whale.vy * contact.ny) : 0;
           if (contact && closing > 0.1) {
             const gap = Math.max(0, -contact.depth);
-            const cruise = state.cruise * environmentSpeed * speed;
+            const cruise = state.cruise * environmentSpeed * speed * activityPace;
             const safePace = Math.max(cruise * 0.15, gap / 2.8);
             seamBrake = Math.max(seamBrake, 1 - motionLimit(safePace / Math.max(1, cruise), 0.15, 1));
           }
@@ -807,7 +810,7 @@ function motionIntegrate(scene, speed) {
     let desiredY = dy / targetDistance * 1.5 + forwardY * 0.85
       + Math.sin(whale.heading + state.wander) * 0.35 + force.y;
     const turnLimit = state.agility * Math.sqrt(speed);
-    const cruise = state.cruise * environmentSpeed * speed;
+    const cruise = state.cruise * environmentSpeed * speed * activityPace;
     // A heading that already points off the screen is committed. Turning back
     // here is what pinned a whale on a reef: the rock pushed it outward and the
     // screen edge pushed it back. It leaves instead, and folds in from the far side.
@@ -851,7 +854,9 @@ function motionIntegrate(scene, speed) {
     const gait = (state.age + whale.phase * 1.7) % (active + rest);
     const easeStroke = value => { const t = motionLimit(value, 0, 1); return t * t * (3 - 2 * t); };
     const envelope = gait < active ? easeStroke(gait / 1.1) * easeStroke((active - gait) / 1.1) : 0;
-    state.stroke += (envelope - state.stroke) * (1 - Math.exp(-travelTick * 2.2));
+    const activityStroke = activityKind === 'running' ? 0.35 + envelope * 0.65
+      : envelope * (activityKind === 'waiting' ? 0.35 : activityKind === 'idle' ? 0.6 : 1);
+    state.stroke += (activityStroke - state.stroke) * (1 - Math.exp(-travelTick * 2.2));
     state.wave += travelTick * anatomy.beat * (0.7 + 0.3 * Math.min(1.4, Math.sqrt(effort)))
       * (0.08 + 0.92 * state.stroke);
     motionStepDive(whale);
@@ -862,6 +867,7 @@ function motionIntegrate(scene, speed) {
 // This gate only suppresses routine route/wander steering. Collision forces
 // stay in the same physical controller and may override the decorative hold.
 function motionDiveBearingHold(dive, age) {
+  if (Number.isFinite(dive.returnStartedAt)) return 1;
   if (dive.startedAt === null) {
     return Number.isFinite(dive.bearingReleaseAt)
       ? 1 - diveSmoothstep((age - dive.bearingReleaseAt) / 0.6) : 0;
@@ -896,7 +902,7 @@ function motionDiveSeed(whale, index, sceneSeed) {
   return (seed ^ (seed >>> 16)) >>> 0;
 }
 
-function motionPrepareDive(whale, index, sceneSeed, anatomy, dt) {
+function motionPrepareDive(whale, index, sceneSeed, anatomy, dt, waiting) {
   const state = whale._motion;
   if (!state.dive) {
     const dive = state.dive = { seed: motionDiveSeed(whale, index, sceneSeed),
@@ -908,14 +914,33 @@ function motionPrepareDive(whale, index, sceneSeed, anatomy, dt) {
   }
   const dive = state.dive;
   const surfacePace = motionLimit(22 / anatomy.cruise, 0.75, 1.3);
-  if (dive.startedAt !== null && state.age >= dive.startedAt + dive.entry + dive.under + dive.exit) {
-    const endedAt = dive.startedAt + dive.entry + dive.under + dive.exit;
+  if (waiting && dive.startedAt !== null && !Number.isFinite(dive.returnStartedAt)) {
+    // Retarget the visible pose, even mid-entry or mid-exit. Scalar snapshots
+    // survive scene adoption without a shared object or a second animation clock.
+    dive.returnStartedAt = state.age - dt;
+    dive.returnSubmergence = state.submergence;
+    dive.returnPitch = state.pitch;
+    dive.returnDepth = state.depth;
+    dive.returnTailKick = state.tailKick;
+    dive.returnArch = state.arch;
+    dive.returnNoseFirst = state.noseFirst;
+    if (dive.contactStage < 2) {
+      dive.contactStage = motionDiveContactHeight(whale, DIVE_NOSE_CONTACT) > DIVE_WATERLINE ? 1 : 2;
+    }
+  }
+  const endedAt = Number.isFinite(dive.returnStartedAt)
+    ? dive.returnStartedAt + dive.exit : dive.startedAt + dive.entry + dive.under + dive.exit;
+  if (dive.startedAt !== null && state.age >= endedAt) {
     dive.startedAt = null;
+    dive.returnStartedAt = null;
     dive.bearingReleaseAt = endedAt;
     dive.completed++;
     dive.nextDecision = endedAt + (10 + motionRandom(dive) * 16) * surfacePace;
   }
-  if (dive.startedAt === null && state.age >= dive.nextDecision) {
+  // Keep an overdue opportunity at the present, so leaving a long wait cannot
+  // start an action in the past and jump straight into its underwater pose.
+  if (waiting && dive.startedAt === null) dive.nextDecision = Math.max(dive.nextDecision, state.age);
+  if (!waiting && dive.startedAt === null && state.age >= dive.nextDecision) {
     dive.decisions++;
     if (motionRandom(dive) < dive.activity) {
       dive.startedAt = dive.nextDecision;
@@ -934,30 +959,32 @@ function motionPrepareDive(whale, index, sceneSeed, anatomy, dt) {
 
 function motionStepDive(whale) {
   const state = whale._motion, dive = state.dive;
-  const pose = dive.startedAt === null ? diveLevel() : divePose(state.age - dive.startedAt, dive);
-  state.submergence = pose.submergence;
-  state.pitch = pose.pitch;
-  state.noseFirst = pose.noseFirst;
-  state.depth = pose.depth;
-  state.tailKick = pose.tailKick;
-  state.arch = pose.arch;
+  const returning = Number.isFinite(dive.returnStartedAt);
+  if (returning) {
+    const remaining = 1 - diveSmoothstep((state.age - dive.returnStartedAt) / dive.exit);
+    state.submergence = dive.returnSubmergence * remaining;
+    state.pitch = dive.returnPitch * remaining;
+    state.depth = dive.returnDepth * remaining;
+    state.tailKick = dive.returnTailKick * remaining;
+    state.arch = dive.returnArch * remaining;
+    // Switching the visibility direction mid-pose would reveal the other end.
+    state.noseFirst = remaining > 0 && dive.returnNoseFirst;
+  } else {
+    const pose = dive.startedAt === null ? diveLevel() : divePose(state.age - dive.startedAt, dive);
+    state.submergence = pose.submergence;
+    state.pitch = pose.pitch;
+    state.noseFirst = pose.noseFirst;
+    state.depth = pose.depth;
+    state.tailKick = pose.tailKick;
+    state.arch = pose.arch;
+  }
   if (dive.startedAt !== null && dive.contactStage < 2) {
     const elapsed = state.age - dive.startedAt;
     const isTail = dive.contactStage === 0;
     // Tail: wait until after the lift. Nose: wait until the ascent starts.
     // The height then comes from the very same rig, gait and curve as the mesh.
-    if (elapsed >= (isTail ? dive.entry * 0.46 : dive.entry + dive.under)) {
-      const contactPose = motionDiveContactPose;
-      contactPose.wave = state.wave;
-      contactPose.turn = whale.turn;
-      contactPose.submergence = state.submergence;
-      contactPose.divePitch = state.pitch;
-      contactPose.diveDepth = state.depth;
-      contactPose.diveKick = state.tailKick;
-      contactPose.diveArch = state.arch;
-      writeWhaleRigPose(whale, contactPose);
-      const point = isTail ? DIVE_TAIL_CONTACT : DIVE_NOSE_CONTACT;
-      const height = deformWhaleParticle(point, contactPose, motionDiveContactOut).y;
+    if (returning || elapsed >= (isTail ? dive.entry * 0.46 : dive.entry + dive.under)) {
+      const height = motionDiveContactHeight(whale, isTail ? DIVE_TAIL_CONTACT : DIVE_NOSE_CONTACT);
       if (isTail ? height >= DIVE_WATERLINE : height <= DIVE_WATERLINE) {
         dive.splashSerial++;
         dive.splashKind = isTail ? 'dive' : 'surface';
@@ -976,6 +1003,19 @@ export const DIVE_NOSE_CONTACT = Object.freeze({ x: 1.04, y: -0.08, z: 0,
   nx: 0, ny: -1, nz: 0, part: 'body' });
 const motionDiveContactPose = {};
 const motionDiveContactOut = {};
+
+function motionDiveContactHeight(whale, point) {
+  const state = whale._motion, pose = motionDiveContactPose;
+  pose.wave = state.wave;
+  pose.turn = whale.turn;
+  pose.submergence = state.submergence;
+  pose.divePitch = state.pitch;
+  pose.diveDepth = state.depth;
+  pose.diveKick = state.tailKick;
+  pose.diveArch = state.arch;
+  writeWhaleRigPose(whale, pose);
+  return deformWhaleParticle(point, pose, motionDiveContactOut).y;
+}
 
 function motionEnsureDive(state) {
   if (!Number.isFinite(state.submergence)) state.submergence = 0;

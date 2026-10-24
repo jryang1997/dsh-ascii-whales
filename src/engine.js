@@ -5,9 +5,12 @@ import { createWhaleSimulation, sceneConfigChanged } from './simulation.js';
 import { glassRoundedPath, glassRoundedSubpath, glassClipExterior, glassTone, glassSeaFactor, glassSeaBuffer } from './glass.js';
 import { attachSpout } from './spout.js';
 import { drawWater } from './water.js';
+import { drawRain } from './rain.js';
 import { createInkPalette } from './shading.js';
 import { drawAtmosphere, shadeAtmosphere } from './atmosphere.js';
 import { measureForeground, clearForeground, observeForeground } from './foreground.js';
+import { drawActivityBadges } from './activity.js';
+import { collectRightbarSurfaces, createReadingProtection, readingEffectTone } from './reading-protection.js';
 
 // DSH publishes these hooks on the conversation subtree. Every one of them is
 // optional: without them the whales simply paint as before, so an unknown
@@ -20,8 +23,8 @@ const COMPOSER_SEAT_SELECTOR = '[data-composer-seat]';
 const COMPOSER_RADIUS = 18;
 const MEASURE_INTERVAL = 120;
 
-// Which of the conversation's boxes get their own pane of glass. Only opaque,
-// rounded, card-sized boxes are candidates; the input card is always one.
+// Rounded content surfaces get their own glass: opaque cards and translucent
+// native menus, including panels whose background lives on a pseudo element.
 const CONTENT_MAX_SCAN = 600;
 const CONTENT_MAX_VISIT = 6000;
 const CONTENT_MIN_AREA = 960;
@@ -52,9 +55,9 @@ const DEMO_LINE_HEIGHT = 7;
 // changing one needs nothing more than the next frame.
 const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
-const GLASS_KEYS = Object.freeze(['glass', 'glassStrength']);
+const GLASS_KEYS = Object.freeze(['glass', 'glassStrength', 'readingEffect']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'wind', 'clouds']);
+const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -106,11 +109,42 @@ function pick(selector, canvasRect) {
  * an opaque surface should behave.
  */
 function colorAlpha(value) {
-  const match = String(value || '').match(/^rgba?\(([^)]+)\)$/i);
+  const text = String(value || '').trim();
+  const modern = text.match(/^(?:color|lab|lch|oklab|oklch|hwb|hsla?)\(([^)]+)\)$/i);
+  if (modern) {
+    const alpha = modern[1].split('/')[1]?.trim() ?? '1';
+    const number = parseFloat(alpha);
+    return Number.isFinite(number) ? Math.max(0, Math.min(1, alpha.endsWith('%') ? number / 100 : number)) : null;
+  }
+  const match = text.match(/^rgba?\(([^)]+)\)$/i);
   if (!match) return null;
   const parts = match[1].split(/[,/ ]+/).filter(Boolean).map(Number);
   if (parts.length < 3 || !parts.slice(0, 3).every(Number.isFinite)) return null;
   return parts.length >= 4 && Number.isFinite(parts[3]) ? parts[3] : 1;
+}
+
+function isContentMaterial(style) {
+  if (!style || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+  const alpha = colorAlpha(style.backgroundColor);
+  if (alpha >= CONTENT_MIN_ALPHA) return true;
+  // Native translucent menus already express their material with backdrop blur.
+  // CSS cannot blur the later shell overlay, so they still need our sea buffer.
+  return alpha > 0 && [style.backdropFilter, style.webkitBackdropFilter].some(value =>
+    typeof value === 'string' && Number(value.match(/\bblur\(\s*([\d.]+)px\s*\)/i)?.[1]) > 0);
+}
+
+function hasContentMaterial(element, style, readStyle) {
+  if (Number(style.opacity) === 0) return false;
+  if (isContentMaterial(style)) return true;
+  for (const pseudo of ['::before', '::after']) {
+    const material = readStyle(element, pseudo);
+    if (!material || !material.content || material.content === 'none' || material.content === 'normal'
+      || material.position !== 'absolute') continue;
+    // A full background layer counts; an underline, icon or small accent does not.
+    if (!['top', 'right', 'bottom', 'left'].every(side => parseFloat(material[side]) === 0)) continue;
+    if (isContentMaterial(material)) return true;
+  }
+  return false;
 }
 
 /** Smallest computed corner radius of an element, in CSS pixels (null if none). */
@@ -150,6 +184,11 @@ function collectContentBoxes(canvasRect, composerHit) {
   if (scroller) {
     const queue = [scroller.element];
     let visited = 0, styled = 0;
+    const readStyle = (element, pseudo) => {
+      if (styled >= CONTENT_MAX_SCAN) return null;
+      styled++;
+      try { return getComputedStyle(element, pseudo); } catch { return null; }
+    };
     while (queue.length && visited < CONTENT_MAX_VISIT && styled < CONTENT_MAX_SCAN) {
       const element = queue.shift();
       visited++;
@@ -183,15 +222,13 @@ function collectContentBoxes(canvasRect, composerHit) {
         && clippedHeight >= canvasRect.height * CONTENT_MAX_HEIGHT_RATIO) continue;
       const area = rect.width * rect.height;
       if (!(area >= CONTENT_MIN_AREA) || rect.width < 32 || rect.height < 24) continue;
-      let style;
-      try { style = getComputedStyle(element); styled++; } catch { continue; }
-      if (style.position === 'fixed') continue;
+      const style = readStyle(element);
+      if (!style || style.position === 'fixed') continue;
       if (style.visibility === 'hidden' || style.display === 'none') continue;
-      const alpha = colorAlpha(style.backgroundColor);
-      if (alpha === null || alpha < CONTENT_MIN_ALPHA) continue;
       const radius = cornerRadius(style);
       if (!(radius > 0)) continue;
       if (rect.width < 40 && !(rect.height >= 36 && radius >= 16)) continue;
+      if (!hasContentMaterial(element, style, readStyle)) continue;
       const width = Math.max(40, rect.width);
       const left = rect.left - (width - rect.width) / 2;
       boxes.push({ left, top: rect.top, width, height: rect.height, radius });
@@ -235,7 +272,7 @@ function normalizeLayerConfig(value) {
  */
 export function createWhaleLayer(canvas, initialConfig, options = {}) {
   const ink = canvas.getContext('2d');
-  if (!ink) return { update() {}, dispose() {} };
+  if (!ink) return { update() {}, setActivity() {}, dispose() {} };
   const config = normalizeLayerConfig(initialConfig);
   // Optional preview injection: `demoCard` places one card by canvas ratios
   // (0..1) with a pixel radius. With it, measure() never reads the DOM — the
@@ -243,12 +280,13 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   // avoidance options still need a card to act on. Overlay and the standalone
   // preview use the DOM adapter instead.
   const demo = options.demoCard || null;
+  const readingProtection = createReadingProtection();
   const scenerySeed = Math.floor(Math.random() * 0x100000000) >>> 0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
   const simulation = createWhaleSimulation(config, { seed: scenerySeed });
   let scene = simulation.scene;
-  const { water, atmosphere } = simulation;
+  const { water, atmosphere, rain } = simulation;
   let sceneryPalette = createInkPalette(config.color);
   let poses = scene.whales.map(() => ({}));
   let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
@@ -265,8 +303,11 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   // blur cost.
   let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
   let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
-  let panes = [], tone = null, readingLayout = null, foreground = null;
+  let panes = [], tone = null, readingLayout = null, foreground = null, sidebarForegrounds = [];
   let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+  let readingTextDirty = true, readingRoots = [], scrolling = false, scrollTimer = 0;
+  const originalOpacity = canvas.style?.opacity ?? '', originalTransition = canvas.style?.transition ?? '';
+  const SCROLL_IDLE_MS = 140;
   const spout = attachSpout(canvas, () => ({
     enabled: config.spout,
     reduced: reduced.matches,
@@ -348,11 +389,16 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     drawAtmosphere(seaInk, atmosphere, { width, height, cellWidth: grid.cellWidth,
       cellHeight: grid.cellHeight, palette: sceneryPalette, opacity: config.opacity,
       wind: config.wind, clouds: config.clouds, dark });
+    const rainScenery = { width, height, palette: sceneryPalette,
+      dark, reduced: reduced.matches,
+      opacity: config.opacity * (reduced.matches ? (config.rain ? config.rainIntensity : 0) : 1) };
+    drawRain(seaInk, rain, { ...rainScenery, phase: 'surface' });
     if (config.renderStyle !== 'cells') paintSeaSilhouette(seaInk, material);
     const savedQuietCenter = config.quietCenter;
     config.quietCenter = false;
     painter.paint(seaInk, grid, poses, width, height, 1, null, dark);
     config.quietCenter = savedQuietCenter;
+    drawRain(seaInk, rain, { ...rainScenery, phase: 'fall' });
     blurredSeaInk.setTransform(1, 0, 0, 1, 0, 0);
     blurredSeaInk.clearRect(0, 0, blurredSea.width, blurredSea.height);
     blurredSeaInk.filter = blurSupport ? `blur(${Math.max(0.4, seaBlurRadius).toFixed(2)}px)` : 'none';
@@ -411,9 +457,9 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
    * Re-read the conversation geometry: one box list for the content glass, plus
    * the input card for avoidance.
    *
-   * Cheap and only layout can change it, so it runs on a 400ms budget and on
-   * every invalidation. Box collection and style reads happen here only — never
-   * per frame.
+   * Card geometry uses a 120ms budget plus invalidations. Text ranges are cached
+   * until content, scrolling, fonts or viewport changes invalidate them. During
+   * scrolling the whole layer yields, so neither scan competes with input.
    */
   function measure() {
     measuredAt = performance.now();
@@ -421,26 +467,43 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     tone = null;
     readingLayout = null;
     foreground = null;
+    sidebarForegrounds = [];
     if (!width || !height || !scene || disposed) return;
-    if (demo) { applyReadingSnapshot(demoReadingSnapshot(demo, width, height)); return; }
+    if (demo) {
+      applyReadingSnapshot(demoReadingSnapshot(demo, width, height));
+      const card = demoCardRect();
+      const groups = card && config.glass
+        ? [{ clip: { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius },
+          regions: demoTextRegions(card) }] : [];
+      readingProtection.setRegions(groups, { width, height }, config.readingEffect);
+      return;
+    }
     const canvasRect = rectOf(canvas);
     if (!canvasRect) return;
     const scroller = pick(SCROLL_SELECTOR, canvasRect)?.element;
+    const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
+    const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
+    const sidebars = collectRightbarSurfaces(canvasRect);
+    sidebarForegrounds = sidebars.map(panel => measureForeground(panel.element, canvasRect, canvas));
+    readingRoots = [scroller, composer?.element, ...sidebars.map(panel => panel.element)].filter(Boolean);
+    if (readingTextDirty) {
+      readingProtection.measure(readingRoots, canvasRect, config.readingEffect);
+      readingTextDirty = false;
+    }
     foreground = measureForeground(scroller, canvasRect, canvas);
     foregroundObserver?.update(scroller, foreground.regions);
     if (!config.glass && !config.composerAvoid) {
-      applyReadingSnapshot({ canvas: { left: 0, top: 0, width, height }, boxes: [] });
+      applyReadingSnapshot({ canvas: canvasRect, boxes: [] });
       return;
     }
-    const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
-    const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
     applyReadingSnapshot({ canvas: canvasRect,
       boxes: config.glass ? collectContentBoxes(canvasRect, cardHit) : [],
+      sidebars: config.glass ? sidebars : [],
       composer: composer ? composer.rect : null });
   }
 
   function draw() {
-    if (!width || !height || !scene || !grid) return;
+    if (scrolling || !width || !height || !scene || !grid) return;
     if (performance.now() - measuredAt > MEASURE_INTERVAL) measure();
     if (viewport) {
       ink.setTransform(1, 0, 0, 1, 0, 0);
@@ -466,9 +529,24 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     drawAtmosphere(ink, atmosphere, { ...scenery, wind: config.wind, clouds: config.clouds,
       dark: document.body.hasAttribute('data-ds-dark-theme') });
     if (config.ripples) drawWater(ink, water, scenery);
+    const rainScenery = { ...scenery, dark: document.body.hasAttribute('data-ds-dark-theme'),
+      reduced: reduced.matches,
+      opacity: config.opacity * (reduced.matches ? (config.rain ? config.rainIntensity : 0) : 1) };
+    drawRain(ink, rain, { ...rainScenery, phase: 'surface' });
     paintGlyphs(ink, fade);
+    drawRain(ink, rain, { ...rainScenery, phase: 'fall' });
     spout.paint(ink, fade);
+    if (config.activity) drawActivityBadges(ink, scene.whales, width, height, {
+      dark: document.body.hasAttribute('data-ds-dark-theme'), opacity: config.opacity,
+      fade: sceneryFade,
+    });
     ink.restore();
+    const readingMaterial = readingEffectTone(config.readingEffect, config.glassStrength, {
+      dark: document.body.hasAttribute('data-ds-dark-theme'), reducedTransparency: reducedTransparency.matches,
+    });
+    const seaReady = prepareBlurredSea(readingMaterial);
+    const readingOptions = { material: readingMaterial, source: seaReady ? blurredSea : null,
+      sourceRect: [seaPad, seaPad, width / seaFactor, height / seaFactor] };
     // The demo card is the preview's stand-in for a DSH card: sharp sea is
     // clipped at its rounded edge, the body covers the open sea, the ordinary
     // glass pipeline stacks on the body, and text lines stay crisp on top.
@@ -476,13 +554,17 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       const card = demoCardRect();
       if (card) {
         paintDemoCardBody(card);
-        paintGlassMaterial();
+        paintGlassMaterial(seaReady);
+        readingProtection.paint(ink, width, height, { ...readingOptions,
+          underlay: document.body.hasAttribute('data-ds-dark-theme') ? DEMO_CARD_BODY_DARK : DEMO_CARD_BODY_LIGHT });
         paintDemoCardText(card);
       }
       return;
     }
-    paintGlassMaterial();
+    paintGlassMaterial(seaReady);
+    readingProtection.paint(ink, width, height, readingOptions);
     clearForeground(ink, foreground, width, height);
+    for (const media of sidebarForegrounds) clearForeground(ink, media, width, height);
   }
 
   /**
@@ -557,13 +639,43 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
    * path paints the same calls in the same order as before; the demo card reuses
    * it between its card body and its text lines.
    */
-  function paintGlassMaterial() {
-    if (!tone || tone.mode !== 'frost' || !panes.length) return;
-    if (!seaBuffers(tone)) return;
-    paintBlurredSea(tone);
-    // One shared sea image for every pane, then the cheap per-pane surface work.
-    paintPaneSeaUnion(panes, tone);
-    for (const pane of panes) paintPaneSurface(pane, tone);
+  function prepareBlurredSea(readingMaterial) {
+    const materials = [];
+    if (tone?.mode === 'frost' && panes.length) {
+      materials.push(tone);
+      if (readingLayout.sidebarPanes.length) materials.push(readingLayout.sidebarTone);
+    }
+    if (readingProtection.active && readingMaterial.mode !== 'glow') materials.push(readingMaterial);
+    if (!materials.length) return false;
+    const shared = { ...materials[0], blur: Math.max(...materials.map(material => material.blur)) };
+    if (!seaBuffers(shared)) return false;
+    paintBlurredSea(shared);
+    return true;
+  }
+
+  function paintGlassMaterial(seaReady) {
+    if (!seaReady || !tone || tone.mode !== 'frost' || !panes.length) return;
+    const { contentPanes, sidebarPanes, sidebarTone } = readingLayout;
+    ink.save();
+    // An overlay/fullscreen sidebar owns its entire rectangle, including any
+    // conversation cards beneath it. Never stack two sea images there.
+    glassClipExterior(ink, sidebarPanes, width, height);
+    paintPaneSeaUnion(contentPanes, tone);
+    for (const pane of contentPanes) paintPaneSurface(pane, tone);
+    ink.restore();
+    paintPaneSeaUnion(sidebarPanes, sidebarTone);
+    for (const pane of sidebarPanes) {
+      paintPaneSurface(pane, sidebarTone);
+      ink.save();
+      glassRoundedPath(ink, pane); ink.clip();
+      const edge = ink.createLinearGradient(pane.x, 0, pane.x + 18, 0);
+      edge.addColorStop(0, document.body.hasAttribute('data-ds-dark-theme')
+        ? 'rgba(205, 222, 245, 0.12)' : 'rgba(255, 255, 255, 0.34)');
+      edge.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ink.fillStyle = edge;
+      ink.fillRect(pane.x, pane.y, Math.min(18, pane.width), pane.height);
+      ink.restore();
+    }
   }
 
   /** The demo card's own body: one near-opaque rounded fill under the glass. */
@@ -578,26 +690,25 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
    * of the demo. A card too short for four lines (the narrow-screen preview)
    * draws as many as fit instead of overlapping them.
    */
-  function paintDemoCardText(card) {
+  function demoTextRegions(card) {
     const inner = Math.max(0, card.height - DEMO_LINE_INSET * 2);
     const count = Math.min(4, Math.floor(inner / DEMO_LINE_HEIGHT));
-    if (count < 1 || !(card.width > DEMO_LINE_INSET * 2 + 2)) return;
+    if (count < 1 || !(card.width > DEMO_LINE_INSET * 2 + 2)) return [];
     const step = count > 1 ? (inner - DEMO_LINE_HEIGHT) / (count - 1) : 0;
+    return Array.from({ length: count }, (_, line) => ({ x: card.left + DEMO_LINE_INSET,
+      y: card.top + DEMO_LINE_INSET + step * line,
+      width: (card.width - DEMO_LINE_INSET * 2) * (line === count - 1 ? 0.7 : 1),
+      height: DEMO_LINE_HEIGHT, radius: DEMO_LINE_HEIGHT / 2 }));
+  }
+
+  function paintDemoCardText(card) {
     ink.fillStyle = document.body.hasAttribute('data-ds-dark-theme') ? DEMO_LINE_DARK : DEMO_LINE_LIGHT;
-    for (let line = 0; line < count; line++) {
-      const width = (card.width - DEMO_LINE_INSET * 2) * (line === count - 1 ? 0.7 : 1);
-      glassRoundedPath(ink, {
-        x: card.left + DEMO_LINE_INSET,
-        y: card.top + DEMO_LINE_INSET + step * line,
-        width, height: DEMO_LINE_HEIGHT, radius: DEMO_LINE_HEIGHT / 2,
-      });
-      ink.fill();
-    }
+    for (const line of demoTextRegions(card)) { glassRoundedPath(ink, line); ink.fill(); }
   }
 
   function frame(now) {
     raf = 0;
-    if (disposed || document.hidden || reduced.matches || !width || !height || !scene) return;
+    if (disposed || scrolling || document.hidden || reduced.matches || !width || !height || !scene) return;
     if (previous !== null) {
       simulation.advance(Math.min(0.1, (now - previous) / 1000));
     }
@@ -612,7 +723,8 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     previous = null;
     lastPaint = -Infinity;
     measuredAt = -Infinity;
-    if (!disposed && !document.hidden && width && height) {
+    readingTextDirty = true;
+    if (!disposed && !scrolling && !document.hidden && width && height) {
       draw();
       if (!reduced.matches) raf = requestAnimationFrame(frame);
     }
@@ -659,14 +771,15 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     // measured card through applySceneObstacles above.
     if (changes.glass || changes.composer) {
       measuredAt = -Infinity;
-      if (width && height) measure();
+      readingTextDirty = true;
+      if (!scrolling && width && height) measure();
     }
 
     if (changes.palette) sceneryPalette = createInkPalette(config.color);
     if (viewport) resize();
 
     lastPaint = -Infinity;
-    if (!document.hidden && width && height) {
+    if (!scrolling && !document.hidden && width && height) {
       // Repaint one frame now, so a change is visible even while reduced motion
       // keeps the animation loop stopped; otherwise the loop simply continues.
       if (!reduced.matches && !raf) raf = requestAnimationFrame(frame);
@@ -675,17 +788,48 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     }
   }
 
-  /** Scrolling moves the column under a fixed sea, so only the geometry is stale. */
-  function onScroll() {
-    measuredAt = -Infinity;
-    if (reduced.matches) sync();
+  function finishScroll() {
+    scrollTimer = 0;
+    if (disposed) return;
+    scrolling = false;
+    // Repaint while hidden before showing the new mask. Reset the clock so the
+    // pause never becomes a catch-up leap in the school or a dive.
+    sync();
+    if (canvas.style) {
+      canvas.style.transition = reduced.matches ? 'none' : 'opacity 120ms ease-out';
+      canvas.style.opacity = originalOpacity;
+    }
   }
 
-  // Media layout can change while reduced motion has stopped the main loop.
-  // Coalesce load/resize/mutation bursts into one static redraw without advancing it.
+  /** Passive input handlers do no layout reads, text scans or Canvas drawing. */
+  function onScroll(event) {
+    if (demo || disposed || document.hidden || event?.ctrlKey) return;
+    const target = event?.target;
+    if (target && target !== document && target !== document.body && target !== document.documentElement
+      && !readingRoots.some(root => root === target || root.contains?.(target))) return;
+    measuredAt = -Infinity;
+    readingTextDirty = true;
+    if (!scrolling) {
+      scrolling = true;
+      cancelAnimationFrame(raf);
+      cancelAnimationFrame(foregroundRaf);
+      raf = foregroundRaf = 0;
+      previous = null;
+      if (canvas.style) {
+        canvas.style.transition = 'none';
+        canvas.style.opacity = '0';
+      }
+    }
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(finishScroll, SCROLL_IDLE_MS);
+  }
+
+  // Coalesce layout/content changes into one static redraw; scrolling owns the
+  // quiet interval and consumes these invalidations only after it ends.
   function onForegroundChange() {
     measuredAt = -Infinity;
-    if (disposed || document.hidden || !reduced.matches || foregroundRaf) return;
+    readingTextDirty = true;
+    if (disposed || scrolling || document.hidden || !reduced.matches || foregroundRaf) return;
     foregroundRaf = requestAnimationFrame(() => {
       foregroundRaf = 0;
       if (!disposed && !document.hidden) { draw(); lastPaint = performance.now(); }
@@ -719,13 +863,23 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   const observer = new ResizeObserver(resize);
   const themeObserver = new MutationObserver(sync);
   const foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+  const readingObserver = demo ? null : new MutationObserver(records => {
+    if (!records || records.some(record => record.target !== canvas)) onForegroundChange();
+  });
+  readingObserver?.observe(document.body, { childList: true, characterData: true, subtree: true,
+    attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
   observer.observe(canvas);
   themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
   document.addEventListener('visibilitychange', sync);
   reduced.addEventListener('change', sync);
   reducedTransparency.addEventListener('change', sync);
   window.addEventListener('resize', resize);
-  document.addEventListener('scroll', onScroll, true);
+  document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+  document.addEventListener('wheel', onScroll, { capture: true, passive: true });
+  document.addEventListener('touchmove', onScroll, { capture: true, passive: true });
+  document.fonts?.addEventListener('loadingdone', onForegroundChange);
+  document.addEventListener('transitionend', onForegroundChange, true);
+  document.addEventListener('animationend', onForegroundChange, true);
   resize();
   function dispose() {
     spout.detach();
@@ -737,12 +891,26 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     raf = 0;
     observer.disconnect();
     foregroundObserver?.dispose();
+    readingObserver?.disconnect();
+    readingProtection?.dispose();
     themeObserver.disconnect();
     document.removeEventListener('visibilitychange', sync);
     reduced.removeEventListener('change', sync);
     reducedTransparency.removeEventListener('change', sync);
     window.removeEventListener('resize', resize);
     document.removeEventListener('scroll', onScroll, true);
+    document.removeEventListener('wheel', onScroll, true);
+    document.removeEventListener('touchmove', onScroll, true);
+    document.fonts?.removeEventListener('loadingdone', onForegroundChange);
+    document.removeEventListener('transitionend', onForegroundChange, true);
+    document.removeEventListener('animationend', onForegroundChange, true);
+    clearTimeout(scrollTimer);
+    scrollTimer = 0;
+    readingRoots = [];
+    if (canvas.style) {
+      canvas.style.opacity = originalOpacity;
+      canvas.style.transition = originalTransition;
+    }
     grid = null;
     scene = previous = null;
     painter = null;
@@ -755,9 +923,15 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     tone = null;
     readingLayout = null;
     foreground = null;
+    sidebarForegrounds = [];
     canvas.width = canvas.height = 1;
   }
-  return { update, dispose };
+  function setActivity(snapshot) {
+    if (disposed) return;
+    simulation.setActivity(snapshot);
+    if (!document.hidden && width && height) draw();
+  }
+  return { update, setActivity, dispose };
 }
 
 /** Backwards-compatible entry point: mounts a layer and returns its disposer. */

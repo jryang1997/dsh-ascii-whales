@@ -3,6 +3,24 @@ const GLYPH_INK_DEPTH_LEVELS = 16;
 const GLYPH_INK_NEAR_DEPTH = 0.14;
 const GLYPH_INK_FAR_DEPTH = 1.35;
 
+// Eight distinct body hues share the same shadow-to-highlight structure. The
+// school shuffles their indices once; painting only reads these cached ramps.
+const RAINBOW_COLOR_STOPS = Object.freeze([
+  [[87, 42, 40], [158, 94, 83], [225, 192, 181]],
+  [[80, 57, 29], [154, 121, 68], [225, 207, 167]],
+  [[51, 66, 33], [110, 135, 80], [196, 216, 175]],
+  [[25, 68, 63], [64, 137, 125], [170, 218, 204]],
+  [[32, 62, 88], [76, 127, 158], [169, 207, 226]],
+  [[48, 55, 83], [109, 116, 153], [199, 202, 224]],
+  [[69, 44, 87], [130, 99, 158], [209, 190, 227]],
+  [[87, 40, 65], [160, 88, 129], [231, 183, 209]],
+].map(stops => Object.freeze(stops.map(stop => Object.freeze(stop)))));
+
+export function rainbowColorStops(index) {
+  return Number.isInteger(index) && index >= 0 && index < RAINBOW_COLOR_STOPS.length
+    ? RAINBOW_COLOR_STOPS[index] : null;
+}
+
 // Each depth row contains a complete shadow-to-highlight ramp. Construct the
 // CSS strings once; drawing only selects an integer index into a cached array.
 const GLYPH_INK_PALETTES = (() => {
@@ -10,6 +28,7 @@ const GLYPH_INK_PALETTES = (() => {
     ocean: [[38, 63, 88], [94, 119, 141], [187, 205, 218]],
     azure: [[32, 62, 88], [76, 127, 158], [169, 207, 226]],
     indigo: [[48, 55, 83], [109, 116, 153], [199, 202, 224]],
+    ...Object.fromEntries(RAINBOW_COLOR_STOPS.map((stops, index) => [`rainbow:${index}`, stops])),
   };
   const palettes = {};
   for (const [name, [shadow, mid, highlight]] of Object.entries(ramps)) {
@@ -35,8 +54,11 @@ const GLYPH_INK_PALETTES = (() => {
   return Object.freeze(palettes);
 })();
 
-/** Return the shared opaque 32-light × 16-distance LUT, with ocean as fallback. */
-export function createInkPalette(name) {
+/** Return the shared opaque 32-light × 16-distance LUT, with ocean as fallback.
+ * Rainbow needs a whale's color index; scenery without an index stays ocean.
+ */
+export function createInkPalette(name, colorIndex) {
+  if (name === 'rainbow' && rainbowColorStops(colorIndex)) return GLYPH_INK_PALETTES[`rainbow:${colorIndex}`];
   return name === 'azure' ? GLYPH_INK_PALETTES.azure
     : name === 'indigo' ? GLYPH_INK_PALETTES.indigo : GLYPH_INK_PALETTES.ocean;
 }

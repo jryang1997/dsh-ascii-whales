@@ -105,7 +105,7 @@ function harness(options = {}) {
           setTransform() {}, clearRect() {}, fillRect() { stats.seaTiles = (stats.seaTiles || 0) + 1; },
           drawImage() { stats.blurCopies++; },
           fillText() { stats.seaGlyphs++; },
-          save() {}, restore() {}, clip() {}, stroke() {}, beginPath() {}, moveTo() {}, lineTo() {}, arcTo() {}, closePath() {},
+          save() {}, restore() {}, clip() {}, stroke() {}, fill() {}, beginPath() {}, moveTo() {}, lineTo() {}, arcTo() {}, closePath() {},
           createLinearGradient: () => ({ addColorStop() {} }), measureText: () => ({ width: 0 }),
         };
         return { width: 0, height: 0, getContext: () => offscreen };

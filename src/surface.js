@@ -1,4 +1,4 @@
-import { createInkPalette, glyphInkIndex } from './shading.js';
+import { createInkPalette, glyphInkIndex, rainbowColorStops } from './shading.js';
 import { attenuation, glyphOpacity, createScene, resizeScene, whalePose, projectParticle, createDepthGrid, resolveDepthGrid, fitCanvas } from './model.js';
 import { resetWhaleRig } from './rig.js';
 
@@ -23,15 +23,16 @@ export function surfaceGlyph(particle, light, coverage, mode) {
 }
 
 /** Cached cell backgrounds with restrained cool, neutral and warm variations. */
-export function createCellPalette(name = 'ocean') {
-  name = name === 'azure' || name === 'indigo' ? name : 'ocean';
+export function createCellPalette(name = 'ocean', colorIndex) {
+  const rainbow = name === 'rainbow' ? rainbowColorStops(colorIndex) : null;
+  name = rainbow ? `rainbow:${colorIndex}` : name === 'azure' || name === 'indigo' ? name : 'ocean';
   if (surfacePalettes.has(name)) return surfacePalettes.get(name);
   const stops = {
     ocean: [[25, 47, 66], [99, 128, 146], [219, 231, 236]],
     azure: [[21, 55, 73], [83, 138, 160], [210, 234, 241]],
     indigo: [[38, 43, 68], [114, 123, 155], [225, 228, 241]],
   };
-  const [shadow, mid, highlight] = stops[name];
+  const [shadow, mid, highlight] = rainbow || stops[name];
   const variations = [[0, 0, 0], [-5, 4, 5], [7, 3, -6], [3, -3, 6]];
   const palette = [];
   for (const variation of variations) for (let depth = 0; depth < 16; depth++) for (let shade = 0; shade < 32; shade++) {
@@ -54,7 +55,11 @@ export function createWhalePainter(scene, config) {
     ? `600 ${config.glyphSize}px Consolas, "Cascadia Mono", "Courier New", monospace`
     : `600 ${config.glyphSize}px "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
   const alphabet = ascii ? Array.from(ASCII_RAMP) : Array.from(new Set(scene.particles.map(p => p.glyph)));
-  const inkPalette = createInkPalette(config.color), cells = createCellPalette(config.color);
+  const palette = { ink: createInkPalette(config.color), cells: createCellPalette(config.color) };
+  const whalePalettes = config.color === 'rainbow' ? (scene.whales || []).map(whale => ({
+    ink: createInkPalette(config.color, whale.colorIndex),
+    cells: createCellPalette(config.color, whale.colorIndex),
+  })) : null;
   const textDark = '#122635', textLight = '#f2f6fa';
 
   function paint(target, grid, poses, width, height, ratio = 1, fade = null, dark = false) {
@@ -80,7 +85,8 @@ export function createWhalePainter(scene, config) {
       const inkLight = grid.atmosphereLights ? grid.atmosphereLights[cell] : light;
       const shade = glyphInkIndex(inkLight, pose.cameraZ / pose.focal);
       const solid = tiles && coverage >= 0.6 && grid.sampleOwners[cell * 5] >= 0;
-      const material = cells[shade + (surfaceKey(particle) % 4) * 512];
+      const colors = whalePalettes?.[particle.whale] || palette;
+      const material = colors.cells[shade + (surfaceKey(particle) % 4) * 512];
       if (solid) {
         // A one-device-pixel seam retains the individual squares. Round both
         // edges independently to avoid overlaps at fractional device scales.
@@ -101,7 +107,7 @@ export function createWhalePainter(scene, config) {
         useFill(luminance < 145 ? textLight : textDark);
         target.globalAlpha = Math.min(1, alpha * 1.2);
       } else {
-        useFill(inkPalette[shade]);
+        useFill(colors.ink[shade]);
         target.globalAlpha = alpha;
       }
       target.fillText(surfaceGlyph(particle, light, coverage, config.fillMode),

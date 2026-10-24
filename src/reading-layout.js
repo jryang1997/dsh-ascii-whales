@@ -1,4 +1,4 @@
-import { glassContentPanes, glassContentTone } from './glass.js';
+import { glassContentPanes, glassContentTone, glassSidebarTone } from './glass.js';
 import { attenuation } from './model.js';
 
 function readingExpandedRect(canvas, card, margin) {
@@ -12,15 +12,18 @@ function readingExpandedRect(canvas, card, margin) {
 
 /** Both DOM and demo adapters supply page rectangles; policy stays here. */
 export function createReadingLayout(snapshot, config, material = {}) {
-  const { canvas, boxes = [], composer = null } = snapshot;
-  const panes = config.glass ? glassContentPanes({ canvas, boxes, max: 16 }) : [];
+  const { canvas, boxes = [], sidebars = [], composer = null } = snapshot;
+  const contentPanes = config.glass ? glassContentPanes({ canvas, boxes, max: 16 }) : [];
+  const sidebarPanes = config.glass ? glassContentPanes({ canvas, boxes: sidebars, max: 4 }) : [];
+  const panes = [...contentPanes, ...sidebarPanes];
   const tone = config.glass ? glassContentTone(config.glassStrength, material) : null;
+  const sidebarTone = config.glass ? glassSidebarTone(config.glassStrength, material) : null;
   const avoidRect = config.composerAvoid && composer
     ? readingExpandedRect(canvas, composer, 8) : null;
   const fade = !avoidRect ? null : (x, y) => x > avoidRect.x && x < avoidRect.x + avoidRect.width
     && y > avoidRect.y && y < avoidRect.y + avoidRect.height ? 0 : 1;
   return {
-    panes, tone, fade,
+    panes, contentPanes, sidebarPanes, tone, sidebarTone, fade,
     sceneryFade(x, y) {
       // Glass is clipped by the renderer at the actual rounded edge. Feeding a
       // pane mask to the cloud raster would erase whole tiles outside that edge.

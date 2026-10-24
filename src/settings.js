@@ -1,6 +1,7 @@
 import { FIELDS, normalizeConfig, configSignature } from './model.js';
 import { createConfigEditor } from './config-editor.js';
 import { createWhaleLayer } from './engine.js';
+import { EMPTY_ACTIVITY, currentSessionId, readActivitySnapshot, createJobsBridge } from './activity.js';
 
 /** The preview always shows the school, whatever the saved switches say. */
 function previewConfigOf(draft) {
@@ -39,6 +40,9 @@ export function registerWhales(ctx, React, dictionaries) {
   ctx.effect(() => ctx.locale.register('asciiWhales', 'zh', dictionaries.zh));
   const t = ctx.locale.bind('asciiWhales');
   const useForm = () => React.useSyncExternalStore(formSubscribe, formSnapshot, formSnapshot);
+  const jobs = createJobsBridge();
+  // Jobs are optional: absent services keep the original decorative background.
+  ctx.inject?.(['jobs'], child => child.effect(() => jobs.attach(child.jobs)));
 
   /**
    * The canvas mounts exactly once and later changes are pushed through update().
@@ -50,12 +54,14 @@ export function registerWhales(ctx, React, dictionaries) {
    * So the layer lives for as long as the canvas node and only the update effect
    * reacts to configuration changes.
    */
-  function Canvas({ config }) {
+  function Canvas({ config, activity = EMPTY_ACTIVITY }) {
     const ref = React.useRef(null);
     const configRef = React.useRef(config);
+    const activityRef = React.useRef(activity);
     const layer = React.useRef(null);
     React.useEffect(() => {
       const instance = createWhaleLayer(ref.current, configRef.current);
+      instance.setActivity(activityRef.current);
       layer.current = instance;
       return () => { instance.dispose(); layer.current = null; };
       // Mount-only on purpose: this effect owns the canvas, not the config.
@@ -64,6 +70,10 @@ export function registerWhales(ctx, React, dictionaries) {
       configRef.current = config;
       layer.current?.update(config);
     }, [config]);
+    React.useEffect(() => {
+      activityRef.current = activity;
+      layer.current?.setActivity(activity);
+    }, [activity]);
     return h('canvas', { ref, 'aria-hidden': true, style: { display: 'block', width: '100%', height: '100%' } });
   }
 
@@ -127,12 +137,24 @@ export function registerWhales(ctx, React, dictionaries) {
     // the very same config object, so the update effect does not even fire.
     const signature = snapshot.status === 'ready' ? configSignature(snapshot.value) : '';
     const config = React.useMemo(() => normalizeConfig(snapshot.value ?? {}), [signature]);
-    if (snapshot.status !== 'ready' || !config.enabled || (panelId !== null && panelId !== 'conversation')) return null;
+    const list = props.useSessions?.(state => state);
+    const statuses = props.useSessionStatus?.(state => state);
+    const jobSnapshot = React.useSyncExternalStore(jobs.subscribe, jobs.getSnapshot, jobs.getSnapshot);
+    const nextActivity = React.useMemo(() => readActivitySnapshot(list, statuses, jobSnapshot), [list, statuses, jobSnapshot]);
+    const activityKey = JSON.stringify(nextActivity);
+    const activity = React.useMemo(() => nextActivity, [activityKey]);
+    const scope = currentSessionId(list);
+    const visible = snapshot.status === 'ready' && config.enabled && (panelId === null || panelId === 'conversation');
+    React.useEffect(() => {
+      jobs.watch(visible && config.activity ? scope : null);
+      return () => jobs.watch(null);
+    }, [visible, config.activity, scope]);
+    if (!visible) return null;
     return h('div', { 'aria-hidden': true, style: {
       position: 'absolute', left: 'var(--dsh-windows-sidebar-width, var(--ascii-whale-inset, 280px))',
       top: 'var(--dsh-frame-top-clearance, 0px)', right: 0, bottom: 0,
       '--ascii-whale-inset': `${config.leftInset}px`, pointerEvents: 'none', overflow: 'hidden',
-    } }, h(Canvas, { config }));
+    } }, h(Canvas, { config, activity }));
   }
 
   function Settings() {
@@ -180,7 +202,8 @@ export function registerWhales(ctx, React, dictionaries) {
           // may still carry composerGlass) but must not render a row of their own.
           ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
             const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
-            const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii');
+            const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii')
+              || (key === 'rainIntensity' && !editor.draft.rain);
             const common = { id, disabled: off, 'aria-describedby': hint };
             let control;
             if (field.kind === 'boolean') {
@@ -213,10 +236,12 @@ export function registerWhales(ctx, React, dictionaries) {
               const number = value === '' || !Number.isFinite(Number(value)) ? field.default : Number(value);
               control = h('div', { className: 'aw-control aw-number' },
                 h('div', { className: 'aw-number-head' },
-                  h('output', { htmlFor: id, className: 'aw-readout' }, readout(field, value))),
+                  h('output', { htmlFor: id, className: 'aw-readout' }, key === 'rainIntensity'
+                    ? `${Math.round(number * 100)}%` : readout(field, value))),
                 h('input', {
                   ...common, type: 'range', className: 'aw-slider', min: field.min, max: field.max, step: field.step,
-                  value: number, style: { '--aw-pct': trackFill((number - field.min) / (field.max - field.min || 1)) },
+                  value: number, 'aria-valuetext': key === 'rainIntensity' ? `${Math.round(number * 100)}%` : undefined,
+                  style: { '--aw-pct': trackFill((number - field.min) / (field.max - field.min || 1)) },
                   onChange: event => update(key, Number(event.target.value)),
                 }),
                 h('div', { className: 'aw-scale', 'aria-hidden': 'true' },

@@ -14,17 +14,18 @@ const baseline = () => normalizeConfig(DEFAULTS);
 const ALTERNATIVES = Object.freeze({
   enabled: false, count: 5, species: 'blue', renderStyle: 'cells', fillMode: 'ascii',
   text: '深海蓝鲸', speed: 1.1, opacity: 0.7, glyphSize: 13, whaleSize: 1.2,
-  color: 'azure', quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
-  composerGlass: true, composerAvoid: true, spout: false, ripples: false, wind: false, clouds: false,
+  color: 'azure', activity: false, quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
+  readingEffect: 'glow', composerGlass: true, composerAvoid: true, spout: false, ripples: false, wind: false, clouds: false,
+  rain: true, rainIntensity: 0.8,
 });
 
 const GROUP_OF = Object.freeze({
   scene: ['count', 'text', 'species', 'whaleSize'],
   metrics: ['glyphSize', 'fillMode', 'renderStyle'],
   palette: ['color'],
-  glass: ['glass', 'glassStrength'],
+  glass: ['glass', 'glassStrength', 'readingEffect'],
   composer: ['composerGlass', 'composerAvoid'],
-  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'wind', 'clouds'],
+  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity'],
 });
 const GROUPS = Object.keys(GROUP_OF);
 
@@ -347,7 +348,9 @@ function harness(options = {}) {
       disconnect() { this.active = false; }
     };
     globalThis.MutationObserver = class { observe() {} disconnect() {} };
-    globalThis.getComputedStyle = element => element && element.__style ? element.__style : defaultStyle;
+    globalThis.getComputedStyle = (element, pseudo) => pseudo
+      ? (pseudo === '::before' ? element?.__beforeStyle : element?.__afterStyle) ?? { ...defaultStyle, content: 'none' }
+      : element && element.__style ? element.__style : defaultStyle;
   }
   function restore() {
     for (const [key, value] of Object.entries(saved)) {
@@ -726,5 +729,47 @@ test('content glass reaches deeply nested user bubbles past offscreen history, s
   assert.ok(drawn.some(insideMain), 'the whole field is issued before clipping');
   assert.ok(drawn.every(point => point.exteriorDepth === paneCount), 'all deeply nested panes clip the sharp sea');
   layer.dispose();
+});
+
+for (const material of [
+  { name: 'translucent ::before', base: 'rgba(0, 0, 0, 0)', before: true },
+  { name: 'opaque body control', base: 'rgb(255, 255, 255)' },
+  { name: 'translucent body with backdrop', base: 'rgba(255, 255, 255, 0.76)', filter: 'blur(16px)' },
+  { name: 'translucent ::after', base: 'rgba(0, 0, 0, 0)', after: true },
+  { name: 'modern computed menu color', base: 'rgba(0, 0, 0, 0)', before: true, pseudoFill: 'color(srgb 1 1 1 / 76%)' },
+  { name: 'a translucent decoration without backdrop', base: 'rgba(255, 255, 255, 0.08)', expected: 1 },
+  { name: 'a zero-blur decoration', base: 'rgba(255, 255, 255, 0.08)', filter: 'blur(0px)', expected: 1 },
+  { name: 'an absent pseudo element', base: 'rgba(0, 0, 0, 0)', before: true, content: 'none', expected: 1 },
+  { name: 'an invisible pseudo element', base: 'rgba(0, 0, 0, 0)', before: true, opacity: '0', expected: 1 },
+  { name: 'an invisible parent panel', base: 'rgba(0, 0, 0, 0)', before: true, parentOpacity: '0', expected: 1 },
+  { name: 'an accent that does not cover the panel', base: 'rgba(0, 0, 0, 0)', before: true, bottom: 'auto', expected: 1 },
+]) test(`${material.expected === 1 ? 'the goal bar ignores' : 'the goal bar gets its own glass pane with'} ${material.name}`, t => {
+  // Installed DSH GoalBar: transparent dock -> rounded bar -> full-size ::before.
+  const goal = { left: 80, top: 150, width: 640, height: 36 };
+  const transparent = { backgroundColor: 'rgba(0, 0, 0, 0)', position: 'relative',
+    visibility: 'visible', display: 'flex', borderTopLeftRadius: '8px', borderTopRightRadius: '8px',
+    borderBottomLeftRadius: '8px', borderBottomRightRadius: '8px' };
+  const pseudo = { ...transparent, backgroundColor: material.pseudoFill ?? 'rgba(255, 255, 255, 0.76)',
+    content: material.content ?? '\"\"', position: 'absolute', inset: '0px',
+    top: '0px', right: '0px', bottom: material.bottom ?? '0px', left: '0px',
+    backdropFilter: 'blur(16px)', zIndex: '-1', opacity: material.opacity ?? '1' };
+  const bar = { tagName: 'DIV', children: [], getBoundingClientRect: () => goal,
+    __style: { ...transparent, backgroundColor: material.base, backdropFilter: material.filter ?? 'none', opacity: material.parentOpacity ?? '1' },
+    __beforeStyle: material.before ? pseudo : undefined, __afterStyle: material.after ? pseudo : undefined };
+  const { stats, drawn, canvas, install, restore } = harness({
+    contentBoxes: [{ ...goal, transparent: true, radius: 0, children: [bar] }],
+    composerRect: { left: 80, top: 450, width: 640, height: 110 }, reduceMotion: true,
+  });
+  install(); t.after(restore);
+  const layer = createWhaleLayer(canvas(), normalizeConfig({ glass: true, glassStrength: 0,
+    wind: false, clouds: false, ripples: false, spout: false }));
+  try {
+    assert.ok(drawn.some(point => point.x > goal.left && point.x < goal.left + goal.width
+      && point.y > goal.top && point.y < goal.top + goal.height), 'a whale really overlaps the goal bar');
+    const panes = material.expected ?? 2;
+    assert.equal(stats.paneGradients / 2, panes, 'only the actual goal material and composer get glass');
+    assert.ok(drawn.every(point => point.exteriorDepth === panes), 'sharp whale commands use the actual pane clip');
+    assert.ok(stats.blurCopies > 0 && stats.paneImages > 0, 'recognized panels use the actual blurred-sea pipeline');
+  } finally { layer.dispose(); }
 });
 
