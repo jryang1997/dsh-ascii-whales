@@ -48,7 +48,7 @@ dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
 2. 在 DSH 插件管理器中安装该文件。
 3. 打开 **插件 → 文字蓝鲸**，调整选项后点击 **保存**。
 
-目前发布的安装包为 [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0)。0.10.0 之后的变化见[更新日志](./CHANGELOG.md)。最上面一段是桌面窗口的录屏。下潜和拍尾仍用正式渲染器画出，完全沉在水下的几秒被缩短了。
+目前发布的安装包为 [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0)。0.10.0 之后的变化见[更新日志](./CHANGELOG.md)。本页动图来自真实 DSH 页面录屏：巡游是桌面窗口，下潜、拍尾和落雨使用 0.14.0 之后的源码构建，深色主题，鲸鱼为「纯字符 + 自定义文字 + 每条随机配色」。
 
 ## 能做什么
 
@@ -66,16 +66,26 @@ dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
 ## 动作
 
 <p align="center">
-  <img src="./docs/images/dive.gif" width="640" alt="蓝鲸吻端先入水，尾鳍留在水面上，再从鼻端浮出">
+  <img src="./docs/images/dive.gif" width="960" alt="真实 DSH 深色页面里，鲸群游动，有的鲸沉下去再从鼻端浮出">
 </p>
 
-<p align="center"><sub>下潜再浮出。吻端先入水，尾鳍还留在上面。完全看不见的那几秒被剪掉了。上来时鼻端先回来。</sub></p>
+<p align="center"><sub>鲸群各自挑时候下潜：吻端先入水，尾鳍最后消失，过几秒从鼻端先回来。这是真实 DSH 页面录屏。</sub></p>
 
 <p align="center">
-  <img src="./docs/images/tail.gif" width="460" alt="座头鲸尾叶上下拍动">
+  <img src="./docs/images/tail.gif" width="960" alt="真实 DSH 深色页面里，鲸鱼摆尾向前游，身后留下水纹">
 </p>
 
-<p align="center"><sub>座头鲸的尾叶。向前游的时候，两片尾叶一起上下拍。</sub></p>
+<p align="center"><sub>向前游时两片尾叶一起上下拍，身后留下逐渐展开的水纹。鲸群使用纯字符、自定义文字和每条随机配色。</sub></p>
+
+## 海上落雨
+
+<p align="center">
+  <img src="./docs/images/rain.gif" width="960" alt="真实 DSH 深色页面里，细雨随风斜落，鲸群在雨丝间游动">
+</p>
+
+<p align="center"><sub>雨丝随风向缓慢偏转；落到海面时带出碎水和短暂涟漪。开关与雨量都在设置里原地调整。</sub></p>
+
+「海上落雨」默认关闭，雨量从 0 到 1，默认 0.45。雨丝跟随缓慢变化的海面风场，前后层长短与速度不同；关掉海面风纹后会慢慢回到直雨。雨滴落点带出碎水与扩散断纹，和鲸鱼游动尾流是两个独立开关。降雨沿用阅读区、媒体与毛玻璃保护；页面隐藏、暂停或系统要求减少动态时不继续推进。
 
 ## 画面与阅读
 

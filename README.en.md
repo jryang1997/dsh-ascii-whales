@@ -48,7 +48,7 @@ Or install the release tarball through the plugin manager:
 2. Install the file through the DSH plugin manager.
 3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
-The current published package is [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). The clip at the top is a recording of the desktop window. The dive and fluke clips still come from the real renderer, and the fully hidden part of a dive is shortened.
+The current published package is [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). All clips on this page are recordings of real DSH pages: the cruise clip is the desktop window, while the dive, fluke and rain clips use a source build after 0.14.0 with the dark theme, glyphs, custom text and a random color per whale.
 
 ## Features
 
@@ -65,16 +65,26 @@ The current published package is [v0.14.0](https://github.com/jryang1997/dsh-asc
 ## Motion
 
 <p align="center">
-  <img src="./docs/images/dive.gif" width="640" alt="A blue whale puts its nose under first, leaves the tail up, then surfaces nose first">
+  <img src="./docs/images/dive.gif" width="960" alt="Real DSH dark page with whales swimming; one dives and returns nose first">
 </p>
 
-<p align="center"><sub>Dive and return. The nose goes under while the tail is still up. The fully hidden seconds are cut. The nose comes back first.</sub></p>
+<p align="center"><sub>Each whale picks its own moment to dive: the nose goes under first and the tail disappears last, then the nose returns first. Recorded from a real DSH page.</sub></p>
 
 <p align="center">
-  <img src="./docs/images/tail.gif" width="460" alt="A humpback fluke beating up and down">
+  <img src="./docs/images/tail.gif" width="960" alt="Real DSH dark page with whales beating their flukes and leaving a wake">
 </p>
 
-<p align="center"><sub>A humpback fluke. Both lobes beat up and down together while the whale swims forward.</sub></p>
+<p align="center"><sub>Both fluke lobes beat up and down while the whale swims forward, leaving a widening wake. Glyphs, custom text and a random color per whale.</sub></p>
+
+## Rain
+
+<p align="center">
+  <img src="./docs/images/rain.gif" width="960" alt="Real DSH dark page with fine rain drifting in the wind over swimming whales">
+</p>
+
+<p align="center"><sub>Streaks follow the slowly turning breeze and leave small splashes and short ripples where they land. The switch and intensity update in place.</sub></p>
+
+Rain is off by default, with intensity from 0 to 1 and a default of 0.45. Streaks follow a slowly changing sea breeze and change length and speed by layer; turning the sea wind off returns them to vertical rain. Landing splashes and spreading ripples are separate from the swimming wake switch. Rain uses the same reading, media and glass protection, and pauses when the page is hidden, the effect is paused or the system asks for reduced motion.
 
 ## Whales around your conversation
 
