@@ -3392,6 +3392,9 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     }
     target.stroke();
   }
+  function rainPresence(opacity) {
+    return Math.min(0.83, 0.48 + 0.52 * opacity);
+  }
   function drawRain(target, field, options = {}) {
     const result = { drops: 0, impacts: 0, glyphs: 0 }, state = storage.get(field);
     if (!state || !target || typeof target.beginPath !== "function" || typeof target.moveTo !== "function" || typeof target.lineTo !== "function" || typeof target.stroke !== "function") return result;
@@ -3432,12 +3435,12 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
             segments[i + 3] = y - lift - 1.3;
           }
         }
-        target.lineWidth = Math.max(0.55, 0.7 / ratio) * impact.scale;
+        target.lineWidth = Math.max(1, 1.1 / ratio) * impact.scale;
         const mask = maskAt(segments, count, fade, width, height, target.lineWidth);
-        const amount = opacity * (options.dark ? 0.34 : 0.3) * envelope * mask * (reduced ? 0.55 : 1);
+        const amount = rainPresence(opacity) * (options.dark ? 0.72 : 0.68) * envelope * mask * (reduced ? 0.55 : 1);
         if (!(amount > 1e-3)) continue;
         target.globalAlpha = amount;
-        target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.72 : 0.42, 0.16)];
+        target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.72 : 0.2, 0.16)];
         strokeSegments(target, segments, count);
         result.impacts++;
       }
@@ -3450,12 +3453,12 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
         segments[1] = y;
         segments[2] = x - drop.vx * sx / speed * length;
         segments[3] = y - drop.vy * sy / speed * length;
-        target.lineWidth = Math.max(0.5, 0.68 / ratio) * drop.scale;
+        target.lineWidth = Math.max(1, 1.05 / ratio) * drop.scale;
         const mask = maskAt(segments, 1, fade, width, height, target.lineWidth);
-        const amount = opacity * (options.dark ? 0.28 : 0.25) * Math.min(1, drop.age / 0.055) * (0.65 + 0.35 * drop.energy) * mask * (reduced ? 0.5 : 1);
+        const amount = rainPresence(opacity) * (options.dark ? 0.66 : 0.62) * Math.min(1, drop.age / 0.055) * (0.65 + 0.35 * drop.energy) * mask * (reduced ? 0.5 : 1);
         if (!(amount > 1e-3)) continue;
         target.globalAlpha = amount;
-        target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.76 : 0.34, 0.16)];
+        target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.76 : 0.16, 0.16)];
         strokeSegments(target, segments, 1);
         result.drops++;
       }
@@ -3806,7 +3809,8 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       spoutDropExpired(state.now);
       if (!ink || !bursts.length) return;
       const opacity = Number.isFinite(state.opacity) ? state.opacity : 0;
-      const fillStyle = state.dark ? "#d7e8ee" : "#b7d0d6";
+      const mist = Math.min(1, 0.62 + 0.38 * opacity);
+      const fillStyle = state.dark ? "#e7f6f8" : "#2f5964";
       const font = `600 ${state.glyphSize}px Consolas, "Cascadia Mono", "Courier New", monospace`;
       for (const burst of bursts) {
         const aged = spoutAge(state.now - burst.born);
@@ -3828,7 +3832,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
             const whale = state.scene && state.scene.whales && state.scene.whales[burst.whaleId];
             const submergence = whale && whale._motion ? whale._motion.submergence : void 0;
             const surfaced = Number.isFinite(submergence) && submergence > 0 ? 1 - submergence : 1;
-            return aged.alpha * opacity * veil * edge * surfaced;
+            return aged.alpha * mist * veil * edge * surfaced;
           }
         });
       }

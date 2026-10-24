@@ -227,6 +227,16 @@ test('fade zero suppresses both phases and footprint masking excludes tails, cre
   }
 });
 
+test('light sea at a low whale opacity still draws readable rain streaks', () => {
+  const field = run(makeField(), 3, { enabled: true, intensity: 1, wind: false });
+  const view = target();
+  const counts = drawRain(view.ink, field, { phase: 'fall', opacity: 0.35, dark: false });
+  assert.ok(counts.drops > 10);
+  const peak = Math.max(...view.strokes.map(stroke => stroke.alpha));
+  assert.ok(peak >= 0.32, `peak rain alpha ${peak} is too faint at opacity 0.35`);
+  assert.ok(view.strokes.every(stroke => stroke.alpha <= 0.6));
+});
+
 test('reduced motion renders a stable sparse subset without creating particles or advancing time', () => {
   const empty = makeField(), emptyView = target();
   drawRain(emptyView.ink, empty, { reduced: true });

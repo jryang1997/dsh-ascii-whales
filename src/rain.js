@@ -174,6 +174,11 @@ function strokeSegments(target, segments, count) {
   target.stroke();
 }
 
+/** Whale opacity can be a whisper. Weather still has to read, so strokes keep a floor. */
+function rainPresence(opacity) {
+  return Math.min(0.83, 0.48 + 0.52 * opacity);
+}
+
 /** Draw surface before whales and fall afterwards. Drawing never advances time. */
 export function drawRain(target, field, options = {}) {
   const result = { drops: 0, impacts: 0, glyphs: 0 }, state = storage.get(field);
@@ -212,11 +217,11 @@ export function drawRain(target, field, options = {}) {
           segments[i + 2] = x + side * (radius * 0.3 + 1); segments[i + 3] = y - lift - 1.3;
         }
       }
-      target.lineWidth = Math.max(0.55, 0.7 / ratio) * impact.scale;
+      target.lineWidth = Math.max(1, 1.1 / ratio) * impact.scale;
       const mask = maskAt(segments, count, fade, width, height, target.lineWidth);
-      const amount = opacity * (options.dark ? 0.34 : 0.30) * envelope * mask * (reduced ? 0.55 : 1);
+      const amount = rainPresence(opacity) * (options.dark ? 0.72 : 0.68) * envelope * mask * (reduced ? 0.55 : 1);
       if (!(amount > 0.001)) continue;
-      target.globalAlpha = amount; target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.72 : 0.42, 0.16)];
+      target.globalAlpha = amount; target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.72 : 0.2, 0.16)];
       strokeSegments(target, segments, count); result.impacts++;
     }
     if (!phase || phase === 'fall') for (const drop of field.drops) {
@@ -226,12 +231,12 @@ export function drawRain(target, field, options = {}) {
       const speed = Math.hypot(drop.vx * sx, drop.vy * sy) || 1;
       segments[0] = x; segments[1] = y;
       segments[2] = x - drop.vx * sx / speed * length; segments[3] = y - drop.vy * sy / speed * length;
-      target.lineWidth = Math.max(0.5, 0.68 / ratio) * drop.scale;
+      target.lineWidth = Math.max(1, 1.05 / ratio) * drop.scale;
       const mask = maskAt(segments, 1, fade, width, height, target.lineWidth);
-      const amount = opacity * (options.dark ? 0.28 : 0.25) * Math.min(1, drop.age / 0.055)
+      const amount = rainPresence(opacity) * (options.dark ? 0.66 : 0.62) * Math.min(1, drop.age / 0.055)
         * (0.65 + 0.35 * drop.energy) * mask * (reduced ? 0.5 : 1);
       if (!(amount > 0.001)) continue;
-      target.globalAlpha = amount; target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.76 : 0.34, 0.16)];
+      target.globalAlpha = amount; target.strokeStyle = palette[glyphInkIndex(options.dark ? 0.76 : 0.16, 0.16)];
       strokeSegments(target, segments, 1); result.drops++;
     }
   } finally {

@@ -335,7 +335,10 @@ export function attachSpout(canvas, read) {
     spoutDropExpired(state.now);
     if (!ink || !bursts.length) return;
     const opacity = Number.isFinite(state.opacity) ? state.opacity : 0;
-    const fillStyle = state.dark ? '#d7e8ee' : '#b7d0d6';
+    // Body opacity can sit near 0.35. A pale mist at that alpha disappears on a
+    // light page, so the puff keeps its own strength and a darker light-theme ink.
+    const mist = Math.min(1, 0.62 + 0.38 * opacity);
+    const fillStyle = state.dark ? '#e7f6f8' : '#2f5964';
     const font = `600 ${state.glyphSize}px Consolas, "Cascadia Mono", "Courier New", monospace`;
     for (const burst of bursts) {
       const aged = spoutAge(state.now - burst.born);
@@ -353,7 +356,7 @@ export function attachSpout(canvas, read) {
           const whale = state.scene && state.scene.whales && state.scene.whales[burst.whaleId];
           const submergence = whale && whale._motion ? whale._motion.submergence : undefined;
           const surfaced = Number.isFinite(submergence) && submergence > 0 ? 1 - submergence : 1;
-          return aged.alpha * opacity * veil * edge * surfaced;
+          return aged.alpha * mist * veil * edge * surfaced;
         },
       });
     }

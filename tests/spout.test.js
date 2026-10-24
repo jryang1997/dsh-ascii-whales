@@ -235,6 +235,29 @@ test('a surfaced whale spouts from the blowhole on its own, then leaves the mist
   assert.equal(drawn.calls.length, 0);
 });
 
+test('low whale opacity still leaves a readable mist on a light background', () => {
+  const scene = createScene(1, '鲸', 'blue', 1);
+  const grid = createDepthGrid(1600, 900, 11);
+  let now = 0;
+  const layer = attachSpout(null, () => ({
+    enabled: true, reduced: false, hidden: false, opacity: 0.35, quietCenter: false,
+    glyphSize: 11, dark: false,
+    scene, poses: [whalePose(scene.whales[0], 0, 1600, 900, 0)], grid,
+    width: 1600, height: 900, now,
+  }));
+  try {
+    const drawn = fakeInk();
+    layer.paint(drawn.ink, null);
+    now = 20000;
+    layer.paint(drawn.ink, null);
+    assert.ok(drawn.calls.length > 0, 'the mist should appear once the clock is due');
+    assert.ok(drawn.calls[0].alpha >= 0.5, `mist alpha ${drawn.calls[0].alpha} is too faint`);
+    assert.notEqual(drawn.calls[0].fillStyle, '#b7d0d6');
+  } finally {
+    layer.detach();
+  }
+});
+
 test('spout stays quiet when the option is off, and a detached paint does not throw', () => {
   const { grid, particles, inside } = gridWith({ row: 0, col: 0 }, 0);
   assert.equal(spoutHit({ enabled: false, button: 0, tag: 'div', x: inside.x, y: inside.y }, grid, particles), null);
