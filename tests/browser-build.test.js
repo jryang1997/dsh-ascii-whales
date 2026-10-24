@@ -51,7 +51,12 @@ test('the shipped plugin registers host slots and both dictionaries through its 
   assert.deepEqual(forms, ['ascii-whale-background']);
   assert.deepEqual(locales.map(item => item[1]), ['en', 'zh']);
   assert.ok(locales.every(item => item[2].save && item[2].stylePreview));
-  assert.deepEqual(slots.map(item => item.slot.name), ['shell.overlay', 'plugins.bundle.config']);
+  assert.deepEqual(slots.map(item => item.slot.name), ['sidebar.panellist', 'main', 'shell.overlay', 'plugins.bundle.config']);
+  const sidebar = slots.find(item => item.slot.name === 'sidebar.panellist');
+  const panel = slots.find(item => item.slot.name === 'main');
+  assert.equal(sidebar.slot.id, panel.slot.key, 'the sidebar button addresses its settings panel');
+  assert.equal(sidebar.slot.label(), 'title');
+  assert.ok(sidebar.slot.order > 0 && sidebar.slot.order < 10, 'the shortcut follows Plugins');
   assert.ok(slots.every(item => typeof item.view === 'function'));
 });
 

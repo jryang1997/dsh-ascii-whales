@@ -5412,6 +5412,39 @@
         )
       );
     }
+    function SidebarIcon({ size: size2 }) {
+      return h(
+        "svg",
+        { width: size2, height: size2, viewBox: "0 0 36 36", fill: "none", "aria-hidden": true },
+        h(
+          "g",
+          { transform: "rotate(40 18 18)", fill: "currentColor" },
+          h("path", { d: "M14.7 12.8C11.8 13.7 9.3 15.7 9 18.5C11.8 18.4 14.4 16.9 15.9 14.7L14.7 12.8ZM21.3 12.8C24.2 13.7 26.7 15.7 27 18.5C24.2 18.4 21.6 16.9 20.1 14.7L21.3 12.8Z" }),
+          h("path", { d: "M18 6.5C14.9 6.5 13.2 9 13.2 12.2C13.2 17.1 15.5 20.7 16.5 23.6L16.6 24.9C14.9 24.1 12.6 24.1 11 24.9C11.7 27.6 14.6 28.9 17.3 28.2L18 27.1L18.7 28.2C21.4 28.9 24.3 27.6 25 24.9C23.4 24.1 21.1 24.1 19.4 24.9L19.5 23.6C20.5 20.7 22.8 17.1 22.8 12.2C22.8 9 21.1 6.5 18 6.5Z" })
+        )
+      );
+    }
+    function SettingsPanel() {
+      return h("div", { style: {
+        flex: "1 1 0",
+        minWidth: 0,
+        minHeight: 0,
+        height: "100%",
+        overflowY: "auto",
+        padding: "24px clamp(16px, 3vw, 40px)",
+        boxSizing: "border-box"
+      } }, h(Settings));
+    }
+    ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
+      name: "sidebar.panellist",
+      id: "ascii-whales",
+      order: 5,
+      label: () => t("title")
+    }, SidebarIcon));
+    ctx.slots.inject("main", () => ctx.slots.register({
+      name: "main",
+      key: "ascii-whales"
+    }, SettingsPanel));
     ctx.slots.inject("shell.overlay", () => ctx.slots.register({
       name: "shell.overlay",
       id: "ascii-whale-background",
