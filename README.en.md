@@ -193,7 +193,7 @@ The page includes all four rendering combinations and a live group of whales. Ch
 ```text
 src/             Implementation sources
 tests/           Tests and helpers/ adapters
-scripts/         Build, verification, and review tools
+scripts/         Build and preview generators (verification tooling is a devDependency)
 preview/         Standalone entry and generated page
 docs/research/   Research and design records
 docs/images/     Screenshots and clips
@@ -213,7 +213,9 @@ pnpm verify
 
 After changing browser sources, run `pnpm build` and `pnpm preview` to update both artifacts, then run `pnpm verify`. Verification checks committed output without rebuilding it, so stale artifacts fail. Test discovery recursively includes `*.test.js` under `tests/`, excluding hidden directories and `node_modules/`. It does not scan repository backups, reference projects, or worktree copies. GitHub Actions runs the same verification on Windows and Linux.
 
-`pnpm check` checks syntax; `pnpm test` runs tests. `pnpm --silent review:snapshot --base <ref>` outputs a JSON review inventory including untracked files. `pnpm --silent agent:probe` checks whether its process can read the entry files. See the [engineering guide](./docs/agents/engineering.md) for native-tool read preflight, review scope, and browser evidence requirements.
+Verification, packaging, and review share the local dev dependency [@jryang1997/dsh-plugin-kit](../dsh-plugin-kit) (configured under `dshPluginKit` in [package.json](./package.json)): `pnpm check` runs manifest, locale, README, version, and syntax checks; `pnpm test` discovers and runs tests; `pnpm verify` checks static items, artifacts, the published tarball, the screenshots manifest, and tests. `pnpm --silent review:snapshot --base <ref>` outputs a JSON review inventory including untracked files. `pnpm --silent agent:probe` checks whether its process can read the entry files. See the [engineering guide](./docs/agents/engineering.md) for native-tool read preflight, review scope, and browser evidence requirements.
+
+The published tarball contains runtime files, `locale/`, the icon, README/CHANGELOG, and `docs/images/` plus `docs/research/`; the pack check rejects development paths such as `tests/`, `scripts/`, `preview/`, and `.node-version`. The kit is currently a local `file:` dependency and will move to a pinned git dependency once its repository and tag exist.
 
 Package with `pnpm --config.ignore-scripts=true pack`.
 
@@ -231,6 +233,8 @@ Package with `pnpm --config.ignore-scripts=true pack`.
 | [engine.js](./src/engine.js) | Canvas drawing and updates in place |
 | [reading-layout.js](./src/reading-layout.js) | Shared glass, masks, and avoidance rules for conversation and demo cards |
 | [activity.js](./src/activity.js) | Published DSH state, stable task bindings, job subscriptions, and badges |
+| [dictation.js](./src/dictation.js) | Dictation bridge, gather band and slot geometry, breathing and easing |
+| [voice-sea.js](./src/voice-sea.js) | Voice-driven sea swell field and drawer |
 | [rain.js](./src/rain.js) | Wind-driven rain, intensity transitions, and impact ripples |
 | [simulation.js](./src/simulation.js) | Scene adoption, resizing, and advancement of motion and sea effects |
 | [config-editor.js](./src/config-editor.js) | Draft rules, validation, differential saves, and revision conflicts |

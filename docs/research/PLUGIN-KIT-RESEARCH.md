@@ -1,6 +1,6 @@
 # DSH 插件共享脚手架研究
 
-状态：研究结论，未实现。日期 2026-10-25。
+状态：研究结论已落地；kit MVP 存在于本地 ../dsh-plugin-kit，whale 已接入，dictate 迁移等待 kit 的 GitHub 仓库与 tag。日期 2026-10-25。
 范围：`dsh-ascii-whales`（本仓库）与 `C:\Users\Jerry\Desktop\dsh_voice\dsh-hold-to-dictate`。两仓库只读核对；whale 工作区当时有未提交修改，未触碰。
 配套研究：[听写聚集彩蛋](./DICTATION-GATHER.md)（事件桥与鲸群表现侧）。
 原始证据在本地 `.scratch/research/scaffold/findings.md`（未随仓库发布）；本文只保留结论与可复核的行号。
@@ -212,3 +212,12 @@ kit 单 `1.x`：major = 会改变既有校验结论或配置 schema；minor = �
 - DSH 打包规则来自安装构建解包（2026-10-23），不是上游书面规范，标为推断；kit 应用 `dshRulesVersion` 固定核对版本。
 - 未验证：kit 在第三个真实插件上的启动耗时；whale tarball 修复后 DSH 安装行为；npm 包发布链路。
 - 原始证据与逐行引用：`.scratch/research/scaffold/findings.md`（本地，未随仓库发布）。
+
+## 实施记录（2026-10-25）
+
+- 本地 kit 仓库：C:/Users/Jerry/Documents/deepseek-harness/默认工作区/dsh-plugin-kit，包名 @jryang1997/dsh-plugin-kit 1.0.0；零运行时依赖，kit 自身 127 项测试通过；CLI 覆盖 check/test/verify/pack/screenshots/artifacts/review/probe/init。
+- whale 已接入：package.json 增加本地 devDependency 与 dshPluginKit 配置；五类静态检查、真实 pack 检查、产物 --check 与测试发现都走 kit；重复的三个脚本和两份工具测试删除，行为由 kit fixture 覆盖。pnpm verify 通过（375 项测试；原 388 项中 13 项工具测试迁入 kit）。
+- 发布包策略按共识改为精简运行时包：运行文件 + locale + 图标 + README/CHANGELOG + docs/images + docs/research；tests/、scripts/、preview/、.node-version 由 pack 检查拒绝。真实 npm pack 结果 66 个文件。
+- 未完成/待授权：kit 仓库尚未 git init/push、未打 tag；dictate 迁移（Node pin、pnpm、锁文件、双平台 CI）留到 kit 可用固定引用后；npm 注册暂缓，发布前 CI 的 frozen install 会因本地 file: 依赖失败。
+
+- kit 本地仓库首次提交：1f40b75（未 push）。
