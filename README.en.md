@@ -39,7 +39,15 @@ Cancellation, stopping, disconnection, and disappearing tasks do not imply succe
 
 Start with **Scene preset** and choose Default, Rainy, Minimal, or Night voyage. Open **Advanced settings** for individual controls. A preset changes the draft and preview; **Save** applies it to the conversation background. **Reload saved values** discards the draft. See [Settings](#settings).
 
-**Resource mode** is independent of scene presets. Economy reduces continuous scheduling and internal integration while keeping task-prompt time independent. Full resource benefits and energy savings remain unmeasured. See the [three-condition method](./docs/measurement.en.md) and [local evidence status](./docs/resource-report-status.md).
+**Resource mode** is independent of scene presets. Economy reduces continuous scheduling, internal integration, and drawing while keeping task-prompt time independent. In the 45-sample controlled headless Chrome comparison on 2026-10-25, economy observed lower CPU; turning the plugin off used the least CPU. The table shows median single-core-equivalent CPU percentages for the isolated Chrome process tree (n = 5 per cell), including fixture and CDP overhead, rather than plugin-exclusive CPU.
+
+| Simulated scenario | Off | Standard | Economy |
+| --- | --- | --- | --- |
+| Idle | 0.108 | 42.520 | 19.800 |
+| Append | 0.881 | 45.525 | 19.824 |
+| Scroll | 7.229 | 48.403 | 27.370 |
+
+With 16 logical processors, divide these values by 16 for whole-machine normalized percentages. See the [full resource report](./docs/research/RESOURCE-COMPARISON.en.md) for ranges, actual work, and independent diagnostics. Actual DSH resource benefits, GPU utilization, and energy remain unmeasured; these observations do not establish battery gains or a general speedup. See the [three-condition method](./docs/measurement.en.md) and [local evidence status](./docs/resource-report-status.md).
 
 > Inspired by [ascii-sharks](https://github.com/stackedlol/ascii-sharks). Thanks to the project for the original visual idea.
 
