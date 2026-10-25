@@ -81,10 +81,10 @@
     "stylePreview": "Live whale preview of the current draft",
     "stylePreviewNote": "The preview scales the conversation background uniformly, keeping characters and whales in proportion. Changes appear live; save to apply them. The card at the lower right demonstrates glass and avoidance.",
     "mixed": "Mixed group",
-    "blue": "Blue whale",
-    "humpback": "Humpback whale",
-    "sperm": "Sperm whale",
-    "fin": "Fin whale",
-    "bowhead": "Bowhead whale"
+    "blue": "Blue",
+    "humpback": "Humpback",
+    "sperm": "Sperm",
+    "fin": "Fin",
+    "bowhead": "Bowhead"
   }
 }
