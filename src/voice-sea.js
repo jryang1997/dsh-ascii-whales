@@ -248,6 +248,22 @@ export function stepVoiceSea(field, delta, level, options = {}) {
   return field;
 }
 
+/** Maximum live vertical surface excursion in CSS pixels, independent of ring count. */
+export const VOICE_SEA_MAX_AMPLITUDE = 36;
+
+/** A travelling surface height: the microphone envelope controls its amplitude. */
+export function voiceSeaDisplacement(field, x, y) {
+  if (!field || !Number.isFinite(x) || !Number.isFinite(y)) return 0;
+  const envelope = voiceSeaClamp(voiceSeaFinite(field.smoothed, 0), 0, 1);
+  if (!(envelope > 0)) return 0;
+  const dx = x - voiceSeaFinite(field.x, 0), dy = y - voiceSeaFinite(field.y, 0);
+  const distance = Math.hypot(dx, dy);
+  const span = Math.max(1, voiceSeaFinite(field.width, 0), voiceSeaFinite(field.height, 0));
+  const falloff = 1 / (1 + distance / (span * 0.65));
+  const phase = voiceSeaFinite(field.time, 0) * VOICE_SEA_TAU * 2.6 - distance / 38 + dx / 70;
+  return VOICE_SEA_MAX_AMPLITUDE * Math.sqrt(envelope) * falloff * Math.sin(phase);
+}
+
 /**
  * Paint the live swell fronts into an ASCII cell grid.
  *
@@ -376,7 +392,8 @@ export function drawVoiceSea(target, field, options = {}) {
           * Math.min(cellWidth, radius * 0.12);
         const pointRadius = radius + wobble;
         const px = x + Math.cos(angle) * pointRadius;
-        const py = y + Math.sin(angle) * pointRadius * aspect - drift;
+        const surfaceY = y + Math.sin(angle) * pointRadius * aspect - drift;
+        const py = surfaceY + voiceSeaDisplacement(field, px, surfaceY);
         // On the top and bottom of a squashed ring the front runs horizontally,
         // so a tilde belongs there; everywhere else the quiet dots keep it calm.
         const tangentX = -Math.sin(angle), tangentY = Math.cos(angle) * aspect;

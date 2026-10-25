@@ -93,9 +93,9 @@ dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
   <img src="./docs/images/dictation-echo.gif" width="960" alt="真实 DSH 页面里，按住输入框说话时鲸群聚到输入框上缘外，海面随声音起伏">
 </p>
 
-<p align="center"><sub>按住输入框说话：鲸群游到输入框上缘外停住，海面随音量起伏；转写完成后再散开。这是真实 DSH 页面录屏。</sub></p>
+<p align="center"><sub>早期版本的真实 DSH 页面录屏，展示听写联动流程。本次全体转向与实时振幅修正尚未重录。</sub></p>
 
-需要另装 [dsh-hold-to-dictate](https://github.com/jryang1997/dsh-hold-to-dictate)（按住说话）插件。设置里的「听写联动」默认开启，也可单独关闭；只装文字蓝鲸时这个开关不产生任何效果。录音期间鲸群离开巡游路线、聚到输入框上缘外并保持静止，海面以输入框为声源扩散不规则声浪：音量越大，波前越强、越密、扩散越远；没有声音时海面保持平静。转写结束（done）后鲸群散开。系统要求减少动态时不聚集、不推进声浪。
+需要另装 [dsh-hold-to-dictate](https://github.com/jryang1997/dsh-hold-to-dictate)（按住说话）插件。设置里的「听写联动」默认开启，也可单独关闭；只装文字蓝鲸时这个开关不产生任何效果。录音期间每一头鲸鱼都会转向输入框，并缓慢靠近；空间拥挤时也不会遗漏个体，而是在输入框周围等待空间。海面以输入框为声源上下起伏，实时声音越响，振动的振幅越大；没有声音时逐渐恢复平静。转写结束（done）后鲸群散开。系统要求减少动态时不聚集、不推进声浪。
 
 设计取舍与边界见 [听写聚集研究](./docs/research/DICTATION-GATHER.md)；跨插件契约见对应仓库的 ADR。
 

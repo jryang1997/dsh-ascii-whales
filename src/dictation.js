@@ -32,7 +32,8 @@ export const GATHER = Object.freeze({
   clearance: 16,
   topLimitRatio: 0.12,
   holdPace: 0.14,
-  approachPace: 2.8,
+  approachPace: 0.8,
+  turnRate: 0.85,
   // Arrival is measured in absolute pixels, clamped to the body length: a 500 px
   // whale must not start crawling 300 px away from its slot.
   slowRadius: Object.freeze({ floor: 90, cap: 170, body: 0.35 }),
@@ -134,28 +135,43 @@ function layoutRow(entries, left, right) {
 export function gatherGeometry({ card, whales, width, height, composerAvoid = false } = {}) {
   if (!card || !(card.width > 0) || !(card.height > 0) || !Array.isArray(whales) || !whales.length) return null;
   if (!(width > 0) || !(height > 0)) return null;
-  const topLimit = Math.max(24, height * GATHER.topLimitRatio);
+  const centreX = card.left + card.width / 2;
+  const centreY = card.top + card.height / 2;
   const pad = composerAvoid ? avoidancePad(whales) : 0;
+  // Crowded seas still give every animal an approach intention. Targets follow
+  // its visible Euclidean ray toward the composer; no toroidal shortcut and no
+  // resizing the saved school. Collision constraints remain owned by motion.
+  const fallbackSlots = whales.map((whale, index) => {
+    let dx = finite(whale.x, width / 2) - centreX;
+    let dy = finite(whale.y, height / 2) - centreY;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1) { dx = Math.cos(index * 2.4); dy = -1; }
+    const ray = Math.hypot(dx, dy);
+    const ux = dx / ray, uy = dy / ray;
+    const edge = Math.min(Math.abs(ux) > 1e-6 ? card.width / 2 / Math.abs(ux) : Infinity,
+      Math.abs(uy) > 1e-6 ? card.height / 2 / Math.abs(uy) : Infinity);
+    const standOff = edge + Math.max(bodyReach(whale), finite(whale.length, 0) * 0.55) + GATHER.clearance;
+    const radius = standOff;
+    const x = clamp(centreX + ux * radius, Math.min(8, width / 2), Math.max(width - 8, width / 2));
+    const approachY = centreY + uy * radius;
+    const y = clamp(composerAvoid ? Math.min(approachY, card.top - bodyReach(whale) - pad - GATHER.clearance) : approachY,
+      Math.min(8, height / 2), Math.max(height - 8, height / 2));
+    return { x, y, heading: Math.atan2(centreY - y, centreX - x), row: index, queue: true };
+  });
+  const topLimit = Math.max(24, height * GATHER.topLimitRatio);
   const spanL = Math.max(GATHER.edge, card.left - card.width * 0.14);
   const spanR = Math.min(width - GATHER.edge, card.left + card.width * 1.14);
-  if (!(spanR - spanL > 60)) return null;
+  if (!(spanR - spanL > 60)) return fallbackSlots;
   // Sort by current screen x, keeping each whale's original index for the caller.
   const order = whales.map((whale, index) => ({ whale, index, x: finite(whale.x, 0) }))
     .sort((a, b) => a.x - b.x || a.index - b.index);
   // A body that is still turning is longer vertically than its flat silhouette;
   // the posture allowance keeps a tilted flank out of the card while it settles.
-  const clear = order.map(({ whale }) => bodyReach(whale) + GATHER.bobAlong + GATHER.clearance + pad
-    + Math.min(48, whale.length * 0.12));
-  const centreX = card.left + card.width / 2;
-  const facing = (whale) => {
-    const inward = whale.x < centreX ? 0 : Math.PI;
-    const current = finite(whale.heading, inward);
-    const turn = Math.abs(Math.atan2(Math.sin(inward - current), Math.cos(inward - current)));
-    if (turn <= Math.PI / 2) return inward;
-    return Math.cos(current) >= 0 ? 0 : Math.PI;
-  };
-  // Keep any rows that fit safely. Unassigned whales retain their cruise route
-  // instead of one overflowing row cancelling the entire school's response.
+  const clear = order.map(({ whale }) => Math.max(bodyReach(whale), whale.length * 0.55)
+    + GATHER.bobAlong + GATHER.clearance + pad + Math.min(48, whale.length * 0.12));
+  const facing = (x, y) => Math.atan2(centreY - y, centreX - x);
+  // Prefer separated waiting rows where they fit. Any remaining animal keeps
+  // its radial approach target instead of silently returning to cruise.
   const rows = [];
   let rest = order;
   while (rest.length && rows.length < GATHER.maxRows) {
@@ -170,8 +186,8 @@ export function gatherGeometry({ card, whales, width, height, composerAvoid = fa
     rows.push(best);
     rest = rest.slice(best.row.length);
   }
-  if (!rows.length) return null;
-  const slots = new Array(whales.length).fill(null);
+  if (!rows.length) return fallbackSlots;
+  const slots = fallbackSlots.map(slot => ({ ...slot }));
   // Each row is a horizontal line. Its y must clear its own widest body and sit
   // far enough above every earlier row that no cross-row pair ever overlaps once
   // the horizontal stagger is taken into account.
@@ -189,10 +205,15 @@ export function gatherGeometry({ card, whales, width, height, composerAvoid = fa
         }
       }
     }
-    if (y < topLimit) return rowIndex > 0 ? slots : null;
+    if (y < topLimit) return slots;
     rowY[rowIndex] = y;
     row.forEach((entry, i) => {
-      slots[entry.index] = { x: centers[i], y, heading: facing(entry.whale), row: rowIndex };
+      const distance = Math.hypot(entry.whale.x - centreX, entry.whale.y - centreY);
+      // Safe rows are preferred only when reaching one also brings this animal
+      // closer to the user. Otherwise it joins its own radial approach queue.
+      if (Math.hypot(centers[i] - centreX, y - centreY) < distance * 0.9) {
+        slots[entry.index] = { x: centers[i], y, heading: facing(centers[i], y), row: rowIndex };
+      }
     });
   }
   return slots;

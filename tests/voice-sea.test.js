@@ -6,6 +6,8 @@ import {
   drawVoiceSea,
   resetVoiceSeaField,
   stepVoiceSea,
+  voiceSeaDisplacement,
+  VOICE_SEA_MAX_AMPLITUDE,
   VOICE_SEA_MAX_GLYPHS,
   VOICE_SEA_MAX_RINGS,
 } from '../src/voice-sea.js';
@@ -237,6 +239,40 @@ test('quiet microphone RMS emits visible wave fronts while silence stays calm', 
   const silence = drive(createVoiceSeaField(), 2, 0);
   assert.equal(silence.rings.length, 0);
   assert.equal(paint(silence).drawn, 0);
+});
+
+test('quiet, medium and loud raw RMS have strictly increasing measured surface amplitude', () => {
+  const fields = [0, 0.005, 0.02, 0.08].map(rms => drive(createVoiceSeaField(), 1, rms));
+  const peaks = fields.map(field => {
+    let peak = 0;
+    for (let frame = 0; frame < 120; frame++) {
+      field.time = frame / 120;
+      peak = Math.max(peak, Math.abs(voiceSeaDisplacement(field, 340, 260)));
+    }
+    return peak;
+  });
+  assert.equal(peaks[0], 0);
+  assert.ok(peaks[1] > 3, `quiet input must visibly move the sea: ${peaks[1]}`);
+  assert.ok(peaks[2] > peaks[1] * 1.3);
+  assert.ok(peaks[3] > peaks[2] * 1.3);
+  assert.ok(peaks[3] <= VOICE_SEA_MAX_AMPLITUDE);
+  drive(fields[3], 0.5, 0);
+  assert.equal(voiceSeaDisplacement(fields[3], 340, 260), 0);
+  assert.equal(voiceSeaDisplacement(null, 340, 260), 0);
+  assert.equal(voiceSeaDisplacement(fields[2], NaN, 260), 0);
+});
+
+test('live loudness changes actual vertical wave displacement, not just ink or ring count', () => {
+  const ring = ringAt(7, { x: 750, y: 500, maxRadius: 140 });
+  const options = drawOptions({ width: 1500, height: 1000, cellWidth: 1, cellHeight: 1, opacity: 1 });
+  const coordinates = (smoothed, time = 0.17) => paint({ ...syntheticField([ring]), smoothed, time }, options)
+    .calls.map(({ x, y }) => ({ x, y }));
+  const quiet = coordinates(0.1);
+  const loud = coordinates(0.7);
+  assert.ok(quiet.length > 0 && loud.length > 0);
+  assert.notDeepEqual(quiet, loud, 'the same existing front must rise/fall further at a louder live level');
+  assert.notDeepEqual(coordinates(0.7, 0.17), coordinates(0.7, 0.32),
+    'the same front must oscillate with the live surface clock');
 });
 
 test('louder levels spawn more, larger and brighter rings within the cap', () => {

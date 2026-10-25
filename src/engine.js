@@ -543,7 +543,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       dark: document.body.hasAttribute('data-ds-dark-theme') });
     if (config.ripples) drawWater(ink, water, scenery);
     // The voice swell is not part of the swimming wakes: its own switch decides.
-    if (config.dictationEcho) drawVoiceSea(ink, voiceSea, scenery);
+    if (config.dictationEcho && !reduced.matches) drawVoiceSea(ink, voiceSea, scenery);
     const rainScenery = { ...scenery, dark: document.body.hasAttribute('data-ds-dark-theme'),
       reduced: reduced.matches,
       opacity: config.opacity * (reduced.matches ? (config.rain ? config.rainIntensity : 0) : 1) };

@@ -310,7 +310,8 @@
     clearance: 16,
     topLimitRatio: 0.12,
     holdPace: 0.14,
-    approachPace: 2.8,
+    approachPace: 0.8,
+    turnRate: 0.85,
     // Arrival is measured in absolute pixels, clamped to the body length: a 500 px
     // whale must not start crawling 300 px away from its slot.
     slowRadius: Object.freeze({ floor: 90, cap: 170, body: 0.35 }),
@@ -386,21 +387,41 @@
   function gatherGeometry({ card, whales, width, height, composerAvoid = false } = {}) {
     if (!card || !(card.width > 0) || !(card.height > 0) || !Array.isArray(whales) || !whales.length) return null;
     if (!(width > 0) || !(height > 0)) return null;
-    const topLimit = Math.max(24, height * GATHER.topLimitRatio);
+    const centreX = card.left + card.width / 2;
+    const centreY = card.top + card.height / 2;
     const pad = composerAvoid ? avoidancePad(whales) : 0;
+    const fallbackSlots = whales.map((whale, index) => {
+      let dx = finite(whale.x, width / 2) - centreX;
+      let dy = finite(whale.y, height / 2) - centreY;
+      const distance = Math.hypot(dx, dy);
+      if (distance < 1) {
+        dx = Math.cos(index * 2.4);
+        dy = -1;
+      }
+      const ray = Math.hypot(dx, dy);
+      const ux = dx / ray, uy = dy / ray;
+      const edge = Math.min(
+        Math.abs(ux) > 1e-6 ? card.width / 2 / Math.abs(ux) : Infinity,
+        Math.abs(uy) > 1e-6 ? card.height / 2 / Math.abs(uy) : Infinity
+      );
+      const standOff = edge + Math.max(bodyReach(whale), finite(whale.length, 0) * 0.55) + GATHER.clearance;
+      const radius = standOff;
+      const x = clamp(centreX + ux * radius, Math.min(8, width / 2), Math.max(width - 8, width / 2));
+      const approachY = centreY + uy * radius;
+      const y = clamp(
+        composerAvoid ? Math.min(approachY, card.top - bodyReach(whale) - pad - GATHER.clearance) : approachY,
+        Math.min(8, height / 2),
+        Math.max(height - 8, height / 2)
+      );
+      return { x, y, heading: Math.atan2(centreY - y, centreX - x), row: index, queue: true };
+    });
+    const topLimit = Math.max(24, height * GATHER.topLimitRatio);
     const spanL = Math.max(GATHER.edge, card.left - card.width * 0.14);
     const spanR = Math.min(width - GATHER.edge, card.left + card.width * 1.14);
-    if (!(spanR - spanL > 60)) return null;
+    if (!(spanR - spanL > 60)) return fallbackSlots;
     const order = whales.map((whale, index) => ({ whale, index, x: finite(whale.x, 0) })).sort((a, b) => a.x - b.x || a.index - b.index);
-    const clear = order.map(({ whale }) => bodyReach(whale) + GATHER.bobAlong + GATHER.clearance + pad + Math.min(48, whale.length * 0.12));
-    const centreX = card.left + card.width / 2;
-    const facing = (whale) => {
-      const inward = whale.x < centreX ? 0 : Math.PI;
-      const current = finite(whale.heading, inward);
-      const turn2 = Math.abs(Math.atan2(Math.sin(inward - current), Math.cos(inward - current)));
-      if (turn2 <= Math.PI / 2) return inward;
-      return Math.cos(current) >= 0 ? 0 : Math.PI;
-    };
+    const clear = order.map(({ whale }) => Math.max(bodyReach(whale), whale.length * 0.55) + GATHER.bobAlong + GATHER.clearance + pad + Math.min(48, whale.length * 0.12));
+    const facing = (x, y) => Math.atan2(centreY - y, centreX - x);
     const rows = [];
     let rest = order;
     while (rest.length && rows.length < GATHER.maxRows) {
@@ -415,8 +436,8 @@
       rows.push(best);
       rest = rest.slice(best.row.length);
     }
-    if (!rows.length) return null;
-    const slots = new Array(whales.length).fill(null);
+    if (!rows.length) return fallbackSlots;
+    const slots = fallbackSlots.map((slot) => ({ ...slot }));
     const rowY = [];
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
       const { row, centers } = rows[rowIndex];
@@ -431,10 +452,13 @@
           }
         }
       }
-      if (y < topLimit) return rowIndex > 0 ? slots : null;
+      if (y < topLimit) return slots;
       rowY[rowIndex] = y;
       row.forEach((entry, i) => {
-        slots[entry.index] = { x: centers[i], y, heading: facing(entry.whale), row: rowIndex };
+        const distance = Math.hypot(entry.whale.x - centreX, entry.whale.y - centreY);
+        if (Math.hypot(centers[i] - centreX, y - centreY) < distance * 0.9) {
+          slots[entry.index] = { x: centers[i], y, heading: facing(centers[i], y), row: rowIndex };
+        }
       });
     }
     return slots;
@@ -1051,10 +1075,10 @@
     whale.rig.nodes.set(nodes);
     updateWhaleRig(whale);
   }
-  function motionConstrainStep(whale, x, y, heading, obstacles, width, height) {
+  function motionConstrainStep(whale, x, y, heading, obstacles, width, height, approaching = false) {
     if (!obstacles?.length) return false;
     const seamReach = whale.length * 0.6 + motionHullReach(whale);
-    if (Math.min(x, width - x, y, height - y) > seamReach) return false;
+    if (!approaching && Math.min(x, width - x, y, height - y) > seamReach) return false;
     const nodes = whale.rig.nodes;
     if (motionContactRig.before?.length !== nodes.length) {
       motionContactRig.before = new Float64Array(nodes.length);
@@ -1113,6 +1137,14 @@
         slid = true;
       }
     }
+    if (!slid && approaching && whale._motion.gatherTurnClear) {
+      whale.x = x;
+      whale.y = y;
+      whale.heading = heading;
+      nodes.set(before);
+      motionShiftWhale(whale, endX - x, endY - y);
+      if (!motionWhaleBlocked(whale, obstacles)) slid = true;
+    }
     if (!slid) {
       const sample = (t) => {
         whale.x = x + (endX - x) * t;
@@ -1135,6 +1167,9 @@
     whale.vy = (whale.y - y) / motionTick;
     whale.speed = Math.hypot(whale.vx, whale.vy);
     whale.turn = (whale.heading - heading) / motionTick;
+    if (approaching && Math.abs(endHeading - heading) > 1e-7 && Math.abs(whale.heading - heading) < Math.abs(endHeading - heading) * 0.5) {
+      whale._motion.gatherTurnClear = true;
+    }
     return true;
   }
   function motionFoldWhale(whale, width, height) {
@@ -1201,6 +1236,7 @@
           width,
           height,
           whales.length,
+          directive.active === true ? 1 : 0,
           Math.round(directive.anchor.left),
           Math.round(directive.anchor.top),
           Math.round(directive.anchor.width),
@@ -1220,7 +1256,7 @@
         }
       }
       const wants = directive.active === true && Boolean(directive.anchor) && Array.isArray(directive.slots);
-      directive.engage = stepEngage(directive.engage, wants, motionTick * speed);
+      directive.engage = stepEngage(directive.engage, wants, motionTick);
     }
     const schoolEngage = directive ? directive.engage : 0;
     const holdSlots = directive && Array.isArray(directive.slots) ? directive.slots : null;
@@ -1239,7 +1275,16 @@
       }
     }
     const environmentSpeed = Math.min(1, Math.min(width, height) / 650);
-    const obstacles = motionPeriodicObstacles(scene.obstacles, width, height);
+    const obstacles = [...motionPeriodicObstacles(scene.obstacles, width, height) || []];
+    if (schoolEngage > 0 && directive?.anchor) {
+      obstacles.push({
+        x: directive.anchor.left,
+        y: directive.anchor.top,
+        width: directive.anchor.width,
+        height: directive.anchor.height,
+        radius: 0
+      });
+    }
     const forces = whales.map(() => ({ x: 0, y: 0, caution: 0 }));
     for (let i = 0; i < whales.length; i++) {
       const a = whales[i];
@@ -1309,10 +1354,7 @@
       const forwardX = Math.cos(whale.heading), forwardY = Math.sin(whale.heading);
       const nearSeam = Math.min(whale.x, width - whale.x, whale.y, height - whale.y) < whale.length * 0.6 + motionHullReach(whale);
       let seamBrake = 0;
-      const holdDistance = holdSlot ? Math.hypot(
-        motionTorusDelta(holdSlot.x - whale.x, width),
-        motionTorusDelta(holdSlot.y - whale.y, height)
-      ) : 0;
+      const holdDistance = holdSlot ? Math.hypot(holdSlot.x - whale.x, holdSlot.y - whale.y) : 0;
       const slowRadius = motionLimit(
         whale.length * GATHER.slowRadius.body,
         GATHER.slowRadius.floor,
@@ -1353,8 +1395,7 @@
       }
       let desiredX = dx / targetDistance * 1.5 + forwardX * 0.85 + Math.cos(whale.heading + state.wander) * 0.35 + force.x;
       let desiredY = dy / targetDistance * 1.5 + forwardY * 0.85 + Math.sin(whale.heading + state.wander) * 0.35 + force.y;
-      const alignTurn = holdSlot ? motionLimit(1 - holdDistance / Math.max(1, whale.length * 0.35), 0, 1) : 0;
-      const turnLimit = state.agility * Math.sqrt(speed) * (1 + 1.4 * holdEngage + 1.8 * holdEngage * alignTurn);
+      const turnLimit = state.agility * Math.sqrt(speed) * (1 - holdEngage) + GATHER.turnRate * holdEngage;
       const cruise = state.cruise * environmentSpeed * speed * pace;
       const lookAhead = whale.length * 0.35 + cruise / Math.max(0.08, turnLimit);
       const lookX = whale.x + forwardX * lookAhead, lookY = whale.y + forwardY * lookAhead;
@@ -1369,36 +1410,106 @@
         desiredX = (desiredX - force.x) * routine + forwardX * 2.7 * bearingHold + force.x;
         desiredY = (desiredY - force.y) * routine + forwardY * 2.7 * bearingHold + force.y;
       }
+      let gatherTravel = null;
+      let gatherFacing = 0;
+      let gatherClearing = false;
       if (holdSlot && holdEngage > 0) {
+        gatherFacing = directive.anchor ? Math.atan2(
+          directive.anchor.top + directive.anchor.height / 2 - whale.y,
+          directive.anchor.left + directive.anchor.width / 2 - whale.x
+        ) : holdSlot.heading;
+        desiredX = desiredX * (1 - holdEngage) + Math.cos(gatherFacing) * 3 * holdEngage;
+        desiredY = desiredY * (1 - holdEngage) + Math.sin(gatherFacing) * 3 * holdEngage;
         const bob = holdOffset(holdSlot, state.age, i * 1.37);
-        const targetX = holdSlot.x + bob.x, targetY = holdSlot.y + bob.y;
-        const toX = motionTorusDelta(targetX - whale.x, width);
-        const toY = motionTorusDelta(targetY - whale.y, height);
+        const toX = holdSlot.x + bob.x - whale.x, toY = holdSlot.y + bob.y - whale.y;
         const distance = Math.hypot(toX, toY) || 1;
-        const close = motionLimit(1 - distance / Math.max(1, whale.length * 0.35), 0, 1);
-        const wanted = motionAngle(whale.heading, Math.atan2(toY, toX)) * (1 - close) + motionAngle(whale.heading, holdSlot.heading) * close;
-        const strength = 0.9 + 1.6 * (1 - close);
-        desiredX = desiredX * (1 - holdEngage) + Math.cos(whale.heading + wanted) * strength * holdEngage;
-        desiredY = desiredY * (1 - holdEngage) + Math.sin(whale.heading + wanted) * strength * holdEngage;
-        force.caution = Math.max(force.caution, close * 0.45);
+        const pullX = toX / distance, pullY = toY / distance;
+        const avoidScale = Math.min(0.4, distance / Math.max(1, slowRadius)) * 0.12;
+        const travelX = pullX + force.x * avoidScale, travelY = pullY + force.y * avoidScale;
+        const travelLength = Math.hypot(travelX, travelY) || 1;
+        gatherTravel = { x: travelX / travelLength, y: travelY / travelLength };
+        if (state.gatherTurnClear && directive.anchor) {
+          if (Math.abs(motionAngle(whale.heading, gatherFacing)) < Math.PI / 12) {
+            state.gatherTurnClear = false;
+          } else {
+            const card = directive.anchor;
+            const awayX = whale.x - motionLimit(whale.x, card.left, card.left + card.width);
+            const awayY = whale.y - motionLimit(whale.y, card.top, card.top + card.height);
+            const awayLength = Math.hypot(awayX, awayY) || 1;
+            gatherTravel = { x: awayX / awayLength, y: awayY / awayLength };
+            gatherClearing = true;
+          }
+        }
+      } else {
+        state.gatherTurnClear = false;
       }
       let steeringError = motionAngle(whale.heading, Math.atan2(desiredY, desiredX));
-      if (Math.abs(steeringError) > 2.5) {
-        const turnSide = Math.abs(whale.turn) > 0.05 ? Math.sign(whale.turn) : state.routeDirection;
-        steeringError = Math.abs(steeringError) * turnSide;
+      if (holdEngage > 0 && directive?.anchor) {
+        if (Math.abs(steeringError) < Math.PI / 2) state.gatherTurnSide = 0;
+        if (!state.gatherTurnSide && Math.abs(steeringError) > 2.5) {
+          const card = directive.anchor;
+          const nearestX = motionLimit(whale.x, card.left, card.left + card.width);
+          const nearestY = motionLimit(whale.y, card.top, card.top + card.height);
+          const awayX = whale.x - nearestX, awayY = whale.y - nearestY;
+          const side = -Math.sin(whale.heading) * awayX + Math.cos(whale.heading) * awayY;
+          const hull = motionBodyHull(whale);
+          const obstacle = { x: card.left, y: card.top, width: card.width, height: card.height, radius: 0 };
+          const turnCost = (direction) => {
+            const yaw = direction * GATHER.turnRate * motionTick * 4;
+            const c = Math.cos(yaw), s = Math.sin(yaw);
+            let cost = -Infinity;
+            for (let at = 0; at < hull.length; at += 3) {
+              const hx = hull[at] - whale.x, hy = hull[at + 1] - whale.y;
+              const hit = motionObstacleApproach(
+                obstacle,
+                hull[at + 2],
+                whale.x + hx * c - hy * s,
+                whale.y + hx * s + hy * c,
+                whale.length * 2
+              );
+              if (hit) cost = Math.max(cost, hit.depth);
+            }
+            return cost;
+          };
+          const plus = turnCost(1), minus = turnCost(-1);
+          state.gatherTurnSide = Math.abs(plus - minus) > 1e-6 ? plus < minus ? 1 : -1 : Math.abs(side) > 1e-6 ? Math.sign(side) : Math.abs(whale.turn) > 0.05 ? Math.sign(whale.turn) : state.routeDirection;
+        }
+        if (state.gatherTurnSide) {
+          const angle = Math.abs(steeringError);
+          steeringError = state.gatherTurnSide * (Math.sign(steeringError) === state.gatherTurnSide ? angle : Math.PI * 2 - angle);
+        }
+      } else {
+        state.gatherTurnSide = 0;
+        if (Math.abs(steeringError) > 2.5) {
+          const turnSide = Math.abs(whale.turn) > 0.05 ? Math.sign(whale.turn) : state.routeDirection;
+          steeringError = Math.abs(steeringError) * turnSide;
+        }
       }
       const requestedTurn = motionLimit(steeringError * 1.1, -turnLimit, turnLimit);
       const turnResponse = 1.7 + (1 / 0.06 - 1.7) * bearingHold;
-      whale.turn += (requestedTurn - whale.turn) * (1 - Math.exp(-motionTick * turnResponse));
+      const response = 1 - Math.exp(-motionTick * turnResponse);
+      if (holdEngage > 0) {
+        state.gatherYaw = motionFinite(state.gatherYaw, whale.turn);
+        state.gatherYaw += (requestedTurn - state.gatherYaw) * response;
+        whale.turn = state.gatherYaw;
+      } else {
+        state.gatherYaw = void 0;
+        whale.turn += (requestedTurn - whale.turn) * response;
+      }
       whale.turn = motionLimit(whale.turn, -turnLimit, turnLimit);
       whale.heading += whale.turn * motionTick;
       const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - seamBrake) * (1 - 0.12 * Math.abs(whale.turn) / Math.max(0.01, turnLimit)) * (holdEngage > 0 ? 1 - holdEngage * (1 - holdBrake) : 1);
       whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + seamBrake * 3.2)));
-      whale.vx = Math.cos(whale.heading) * whale.speed;
-      whale.vy = Math.sin(whale.heading) * whale.speed;
+      const facingBrake = gatherTravel && !gatherClearing ? Math.max(0.2, Math.cos(motionAngle(whale.heading, gatherFacing))) : 1;
+      const travelBlend = holdEngage * facingBrake;
+      const velocityX = Math.cos(whale.heading) * (1 - holdEngage) + (gatherTravel?.x ?? 0) * travelBlend;
+      const velocityY = Math.sin(whale.heading) * (1 - holdEngage) + (gatherTravel?.y ?? 0) * travelBlend;
+      const driveSpeed = gatherClearing ? cruise : whale.speed;
+      whale.vx = velocityX * driveSpeed;
+      whale.vy = velocityY * driveSpeed;
       whale.x += whale.vx * motionTick;
       whale.y += whale.vy * motionTick;
-      if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height)) updateWhaleRig(whale);
+      if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height, holdEngage > 0)) updateWhaleRig(whale);
       if (obstacles && obstacles.length) motionPushOut(whale, obstacles, width, height);
       motionFoldWhale(whale, width, height);
       const effort = whale.speed / Math.max(1, state.cruise * environmentSpeed);
@@ -4126,6 +4237,18 @@
     }
     return field;
   }
+  var VOICE_SEA_MAX_AMPLITUDE = 36;
+  function voiceSeaDisplacement(field, x, y) {
+    if (!field || !Number.isFinite(x) || !Number.isFinite(y)) return 0;
+    const envelope = voiceSeaClamp(voiceSeaFinite(field.smoothed, 0), 0, 1);
+    if (!(envelope > 0)) return 0;
+    const dx = x - voiceSeaFinite(field.x, 0), dy = y - voiceSeaFinite(field.y, 0);
+    const distance = Math.hypot(dx, dy);
+    const span = Math.max(1, voiceSeaFinite(field.width, 0), voiceSeaFinite(field.height, 0));
+    const falloff = 1 / (1 + distance / (span * 0.65));
+    const phase = voiceSeaFinite(field.time, 0) * VOICE_SEA_TAU * 2.6 - distance / 38 + dx / 70;
+    return VOICE_SEA_MAX_AMPLITUDE * Math.sqrt(envelope) * falloff * Math.sin(phase);
+  }
   function drawVoiceSea(target, field, options = {}) {
     if (!target || typeof target.fillText !== "function") return 0;
     const rings = field && Array.isArray(field.rings) ? field.rings : [];
@@ -4228,7 +4351,8 @@
           const wobble = (voiceSeaHash(i, arc + 9, serial) - 0.5) * Math.min(cellWidth, radius * 0.12);
           const pointRadius = radius + wobble;
           const px = x + Math.cos(angle) * pointRadius;
-          const py = y + Math.sin(angle) * pointRadius * aspect - drift;
+          const surfaceY = y + Math.sin(angle) * pointRadius * aspect - drift;
+          const py = surfaceY + voiceSeaDisplacement(field, px, surfaceY);
           const tangentX = -Math.sin(angle), tangentY = Math.cos(angle) * aspect;
           const horizontal = Math.abs(tangentX) / Math.hypot(tangentX, tangentY) > 0.86;
           const pick2 = voiceSeaHash(i, arc + 13, serial);
@@ -4317,9 +4441,14 @@
       },
       setDictation(snapshot, levelSource) {
         if (disposed) return;
+        const wasActive = gatherActive(dictation);
         dictation = normalizeDictation(snapshot);
         dictationLevel = typeof levelSource === "function" ? levelSource : () => 0;
         applyDictation(scene.dictation);
+        if (!wasActive && gatherActive(dictation)) {
+          scene.dictation.layoutKey = "";
+          scene.dictation.slots = null;
+        }
       },
       setDictationAnchor(anchor) {
         if (disposed) return;
@@ -4358,7 +4487,7 @@
           atmosphere
         });
         stepVoiceSea(voiceSea, elapsed, dictationLevel(), {
-          enabled: dictationEnabled && gatherActive(dictation),
+          enabled: dictationEnabled && dictation.phase === "recording",
           x: dictationAnchor ? dictationAnchor.left + dictationAnchor.width / 2 : 0,
           y: dictationAnchor ? dictationAnchor.top + dictationAnchor.height / 2 : 0,
           width: scene.width,
@@ -5562,7 +5691,7 @@
         dark: document.body.hasAttribute("data-ds-dark-theme")
       });
       if (config.ripples) drawWater(ink, water, scenery);
-      if (config.dictationEcho) drawVoiceSea(ink, voiceSea, scenery);
+      if (config.dictationEcho && !reduced.matches) drawVoiceSea(ink, voiceSea, scenery);
       const rainScenery = {
         ...scenery,
         dark: document.body.hasAttribute("data-ds-dark-theme"),

@@ -86,9 +86,16 @@ export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
     },
     setDictation(snapshot, levelSource) {
       if (disposed) return;
+      const wasActive = gatherActive(dictation);
       dictation = normalizeDictation(snapshot);
       dictationLevel = typeof levelSource === 'function' ? levelSource : () => 0;
       applyDictation(scene.dictation);
+      // Both events can arrive while hidden/paused, without an intervening tick.
+      // Every new take must plan from the current school, never a previous one.
+      if (!wasActive && gatherActive(dictation)) {
+        scene.dictation.layoutKey = '';
+        scene.dictation.slots = null;
+      }
     },
     setDictationAnchor(anchor) {
       if (disposed) return;
@@ -123,7 +130,7 @@ export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
       // The voice swell follows the same simulation clock; a disabled switch lets
       // the live rings drain naturally instead of freezing them mid-swell.
       stepVoiceSea(voiceSea, elapsed, dictationLevel(), {
-        enabled: dictationEnabled && gatherActive(dictation),
+        enabled: dictationEnabled && dictation.phase === 'recording',
         x: dictationAnchor ? dictationAnchor.left + dictationAnchor.width / 2 : 0,
         y: dictationAnchor ? dictationAnchor.top + dictationAnchor.height / 2 : 0,
         width: scene.width, height: scene.height });

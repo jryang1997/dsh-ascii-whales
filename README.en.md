@@ -92,9 +92,9 @@ Rain is off by default, with intensity from 0 to 1 and a default of 0.45. Streak
   <img src="./docs/images/dictation-echo.gif" width="960" alt="Real DSH page: while holding the composer, the school gathers just above it and the sea follows the voice">
 </p>
 
-<p align="center"><sub>Hold the composer to speak: the school gathers just above it, the sea moves with your level, and everyone disperses once the transcript is in. Recorded on a real DSH page.</sub></p>
+<p align="center"><sub>A real DSH recording from an earlier version, showing the dictation flow. It has not been re-recorded for the all-whale turning and live-amplitude corrections.</sub></p>
 
-Requires the [dsh-hold-to-dictate](https://github.com/jryang1997/dsh-hold-to-dictate) plugin. **Dictation echo** is on by default in settings and can be switched off; with only the whale plugin installed it does nothing. While a take records, the school leaves its cruise route and waits just above the composer, and the sea sends irregular wavefronts from the input box: louder speech means stronger, denser and farther fronts; silence leaves the sea calm. When the take finishes (done) the school disperses. Reduced motion never gathers or advances the swell.
+Requires the [dsh-hold-to-dictate](https://github.com/jryang1997/dsh-hold-to-dictate) plugin. **Dictation echo** is on by default in settings and can be switched off; with only the whale plugin installed it does nothing. While a take records, every whale turns toward the composer and slowly approaches it; crowded layouts keep every whale responding as they wait for space. The sea rises and falls from the input box, with louder live speech producing a larger vertical amplitude; silence lets the surface settle. When the take finishes (done) the school disperses. Reduced motion never gathers or advances the swell.
 
 See the [dictation gather research](./docs/research/DICTATION-GATHER.md) for the design trade-offs; the cross-plugin contract lives in the producer's ADR.
 

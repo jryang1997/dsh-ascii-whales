@@ -1,10 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerWhales } from '../src/settings.js';
+import { createWhaleSimulation } from '../src/simulation.js';
+import { voiceSeaDisplacement } from '../src/voice-sea.js';
+import { normalizeConfig } from '../src/model.js';
+import { gatherGeometry } from '../src/dictation.js';
+import { resetWhaleRig } from '../src/rig.js';
 
 const recording = { schema: 1, seq: 1, phase: 'recording', since: 10, sessionId: null };
 
-function registration(t, { inject = true, available = undefined, answer = null } = {}) {
+function registration(t, { inject = true, available = undefined, answer = null, value = {} } = {}) {
   const savedDocument = globalThis.document;
   const savedCustomEvent = globalThis.CustomEvent;
   const target = new EventTarget();
@@ -29,7 +34,7 @@ function registration(t, { inject = true, available = undefined, answer = null }
   const cleanups = [];
   const injections = new Map();
   const slots = new Map();
-  const form = { getSnapshot: () => ({ status: 'ready', value: {} }), subscribe: () => () => {} };
+  const form = { getSnapshot: () => ({ status: 'ready', value }), subscribe: () => () => {} };
   const ctx = {
     configForms: { get: () => form },
     locale: { register: () => () => {}, bind: () => key => key },
@@ -126,6 +131,59 @@ test('registerWhales still uses lookup and fallback on hosts without inject', t 
   const setup = registration(t, { inject: false, available: provider(), answer: recording });
   assert.equal(setup.render().dictation.phase, 'recording');
   assert.equal(setup.render().dictationLevel(), 0.16);
+});
+
+test('a same-frame new recording invalidates targets even without an idle simulation step', () => {
+  const simulation = createWhaleSimulation(normalizeConfig({ count: 5, whaleSize: 1.55 }), { seed: 21 });
+  simulation.resize(800, 600);
+  const card = { left: 96, top: 504, width: 608, height: 72 };
+  simulation.setDictationAnchor(card);
+  simulation.setDictation(recording, () => 0.02);
+  for (let frame = 0; frame < 120; frame++) simulation.advance(1 / 60);
+  const before = simulation.scene.dictation.slots;
+  simulation.setDictation({ ...recording, seq: 2, phase: 'done' }, () => 0);
+  // A hidden/paused page can receive both events before the next animation tick.
+  for (const whale of simulation.scene.whales) { whale.x = 800 - whale.x; resetWhaleRig(whale); }
+  const expected = gatherGeometry({ card, whales: simulation.scene.whales, width: 800, height: 600 });
+  assert.notDeepEqual(expected, before);
+  simulation.setDictation({ ...recording, seq: 3 }, () => 0.02);
+  simulation.advance(1 / 60);
+  assert.deepEqual(simulation.scene.dictation.slots, expected);
+  simulation.dispose();
+});
+
+test('live provider RMS drives strictly increasing displacement through registered overlay and simulation', t => {
+  let rms = 0;
+  const face = { ...provider(), level: () => rms };
+  const setup = registration(t, { available: face, answer: recording,
+    value: { count: 1, glyphSize: 16, glass: false, activity: false } });
+  const props = setup.render();
+  const simulation = createWhaleSimulation(props.config, { seed: 21 });
+  simulation.resize(1160, 860);
+  simulation.setDictationAnchor({ left: 220, top: 710, width: 720, height: 118 });
+  simulation.setDictation(props.dictation, props.dictationLevel);
+  const peak = () => {
+    let result = 0;
+    for (let frame = 0; frame < 120; frame++) {
+      simulation.advance(1 / 60);
+      result = Math.max(result, Math.abs(voiceSeaDisplacement(simulation.voiceSea, 600, 650)));
+    }
+    return result;
+  };
+  assert.equal(peak(), 0);
+  const measured = [];
+  for (const level of [0.005, 0.02, 0.08]) {
+    rms = level;
+    for (let frame = 0; frame < 30; frame++) simulation.advance(1 / 60);
+    measured.push(peak());
+  }
+  assert.ok(measured[0] > 3);
+  assert.ok(measured[1] > measured[0] * 1.3);
+  assert.ok(measured[2] > measured[1] * 1.3);
+  rms = 0;
+  for (let frame = 0; frame < 30; frame++) simulation.advance(1 / 60);
+  assert.equal(voiceSeaDisplacement(simulation.voiceSea, 600, 650), 0);
+  simulation.dispose();
 });
 
 test('registerWhales unload disposes active primary and fallback ownership', t => {

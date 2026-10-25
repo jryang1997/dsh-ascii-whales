@@ -52,17 +52,20 @@ test('the gather band sits above the card and clears every body', () => {
     assert.ok(slot, 'every whale gets a slot');
     assert.ok(slot.y < card.top, 'the body stays above the card top');
     assert.ok(slot.x >= GATHER.edge && slot.x <= 1160 - GATHER.edge);
-    assert.equal(Math.abs(Math.sin(slot.heading)) < 1e-9, true, 'headings stay horizontal');
+    assert.ok(Math.abs(slot.heading - Math.atan2(card.top + card.height / 2 - slot.y,
+      card.left + card.width / 2 - slot.x)) < 1e-9, 'every heading faces the composer centre');
   }
   // The vertical gap is the body reach plus the breathing room the motion layer needs.
   for (let i = 0; i < whales.length; i += 1) {
-    assert.ok(card.top - slots[i].y >= bodyReach(whales[i]) + GATHER.bobAlong + GATHER.clearance - 1e-9);
+    if (!slots[i].queue) assert.ok(card.top - slots[i].y >= bodyReach(whales[i]) + GATHER.bobAlong + GATHER.clearance - 1e-9);
   }
 });
 
-test('gather returns null when the canvas has no room above the card', () => {
+test('gather keeps every approach target when no waiting band fits', () => {
   const whales = school(3);
-  assert.equal(gatherGeometry({ card: { ...card, top: 90 }, whales, width: 1160, height: 860 }), null);
+  const targets = gatherGeometry({ card: { ...card, top: 90 }, whales, width: 1160, height: 860 });
+  assert.equal(targets.length, whales.length);
+  targets.forEach(target => assert.ok(target && Number.isFinite(target.x) && Number.isFinite(target.y)));
   assert.equal(gatherGeometry({ card: null, whales, width: 1160, height: 860 }), null);
   assert.equal(gatherGeometry({ card, whales: [], width: 1160, height: 860 }), null);
   assert.equal(gatherGeometry({ card, whales, width: 0, height: 0 }), null);
@@ -84,7 +87,7 @@ test('two-row slots keep cross-row separation at the avoidance personal space', 
   assert.ok(slots && slots.some(slot => slot.row === 1), 'fixture actually uses two rows');
   for (let i = 0; i < whales.length; i += 1) {
     for (let j = i + 1; j < whales.length; j += 1) {
-      if (!slots[i] || !slots[j] || slots[i].row === slots[j].row) continue;
+      if (slots[i].queue || slots[j].queue || slots[i].row === slots[j].row) continue;
       const space = 0.53 * (whales[i].length + whales[j].length);
       assert.ok(Math.hypot(slots[i].x - slots[j].x, slots[i].y - slots[j].y) >= space - 1e-6,
         'cross-row pair stays outside the personal space');
@@ -100,15 +103,37 @@ test('an oversized school keeps safe rows when the entire school cannot fit', ()
   assert.ok(Array.isArray(slots), 'at least the first safe row must respond');
   assert.equal(slots.length, scene.whales.length);
   const placed = slots.flatMap((slot, index) => slot ? [{ slot, whale: scene.whales[index] }] : []);
-  assert.ok(placed.length > 0 && placed.length < scene.whales.length);
+  assert.equal(placed.length, scene.whales.length, 'crowding must never opt a whale out');
+  assert.ok(placed.some(entry => entry.slot.queue), 'the fixture exercises approach queues');
   for (const { slot, whale } of placed) {
+    assert.ok(Number.isFinite(slot.x) && Number.isFinite(slot.y) && Number.isFinite(slot.heading));
+    if (slot.queue) continue;
     assert.ok(slot.y >= Math.max(24, 600 * GATHER.topLimitRatio));
     assert.ok(slot.y + bodyReach(whale) + GATHER.bobAlong < composer.top);
   }
   for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
     const a = placed[i], b = placed[j];
+    if (a.slot.queue || b.slot.queue) continue;
     assert.ok(Math.hypot(a.slot.x - b.slot.x, a.slot.y - b.slot.y)
       >= 0.53 * (a.whale.length + b.whale.length) * 1.18 - 1e-8);
+  }
+});
+
+test('every count and cramped viewport keeps finite composer-facing approach intentions', () => {
+  for (let count = 1; count <= 8; count++) {
+    for (const [width, height] of [[1160, 860], [390, 844], [120, 90], [1, 1]]) {
+      const whales = school(count, width, height);
+      const composer = { left: width * 0.1, top: height * 0.65, width: width * 0.8, height: height * 0.3 };
+      const targets = gatherGeometry({ card: composer, whales, width, height });
+      assert.equal(targets.length, count);
+      targets.forEach(slot => {
+        assert.ok(slot && Number.isFinite(slot.x) && Number.isFinite(slot.y) && Number.isFinite(slot.heading));
+        assert.ok(slot.x >= 0 && slot.x <= width && slot.y >= 0 && slot.y <= height);
+        const heading = Math.atan2(composer.top + composer.height / 2 - slot.y,
+          composer.left + composer.width / 2 - slot.x);
+        assert.ok(Math.abs(slot.heading - heading) < 1e-9, 'heading is never preserved merely to avoid a large turn');
+      });
+    }
   }
 });
 

@@ -584,10 +584,10 @@ function motionContactTrial(whale, x, y, heading, nodes) {
 
 // On a seam, predict the real future rig before accepting any movement. Sliding
 // and a partial step must keep the centre, bearing and historical nodes together.
-function motionConstrainStep(whale, x, y, heading, obstacles, width, height) {
+function motionConstrainStep(whale, x, y, heading, obstacles, width, height, approaching = false) {
   if (!obstacles?.length) return false;
   const seamReach = whale.length * 0.6 + motionHullReach(whale);
-  if (Math.min(x, width - x, y, height - y) > seamReach) return false;
+  if (!approaching && Math.min(x, width - x, y, height - y) > seamReach) return false;
   const nodes = whale.rig.nodes;
   if (motionContactRig.before?.length !== nodes.length) {
     motionContactRig.before = new Float64Array(nodes.length);
@@ -639,6 +639,15 @@ function motionConstrainStep(whale, x, y, heading, obstacles, width, height) {
       slid = true;
     }
   }
+  if (!slid && approaching && whale._motion.gatherTurnClear) {
+    // A blocked turn must still be able to back away with its exact safe spine.
+    // Relaxing the historical rig while testing zero yaw can itself sweep the
+    // tail into the card and reject even a safe normal-only translation.
+    whale.x = x; whale.y = y; whale.heading = heading;
+    nodes.set(before);
+    motionShiftWhale(whale, endX - x, endY - y);
+    if (!motionWhaleBlocked(whale, obstacles)) slid = true;
+  }
   if (!slid) {
     // Interpolate the complete previous and proposed states. At zero progress
     // the exact safe historical rig is retained, rather than relaxing it again.
@@ -663,6 +672,10 @@ function motionConstrainStep(whale, x, y, heading, obstacles, width, height) {
   whale.vy = (whale.y - y) / motionTick;
   whale.speed = Math.hypot(whale.vx, whale.vy);
   whale.turn = (whale.heading - heading) / motionTick;
+  if (approaching && Math.abs(endHeading - heading) > 1e-7
+    && Math.abs(whale.heading - heading) < Math.abs(endHeading - heading) * 0.5) {
+    whale._motion.gatherTurnClear = true;
+  }
   return true;
 }
 
@@ -735,7 +748,7 @@ function motionIntegrate(scene, speed) {
   const wasEngaging = directive ? directive.engage > 0 : false;
   if (directive) {
     if (directive.anchor) {
-      const key = [width, height, whales.length, Math.round(directive.anchor.left),
+      const key = [width, height, whales.length, directive.active === true ? 1 : 0, Math.round(directive.anchor.left),
         Math.round(directive.anchor.top), Math.round(directive.anchor.width),
         Math.round(directive.anchor.height), directive.composerAvoid === true ? 1 : 0,
         whales.map(whale => Math.round(whale.length)).join(',')].join('|');
@@ -746,7 +759,7 @@ function motionIntegrate(scene, speed) {
       }
     }
     const wants = directive.active === true && Boolean(directive.anchor) && Array.isArray(directive.slots);
-    directive.engage = stepEngage(directive.engage, wants, motionTick * speed);
+    directive.engage = stepEngage(directive.engage, wants, motionTick);
   }
   const schoolEngage = directive ? directive.engage : 0;
   const holdSlots = directive && Array.isArray(directive.slots) ? directive.slots : null;
@@ -769,7 +782,14 @@ function motionIntegrate(scene, speed) {
     }
   }
   const environmentSpeed = Math.min(1, Math.min(width, height) / 650);
-  const obstacles = motionPeriodicObstacles(scene.obstacles, width, height);
+  const obstacles = [...(motionPeriodicObstacles(scene.obstacles, width, height) || [])];
+  // The listening approach must never drive a nose through the user's input.
+  // This temporary physical boundary belongs to the directive, independently
+  // of the saved setting that controls ordinary cruise avoidance.
+  if (schoolEngage > 0 && directive?.anchor) {
+    obstacles.push({ x: directive.anchor.left, y: directive.anchor.top,
+      width: directive.anchor.width, height: directive.anchor.height, radius: 0 });
+  }
   const forces = whales.map(() => ({ x: 0, y: 0, caution: 0 }));
   // Accumulate reciprocal forces before moving any body, so update order
   // cannot give a whale an advantage over its neighbor.
@@ -839,12 +859,9 @@ function motionIntegrate(scene, speed) {
     const nearSeam = Math.min(whale.x, width - whale.x, whale.y, height - whale.y)
       < whale.length * 0.6 + motionHullReach(whale);
     let seamBrake = 0;
-    // Far from the slot the school hurries; inside the arrival radius it barely
-    // moves. The radius is absolute with a body-length clamp, so a very large
-    // whale does not begin crawling half a screen away.
-    const holdDistance = holdSlot ? Math.hypot(
-      motionTorusDelta(holdSlot.x - whale.x, width),
-      motionTorusDelta(holdSlot.y - whale.y, height)) : 0;
+    // Approach stays below normal cruise; near the waiting position the body
+    // eases into a quiet hold. The radius is bounded in screen pixels.
+    const holdDistance = holdSlot ? Math.hypot(holdSlot.x - whale.x, holdSlot.y - whale.y) : 0;
     const slowRadius = motionLimit(whale.length * GATHER.slowRadius.body,
       GATHER.slowRadius.floor, GATHER.slowRadius.cap);
     const holdCloseness = holdSlot
@@ -900,12 +917,10 @@ function motionIntegrate(scene, speed) {
       + Math.cos(whale.heading + state.wander) * 0.35 + force.x;
     let desiredY = dy / targetDistance * 1.5 + forwardY * 0.85
       + Math.sin(whale.heading + state.wander) * 0.35 + force.y;
-    // Turning flat at the slot needs more yaw than the cruise controller offers;
-    // the boost only exists while and where the school is holding.
-    const alignTurn = holdSlot
-      ? motionLimit(1 - holdDistance / Math.max(1, whale.length * 0.35), 0, 1) : 0;
-    const turnLimit = state.agility * Math.sqrt(speed)
-      * (1 + 1.4 * holdEngage + 1.8 * holdEngage * alignTurn);
+    // Listening yaw responds on wall time even at a low saved cruising speed;
+    // the bounded rate still keeps the spine and visible turn continuous.
+    const turnLimit = state.agility * Math.sqrt(speed) * (1 - holdEngage)
+      + GATHER.turnRate * holdEngage;
     const cruise = state.cruise * environmentSpeed * speed * pace;
     // A heading that already points off the screen is committed. Turning back
     // here is what pinned a whale on a reef: the rock pushed it outward and the
@@ -923,43 +938,122 @@ function motionIntegrate(scene, speed) {
       desiredX = (desiredX - force.x) * routine + forwardX * 2.7 * bearingHold + force.x;
       desiredY = (desiredY - force.y) * routine + forwardY * 2.7 * bearingHold + force.y;
     }
-    // Hold steering overrides the routine route: approach the slot, then turn the
-    // body flat so a long flank never sweeps into the frosted composer card.
+    // Listening always faces the visible composer, including while waiting.
+    // Position uses a separate slow approach controller so an animal can keep
+    // looking at the user while its neighbours make room around the card.
+    let gatherTravel = null;
+    let gatherFacing = 0;
+    let gatherClearing = false;
     if (holdSlot && holdEngage > 0) {
+      gatherFacing = directive.anchor
+        ? Math.atan2(directive.anchor.top + directive.anchor.height / 2 - whale.y,
+          directive.anchor.left + directive.anchor.width / 2 - whale.x)
+        : holdSlot.heading;
+      desiredX = desiredX * (1 - holdEngage) + Math.cos(gatherFacing) * 3 * holdEngage;
+      desiredY = desiredY * (1 - holdEngage) + Math.sin(gatherFacing) * 3 * holdEngage;
       const bob = holdOffset(holdSlot, state.age, i * 1.37);
-      const targetX = holdSlot.x + bob.x, targetY = holdSlot.y + bob.y;
-      const toX = motionTorusDelta(targetX - whale.x, width);
-      const toY = motionTorusDelta(targetY - whale.y, height);
+      const toX = holdSlot.x + bob.x - whale.x, toY = holdSlot.y + bob.y - whale.y;
       const distance = Math.hypot(toX, toY) || 1;
-      // Only flatten the heading once the body is nearly at the slot; pulling
-      // parallel earlier turns the animal away from its target and makes it orbit.
-      const close = motionLimit(1 - distance / Math.max(1, whale.length * 0.35), 0, 1);
-      const wanted = motionAngle(whale.heading, Math.atan2(toY, toX)) * (1 - close)
-        + motionAngle(whale.heading, holdSlot.heading) * close;
-      const strength = 0.9 + 1.6 * (1 - close);
-      desiredX = desiredX * (1 - holdEngage) + Math.cos(whale.heading + wanted) * strength * holdEngage;
-      desiredY = desiredY * (1 - holdEngage) + Math.sin(whale.heading + wanted) * strength * holdEngage;
-      force.caution = Math.max(force.caution, close * 0.45);
+      const pullX = toX / distance, pullY = toY / distance;
+      // Reciprocal and obstacle avoidance remain active in the translation;
+      // they must not permanently turn a listening whale away from the user.
+      const avoidScale = Math.min(0.4, distance / Math.max(1, slowRadius)) * 0.12;
+      const travelX = pullX + force.x * avoidScale, travelY = pullY + force.y * avoidScale;
+      const travelLength = Math.hypot(travelX, travelY) || 1;
+      gatherTravel = { x: travelX / travelLength, y: travelY / travelLength };
+      if (state.gatherTurnClear && directive.anchor) {
+        if (Math.abs(motionAngle(whale.heading, gatherFacing)) < Math.PI / 12) {
+          state.gatherTurnClear = false;
+        } else {
+          const card = directive.anchor;
+          const awayX = whale.x - motionLimit(whale.x, card.left, card.left + card.width);
+          const awayY = whale.y - motionLimit(whale.y, card.top, card.top + card.height);
+          const awayLength = Math.hypot(awayX, awayY) || 1;
+          gatherTravel = { x: awayX / awayLength, y: awayY / awayLength };
+          gatherClearing = true;
+        }
+      }
+    } else {
+      state.gatherTurnClear = false;
     }
     let steeringError = motionAngle(whale.heading, Math.atan2(desiredY, desiredX));
-    if (Math.abs(steeringError) > 2.5) {
-      const turnSide = Math.abs(whale.turn) > 0.05 ? Math.sign(whale.turn) : state.routeDirection;
-      steeringError = Math.abs(steeringError) * turnSide;
+    if (holdEngage > 0 && directive?.anchor) {
+      if (Math.abs(steeringError) < Math.PI / 2) state.gatherTurnSide = 0;
+      if (!state.gatherTurnSide && Math.abs(steeringError) > 2.5) {
+        const card = directive.anchor;
+        const nearestX = motionLimit(whale.x, card.left, card.left + card.width);
+        const nearestY = motionLimit(whale.y, card.top, card.top + card.height);
+        const awayX = whale.x - nearestX, awayY = whale.y - nearestY;
+        const side = -Math.sin(whale.heading) * awayX + Math.cos(whale.heading) * awayY;
+        const hull = motionBodyHull(whale);
+        const obstacle = { x: card.left, y: card.top, width: card.width, height: card.height, radius: 0 };
+        const turnCost = direction => {
+          const yaw = direction * GATHER.turnRate * motionTick * 4;
+          const c = Math.cos(yaw), s = Math.sin(yaw);
+          let cost = -Infinity;
+          for (let at = 0; at < hull.length; at += 3) {
+            const hx = hull[at] - whale.x, hy = hull[at + 1] - whale.y;
+            const hit = motionObstacleApproach(obstacle, hull[at + 2],
+              whale.x + hx * c - hy * s, whale.y + hx * s + hy * c, whale.length * 2);
+            if (hit) cost = Math.max(cost, hit.depth);
+          }
+          return cost;
+        };
+        const plus = turnCost(1), minus = turnCost(-1);
+        state.gatherTurnSide = Math.abs(plus - minus) > 1e-6 ? (plus < minus ? 1 : -1)
+          : Math.abs(side) > 1e-6 ? Math.sign(side)
+            : (Math.abs(whale.turn) > 0.05 ? Math.sign(whale.turn) : state.routeDirection);
+      }
+      // Keep this take's half-circle until the target is in the forward half.
+      // Re-evaluating near pi flips the request every frame and cancels yaw.
+      if (state.gatherTurnSide) {
+        const angle = Math.abs(steeringError);
+        steeringError = state.gatherTurnSide * (Math.sign(steeringError) === state.gatherTurnSide
+          ? angle : Math.PI * 2 - angle);
+      }
+    } else {
+      state.gatherTurnSide = 0;
+      if (Math.abs(steeringError) > 2.5) {
+        const turnSide = Math.abs(whale.turn) > 0.05 ? Math.sign(whale.turn) : state.routeDirection;
+        steeringError = Math.abs(steeringError) * turnSide;
+      }
     }
     const requestedTurn = motionLimit(steeringError * 1.1, -turnLimit, turnLimit);
     const turnResponse = 1.7 + (1 / 0.06 - 1.7) * bearingHold;
-    whale.turn += (requestedTurn - whale.turn) * (1 - Math.exp(-motionTick * turnResponse));
+    const response = 1 - Math.exp(-motionTick * turnResponse);
+    if (holdEngage > 0) {
+      // Physical contact reports the accepted yaw in whale.turn. Keep the motor
+      // request separately so a rejected fraction does not reset its ramp to
+      // zero every tick and turn a temporary contact into a permanent lock.
+      state.gatherYaw = motionFinite(state.gatherYaw, whale.turn);
+      state.gatherYaw += (requestedTurn - state.gatherYaw) * response;
+      whale.turn = state.gatherYaw;
+    } else {
+      state.gatherYaw = undefined;
+      whale.turn += (requestedTurn - whale.turn) * response;
+    }
     whale.turn = motionLimit(whale.turn, -turnLimit, turnLimit);
     whale.heading += whale.turn * motionTick;
     const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - seamBrake)
       * (1 - 0.12 * Math.abs(whale.turn) / Math.max(0.01, turnLimit))
       * (holdEngage > 0 ? 1 - holdEngage * (1 - holdBrake) : 1);
     whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + seamBrake * 3.2)));
-    whale.vx = Math.cos(whale.heading) * whale.speed;
-    whale.vy = Math.sin(whale.heading) * whale.speed;
+    const facingBrake = gatherTravel && !gatherClearing
+      ? Math.max(0.2, Math.cos(motionAngle(whale.heading, gatherFacing))) : 1;
+    const travelBlend = holdEngage * facingBrake;
+    const velocityX = Math.cos(whale.heading) * (1 - holdEngage)
+      + (gatherTravel?.x ?? 0) * travelBlend;
+    const velocityY = Math.sin(whale.heading) * (1 - holdEngage)
+      + (gatherTravel?.y ?? 0) * travelBlend;
+    // A rejected rotation may report almost zero actual speed. Use the bounded
+    // cruise budget for this normal-only retreat, or feeding that tiny speed
+    // back through the approach brake would prevent it ever making turn room.
+    const driveSpeed = gatherClearing ? cruise : whale.speed;
+    whale.vx = velocityX * driveSpeed;
+    whale.vy = velocityY * driveSpeed;
     whale.x += whale.vx * motionTick;
     whale.y += whale.vy * motionTick;
-    if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height)) updateWhaleRig(whale);
+    if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height, holdEngage > 0)) updateWhaleRig(whale);
     if (obstacles && obstacles.length) motionPushOut(whale, obstacles, width, height);
     motionFoldWhale(whale, width, height);
     const effort = whale.speed / Math.max(1, state.cruise * environmentSpeed);
