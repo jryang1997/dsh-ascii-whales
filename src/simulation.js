@@ -13,7 +13,7 @@ export function sceneConfigChanged(previous = {}, next = {}) {
 }
 
 /** Owns the simulation clock, replacement ordering and surface effect history. */
-export function createWhaleSimulation(initialConfig, { seed = 0, onActivityChange } = {}) {
+export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null, onActivityChange } = {}) {
   let disposed = false;
   let activityTime = 0;
   let config = { ...initialConfig };
@@ -57,15 +57,21 @@ export function createWhaleSimulation(initialConfig, { seed = 0, onActivityChang
     setObstacles(obstacles) { if (!disposed) setSceneObstacles(scene, obstacles); },
     advance(delta) {
       if (disposed) return 0;
+      const started = metrics?.begin();
       const before = scene.time;
       activity.apply(scene.whales, activityTime, config.activity);
-      stepScene(scene, delta, config.speed);
+      stepScene(scene, delta, config.speed, metrics);
       const elapsed = scene.time - before;
       activityTime += elapsed;
-      if (config.ripples) stepWater(water, scene, elapsed);
-      stepAtmosphere(atmosphere, elapsed);
+      if (config.ripples) {
+        const waterStarted = metrics?.begin();
+        stepWater(water, scene, elapsed);
+        metrics?.end('waterUpdate', waterStarted);
+      }
+      stepAtmosphere(atmosphere, elapsed, metrics);
       stepRain(rain, elapsed, { enabled: config.rain, intensity: config.rainIntensity,
-        wind: config.wind, atmosphere });
+        wind: config.wind, atmosphere, metrics });
+      metrics?.end('advance', started);
       return elapsed;
     },
     dispose() { disposed = true; resetWaterField(water); resetRainField(rain); scene = null; },

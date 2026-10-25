@@ -1118,7 +1118,7 @@ export function divePose(elapsed, timing) {
 }
 
 /** Integrate a capped frame in fixed ticks; no DOM or wall-clock dependency. */
-export function stepScene(scene, dt, speed = 1) {
+export function stepScene(scene, dt, speed = 1, metrics = null) {
   if (!Number.isFinite(dt) || dt <= 0) return scene;
   speed = motionLimit(motionFinite(speed, 1), 0, 3);
   if (speed === 0) return scene;
@@ -1128,7 +1128,9 @@ export function stepScene(scene, dt, speed = 1) {
   }
   scene.accumulator = motionFinite(scene.accumulator, 0) + Math.min(dt, 0.25);
   while (scene.accumulator + 1e-10 >= motionTick) {
+    const started = metrics?.begin();
     motionIntegrate(scene, speed);
+    metrics?.end('motionStep', started);
     scene.accumulator = Math.max(0, scene.accumulator - motionTick);
   }
   return scene;

@@ -51,8 +51,12 @@ export function resizeAtmosphereField(field, width, height) {
   return field;
 }
 
-export function stepAtmosphere(field, delta) {
-  if (field && Number.isFinite(delta) && delta > 0) field.time += delta;
+export function stepAtmosphere(field, delta, metrics = null) {
+  if (field && Number.isFinite(delta) && delta > 0) {
+    const started = metrics?.begin();
+    field.time += delta;
+    metrics?.end('atmosphereUpdate', started);
+  }
   return field;
 }
 
