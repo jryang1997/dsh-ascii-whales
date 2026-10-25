@@ -42,8 +42,10 @@ export function registerWhales(ctx, React, dictionaries) {
   // The dictation service is optional the same way: when the other plugin is
   // missing this child fiber never activates and the layer stays decorative.
   ctx.inject?.(['dictation'], child => child.effect(() => dictation.attach(child.dictation)));
-  // Degraded channel for hosts whose ctx has no optional child-fiber inject.
-  if (!ctx.inject && ctx.get?.('dictation') === undefined) ctx.effect(() => dictation.attachFallback());
+  // A parked optional fiber does not prove the provider is absent. Keep semantic
+  // fallback listening throughout this plugin's lifetime; the attached service
+  // wins inside the bridge. Optional lookup supplies RMS without React updates.
+  ctx.effect(() => dictation.attachFallback(() => ctx.get?.('dictation')));
 
   /**
    * The canvas mounts exactly once and later changes are pushed through update().

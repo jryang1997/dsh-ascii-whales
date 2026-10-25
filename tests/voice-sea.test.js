@@ -228,9 +228,20 @@ test('the level is clamped to 0..1 and rings never exceed the documented limits'
   assert.equal(quiet.rings.length, 0);
 });
 
+test('quiet microphone RMS emits visible wave fronts while silence stays calm', () => {
+  for (const rms of [0.01, 0.02, 0.04]) {
+    const field = drive(createVoiceSeaField(), 2, rms);
+    assert.ok(field.rings.length > 0, `raw RMS ${rms} must emit a front`);
+    assert.ok(paint(field).drawn > 0, `raw RMS ${rms} must reach the canvas`);
+  }
+  const silence = drive(createVoiceSeaField(), 2, 0);
+  assert.equal(silence.rings.length, 0);
+  assert.equal(paint(silence).drawn, 0);
+});
+
 test('louder levels spawn more, larger and brighter rings within the cap', () => {
   const loud = drive(createVoiceSeaField(), 1.2, 1);
-  const soft = drive(createVoiceSeaField(), 1.2, 0.35);
+  const soft = drive(createVoiceSeaField(), 1.2, 0.035);
   assert.equal(loud.rings.length, VOICE_SEA_MAX_RINGS);
   assert.ok(soft.rings.length > 0 && soft.rings.length < VOICE_SEA_MAX_RINGS);
   const maxRadius = field => Math.max(...field.rings.map(ring => ring.maxRadius));

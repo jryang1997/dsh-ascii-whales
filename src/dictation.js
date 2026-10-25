@@ -146,7 +146,6 @@ export function gatherGeometry({ card, whales, width, height, composerAvoid = fa
   // the posture allowance keeps a tilted flank out of the card while it settles.
   const clear = order.map(({ whale }) => bodyReach(whale) + GATHER.bobAlong + GATHER.clearance + pad
     + Math.min(48, whale.length * 0.12));
-  for (let i = 0; i < order.length; i += 1) if (card.top - clear[i] < topLimit) return null;
   const centreX = card.left + card.width / 2;
   const facing = (whale) => {
     const inward = whale.x < centreX ? 0 : Math.PI;
@@ -155,10 +154,8 @@ export function gatherGeometry({ card, whales, width, height, composerAvoid = fa
     if (turn <= Math.PI / 2) return inward;
     return Math.cos(current) >= 0 ? 0 : Math.PI;
   };
-  // Pack the school into as many rows as it needs, in screen order. A row takes
-  // the longest prefix that still fits; if four rows cannot hold everyone there
-  // is genuinely no band above this card, and staying decorative is better than
-  // stacking bodies on top of each other.
+  // Keep any rows that fit safely. Unassigned whales retain their cruise route
+  // instead of one overflowing row cancelling the entire school's response.
   const rows = [];
   let rest = order;
   while (rest.length && rows.length < GATHER.maxRows) {
@@ -169,11 +166,11 @@ export function gatherGeometry({ card, whales, width, height, composerAvoid = fa
       if (!centers) break;
       best = { row, centers };
     }
-    if (!best) return null;
+    if (!best) break;
     rows.push(best);
     rest = rest.slice(best.row.length);
   }
-  if (rest.length) return null;
+  if (!rows.length) return null;
   const slots = new Array(whales.length).fill(null);
   // Each row is a horizontal line. Its y must clear its own widest body and sit
   // far enough above every earlier row that no cross-row pair ever overlaps once
@@ -192,7 +189,7 @@ export function gatherGeometry({ card, whales, width, height, composerAvoid = fa
         }
       }
     }
-    if (y < topLimit) return null;
+    if (y < topLimit) return rowIndex > 0 ? slots : null;
     rowY[rowIndex] = y;
     row.forEach((entry, i) => {
       slots[entry.index] = { x: centers[i], y, heading: facing(entry.whale), row: rowIndex };
@@ -222,70 +219,96 @@ export function stepEngage(engage, active, delta) {
 }
 
 /**
- * Client-side bridge for the optional "dictation" service.
- *
- * attach(service) is called from an optional child fiber; when the provider is
- * absent the fiber never activates and the snapshot stays idle, so the layer
- * behaves exactly as before. The DOM event is a degraded channel for the rare
- * case where the provider exists but is not injectable.
+ * Optional service subscription wins over the lifetime-long semantic fallback.
+ * The fallback resolver only looks up an existing face; it never opens audio or
+ * sends frame-level notifications. Each attachment owns its own cleanup token.
  */
 export function createDictationBridge() {
-  let service = null;
-  let unsubscribe = null;
+  let primary = null;
   let fallback = null;
   let snapshot = EMPTY_DICTATION;
   const listeners = new Set();
   const presenceListeners = new Set();
-  const notify = () => { for (const listener of [...listeners]) listener(); };
   const notifyPresence = () => { for (const listener of [...presenceListeners]) listener(); };
-  const publish = () => {
-    snapshot = service && typeof service.getSnapshot === 'function'
-      ? normalizeDictation(service.getSnapshot()) : EMPTY_DICTATION;
-    notify();
+  const isFace = face => face?.schema === DICTATION_SCHEMA
+    && typeof face.getSnapshot === 'function' && typeof face.subscribe === 'function';
+  const publish = (value) => {
+    const next = normalizeDictation(value);
+    if (Object.keys(EMPTY_DICTATION).every(key => next[key] === snapshot[key])) return;
+    snapshot = next;
+    for (const listener of [...listeners]) listener();
+  };
+  const resolveFallback = () => {
+    try {
+      const face = fallback?.resolve?.();
+      return isFace(face) ? face : null;
+    } catch {
+      // Optional lookup may stop being available during host/plugin disposal.
+      return null;
+    }
+  };
+  const requestFallback = () => {
+    if (fallback && !primary) fallback.target.dispatchEvent(new CustomEvent('dsh:dictation:request'));
   };
   const onFallback = (event) => {
-    const detail = event && event.detail;
-    if (!detail || detail.schema !== DICTATION_SCHEMA) return;
-    snapshot = normalizeDictation(detail);
-    notify();
-  };
-  const dropFallback = () => {
-    if (!fallback) return;
-    fallback();
-    fallback = null;
+    if (primary || !fallback || event?.detail?.schema !== DICTATION_SCHEMA) return;
+    publish(event.detail);
+    notifyPresence();
   };
   return {
     attach(next) {
-      if (!next || typeof next.subscribe !== 'function' || typeof next.getSnapshot !== 'function') {
-        return () => {};
-      }
-      service = next;
-      unsubscribe = typeof next.subscribe === 'function' ? next.subscribe(publish) : null;
-      dropFallback();
-      publish();
+      if (!isFace(next)) return () => {};
+      const previous = primary;
+      const owner = { face: next, unsubscribe: null };
+      primary = owner;
+      if (typeof previous?.unsubscribe === 'function') previous.unsubscribe();
+      const update = () => { if (primary === owner) publish(next.getSnapshot()); };
+      owner.unsubscribe = next.subscribe(update);
+      update();
       notifyPresence();
       return () => {
-        if (service !== next) return;
-        if (typeof unsubscribe === 'function') unsubscribe();
-        unsubscribe = null;
-        service = null;
-        snapshot = EMPTY_DICTATION;
-        notify();
+        if (primary !== owner) return;
+        primary = null;
+        if (typeof owner.unsubscribe === 'function') owner.unsubscribe();
+        publish(EMPTY_DICTATION);
+        // Do not replay an event cached before the primary service took over.
+        // A live provider can answer this request with its current semantic state.
+        requestFallback();
         notifyPresence();
       };
     },
-    attachFallback() {
+    attachFallback(resolve) {
       if (typeof document === 'undefined' || typeof CustomEvent !== 'function') return () => {};
-      if (fallback) return fallback;
-      document.addEventListener('dsh:dictation', onFallback);
-      document.dispatchEvent(new CustomEvent('dsh:dictation:request'));
-      fallback = () => { document.removeEventListener('dsh:dictation', onFallback); };
-      return fallback;
+      if (fallback) fallback.target.removeEventListener('dsh:dictation', onFallback);
+      const owner = { target: document, resolve: typeof resolve === 'function' ? resolve : null };
+      fallback = owner;
+      owner.target.addEventListener('dsh:dictation', onFallback);
+      // Seed late consumers even when the optional fiber has not activated.
+      // A replacement must not inherit a recording from its previous owner.
+      if (!primary) publish(EMPTY_DICTATION);
+      const face = resolveFallback();
+      if (!primary && face) {
+        try { publish(face.getSnapshot()); } catch { publish(EMPTY_DICTATION); }
+      }
+      requestFallback();
+      notifyPresence();
+      return () => {
+        if (fallback !== owner) return;
+        fallback = null;
+        owner.target.removeEventListener('dsh:dictation', onFallback);
+        if (!primary) publish(EMPTY_DICTATION);
+        notifyPresence();
+      };
     },
-    hasProvider() { return service !== null; },
+    hasProvider() { return primary !== null || resolveFallback() !== null; },
     level() {
-      const value = service && typeof service.level === 'function' ? service.level() : 0;
-      return clamp(finite(value, 0), 0, 1);
+      const face = primary?.face ?? resolveFallback();
+      try {
+        const value = typeof face?.level === 'function' ? face.level() : 0;
+        return clamp(finite(value, 0), 0, 1);
+      } catch {
+        return 0;
+      }
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     subscribePresence(listener) { presenceListeners.add(listener); return () => presenceListeners.delete(listener); },

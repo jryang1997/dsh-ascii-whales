@@ -393,7 +393,6 @@
     if (!(spanR - spanL > 60)) return null;
     const order = whales.map((whale, index) => ({ whale, index, x: finite(whale.x, 0) })).sort((a, b) => a.x - b.x || a.index - b.index);
     const clear = order.map(({ whale }) => bodyReach(whale) + GATHER.bobAlong + GATHER.clearance + pad + Math.min(48, whale.length * 0.12));
-    for (let i = 0; i < order.length; i += 1) if (card.top - clear[i] < topLimit) return null;
     const centreX = card.left + card.width / 2;
     const facing = (whale) => {
       const inward = whale.x < centreX ? 0 : Math.PI;
@@ -412,11 +411,11 @@
         if (!centers) break;
         best = { row, centers };
       }
-      if (!best) return null;
+      if (!best) break;
       rows.push(best);
       rest = rest.slice(best.row.length);
     }
-    if (rest.length) return null;
+    if (!rows.length) return null;
     const slots = new Array(whales.length).fill(null);
     const rowY = [];
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
@@ -432,7 +431,7 @@
           }
         }
       }
-      if (y < topLimit) return null;
+      if (y < topLimit) return rowIndex > 0 ? slots : null;
       rowY[rowIndex] = y;
       row.forEach((entry, i) => {
         slots[entry.index] = { x: centers[i], y, heading: facing(entry.whale), row: rowIndex };
@@ -457,71 +456,97 @@
     return clamp(current + Math.sign(target - current) * rate * step, 0, 1);
   }
   function createDictationBridge() {
-    let service = null;
-    let unsubscribe = null;
+    let primary = null;
     let fallback = null;
     let snapshot = EMPTY_DICTATION;
     const listeners = /* @__PURE__ */ new Set();
     const presenceListeners = /* @__PURE__ */ new Set();
-    const notify = () => {
-      for (const listener of [...listeners]) listener();
-    };
     const notifyPresence = () => {
       for (const listener of [...presenceListeners]) listener();
     };
-    const publish = () => {
-      snapshot = service && typeof service.getSnapshot === "function" ? normalizeDictation(service.getSnapshot()) : EMPTY_DICTATION;
-      notify();
+    const isFace = (face) => face?.schema === DICTATION_SCHEMA && typeof face.getSnapshot === "function" && typeof face.subscribe === "function";
+    const publish = (value) => {
+      const next = normalizeDictation(value);
+      if (Object.keys(EMPTY_DICTATION).every((key) => next[key] === snapshot[key])) return;
+      snapshot = next;
+      for (const listener of [...listeners]) listener();
+    };
+    const resolveFallback = () => {
+      try {
+        const face = fallback?.resolve?.();
+        return isFace(face) ? face : null;
+      } catch {
+        return null;
+      }
+    };
+    const requestFallback = () => {
+      if (fallback && !primary) fallback.target.dispatchEvent(new CustomEvent("dsh:dictation:request"));
     };
     const onFallback = (event) => {
-      const detail = event && event.detail;
-      if (!detail || detail.schema !== DICTATION_SCHEMA) return;
-      snapshot = normalizeDictation(detail);
-      notify();
-    };
-    const dropFallback = () => {
-      if (!fallback) return;
-      fallback();
-      fallback = null;
+      if (primary || !fallback || event?.detail?.schema !== DICTATION_SCHEMA) return;
+      publish(event.detail);
+      notifyPresence();
     };
     return {
       attach(next) {
-        if (!next || typeof next.subscribe !== "function" || typeof next.getSnapshot !== "function") {
-          return () => {
-          };
-        }
-        service = next;
-        unsubscribe = typeof next.subscribe === "function" ? next.subscribe(publish) : null;
-        dropFallback();
-        publish();
+        if (!isFace(next)) return () => {
+        };
+        const previous = primary;
+        const owner = { face: next, unsubscribe: null };
+        primary = owner;
+        if (typeof previous?.unsubscribe === "function") previous.unsubscribe();
+        const update = () => {
+          if (primary === owner) publish(next.getSnapshot());
+        };
+        owner.unsubscribe = next.subscribe(update);
+        update();
         notifyPresence();
         return () => {
-          if (service !== next) return;
-          if (typeof unsubscribe === "function") unsubscribe();
-          unsubscribe = null;
-          service = null;
-          snapshot = EMPTY_DICTATION;
-          notify();
+          if (primary !== owner) return;
+          primary = null;
+          if (typeof owner.unsubscribe === "function") owner.unsubscribe();
+          publish(EMPTY_DICTATION);
+          requestFallback();
           notifyPresence();
         };
       },
-      attachFallback() {
+      attachFallback(resolve) {
         if (typeof document === "undefined" || typeof CustomEvent !== "function") return () => {
         };
-        if (fallback) return fallback;
-        document.addEventListener("dsh:dictation", onFallback);
-        document.dispatchEvent(new CustomEvent("dsh:dictation:request"));
-        fallback = () => {
-          document.removeEventListener("dsh:dictation", onFallback);
+        if (fallback) fallback.target.removeEventListener("dsh:dictation", onFallback);
+        const owner = { target: document, resolve: typeof resolve === "function" ? resolve : null };
+        fallback = owner;
+        owner.target.addEventListener("dsh:dictation", onFallback);
+        if (!primary) publish(EMPTY_DICTATION);
+        const face = resolveFallback();
+        if (!primary && face) {
+          try {
+            publish(face.getSnapshot());
+          } catch {
+            publish(EMPTY_DICTATION);
+          }
+        }
+        requestFallback();
+        notifyPresence();
+        return () => {
+          if (fallback !== owner) return;
+          fallback = null;
+          owner.target.removeEventListener("dsh:dictation", onFallback);
+          if (!primary) publish(EMPTY_DICTATION);
+          notifyPresence();
         };
-        return fallback;
       },
       hasProvider() {
-        return service !== null;
+        return primary !== null || resolveFallback() !== null;
       },
       level() {
-        const value = service && typeof service.level === "function" ? service.level() : 0;
-        return clamp(finite(value, 0), 0, 1);
+        const face = primary?.face ?? resolveFallback();
+        try {
+          const value = typeof face?.level === "function" ? face.level() : 0;
+          return clamp(finite(value, 0), 0, 1);
+        } catch {
+          return 0;
+        }
       },
       subscribe(listener) {
         listeners.add(listener);
@@ -1197,11 +1222,11 @@
       const wants = directive.active === true && Boolean(directive.anchor) && Array.isArray(directive.slots);
       directive.engage = stepEngage(directive.engage, wants, motionTick * speed);
     }
-    const holdEngage = directive ? directive.engage : 0;
+    const schoolEngage = directive ? directive.engage : 0;
     const holdSlots = directive && Array.isArray(directive.slots) ? directive.slots : null;
     for (let i = 0; i < whales.length; i++) {
       const whale = whales[i], previousLength = whale.length;
-      if (!(holdEngage > 0 && holdSlots && holdSlots[i])) {
+      if (!(schoolEngage > 0 && holdSlots && holdSlots[i])) {
         motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
       }
       motionGeometry(whale, width, height, whales.length, size2);
@@ -1258,7 +1283,8 @@
       const anatomy = whaleSpecies(whale.species);
       const activityKind = whale.activity?.kind;
       const activityPace = activityKind === "running" ? 1.35 : activityKind === "waiting" ? 0.32 : activityKind === "idle" ? 0.62 : 1;
-      const holdSlot = holdEngage > 0 && holdSlots ? holdSlots[i] || null : null;
+      const holdSlot = schoolEngage > 0 && holdSlots ? holdSlots[i] || null : null;
+      const holdEngage = holdSlot ? schoolEngage : 0;
       const travelTick = motionTick * speed;
       state.age += travelTick;
       motionPrepareDive(
@@ -4038,7 +4064,7 @@
     const rings = field.rings;
     const enabled = settings.enabled !== false;
     const live = typeof level === "number" && !Number.isNaN(level) ? level : 0;
-    const target = enabled ? voiceSeaClamp(live, 0, 1) : 0;
+    const target = enabled ? Math.sqrt(voiceSeaClamp(live, 0, 1)) : 0;
     const current = voiceSeaClamp(voiceSeaFinite(field.smoothed, 0), 0, 1);
     const next = target > current ? Math.min(target, current + dt / VOICE_SEA_ATTACK_SECONDS) : Math.max(target, current - dt / VOICE_SEA_RELEASE_SECONDS);
     const resting = !enabled && next === 0 && current === 0 && rings.length === 0 && voiceSeaFinite(field.level, 0) === 0;
@@ -5934,7 +5960,7 @@
     ctx.inject?.(["jobs"], (child) => child.effect(() => jobs.attach(child.jobs)));
     const dictation = createDictationBridge();
     ctx.inject?.(["dictation"], (child) => child.effect(() => dictation.attach(child.dictation)));
-    if (!ctx.inject && ctx.get?.("dictation") === void 0) ctx.effect(() => dictation.attachFallback());
+    ctx.effect(() => dictation.attachFallback(() => ctx.get?.("dictation")));
     function Canvas({ config, activity = EMPTY_ACTIVITY, dictation: dictationState = null, dictationLevel = () => 0 }) {
       const ref = React.useRef(null);
       const configRef = React.useRef(config);

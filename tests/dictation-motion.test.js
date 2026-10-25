@@ -151,6 +151,25 @@ test('a growing multi-line composer raises the band without rebuilding the scene
   }
 });
 
+test('unassigned whales keep renewing cruise routes while safe rows gather', () => {
+  const simulation = createWhaleSimulation(CONFIG({ count: 5, whaleSize: 1.55 }), { seed: 21 });
+  simulation.resize(800, 600);
+  advance(simulation, 5);
+  simulation.setDictationAnchor({ left: 96, top: 445, width: 640, height: 110 });
+  simulation.setDictation(RECORDING, () => 0.02);
+  advance(simulation, 8);
+  const directive = simulation.scene.dictation;
+  assert.ok(directive.engage > 0.99);
+  const unassigned = simulation.scene.whales.filter((whale, index) => !directive.slots[index]);
+  assert.ok(unassigned.length > 0 && unassigned.length < simulation.scene.whales.length);
+  for (const whale of unassigned) whale._motion.targetDue = -1;
+  advance(simulation, 1);
+  for (const whale of unassigned) {
+    assert.ok(whale._motion.targetDue > 0, 'a whale without a slot must still choose cruise routes');
+    assert.ok(Number.isFinite(whale.heading) && Number.isFinite(whale.speed));
+  }
+});
+
 test('composer avoidance raises the waiting band by the avoidance rectangle', () => {
   const create = () => {
     const simulation = createWhaleSimulation(CONFIG({ composerAvoid: true }), { seed: 27 });

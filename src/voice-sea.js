@@ -155,7 +155,9 @@ export function stepVoiceSea(field, delta, level, options = {}) {
   // Infinity is a loud voice, not an invalid one: clamp it like any other
   // over-range metre, and only NaN/non-numbers fall back to silence.
   const live = typeof level === 'number' && !Number.isNaN(level) ? level : 0;
-  const target = enabled ? voiceSeaClamp(live, 0, 1) : 0;
+  // The provider returns raw PCM RMS, not a display meter. Expand quiet input
+  // before the visual floor; zero stays silent and the loud end remains bounded.
+  const target = enabled ? Math.sqrt(voiceSeaClamp(live, 0, 1)) : 0;
   const current = voiceSeaClamp(voiceSeaFinite(field.smoothed, 0), 0, 1);
   // Linear slew: 80ms to the live value, 400ms back to silence. The time-based
   // step is exact for any frame split, and a longer step simply lands on the

@@ -423,7 +423,6 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     if (!(spanR - spanL > 60)) return null;
     const order = whales.map((whale, index) => ({ whale, index, x: finite(whale.x, 0) })).sort((a, b) => a.x - b.x || a.index - b.index);
     const clear = order.map(({ whale }) => bodyReach(whale) + GATHER.bobAlong + GATHER.clearance + pad + Math.min(48, whale.length * 0.12));
-    for (let i = 0; i < order.length; i += 1) if (card.top - clear[i] < topLimit) return null;
     const centreX = card.left + card.width / 2;
     const facing = (whale) => {
       const inward = whale.x < centreX ? 0 : Math.PI;
@@ -442,11 +441,11 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
         if (!centers) break;
         best = { row, centers };
       }
-      if (!best) return null;
+      if (!best) break;
       rows.push(best);
       rest = rest.slice(best.row.length);
     }
-    if (rest.length) return null;
+    if (!rows.length) return null;
     const slots = new Array(whales.length).fill(null);
     const rowY = [];
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
@@ -462,7 +461,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
           }
         }
       }
-      if (y < topLimit) return null;
+      if (y < topLimit) return rowIndex > 0 ? slots : null;
       rowY[rowIndex] = y;
       row.forEach((entry, i) => {
         slots[entry.index] = { x: centers[i], y, heading: facing(entry.whale), row: rowIndex };
@@ -1147,11 +1146,11 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       const wants = directive.active === true && Boolean(directive.anchor) && Array.isArray(directive.slots);
       directive.engage = stepEngage(directive.engage, wants, motionTick * speed);
     }
-    const holdEngage = directive ? directive.engage : 0;
+    const schoolEngage = directive ? directive.engage : 0;
     const holdSlots = directive && Array.isArray(directive.slots) ? directive.slots : null;
     for (let i = 0; i < whales.length; i++) {
       const whale = whales[i], previousLength = whale.length;
-      if (!(holdEngage > 0 && holdSlots && holdSlots[i])) {
+      if (!(schoolEngage > 0 && holdSlots && holdSlots[i])) {
         motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
       }
       motionGeometry(whale, width, height, whales.length, size2);
@@ -1208,7 +1207,8 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       const anatomy = whaleSpecies(whale.species);
       const activityKind = whale.activity?.kind;
       const activityPace = activityKind === "running" ? 1.35 : activityKind === "waiting" ? 0.32 : activityKind === "idle" ? 0.62 : 1;
-      const holdSlot = holdEngage > 0 && holdSlots ? holdSlots[i] || null : null;
+      const holdSlot = schoolEngage > 0 && holdSlots ? holdSlots[i] || null : null;
+      const holdEngage = holdSlot ? schoolEngage : 0;
       const travelTick = motionTick * speed;
       state.age += travelTick;
       motionPrepareDive(
@@ -3890,7 +3890,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     const rings = field.rings;
     const enabled = settings.enabled !== false;
     const live = typeof level === "number" && !Number.isNaN(level) ? level : 0;
-    const target = enabled ? voiceSeaClamp(live, 0, 1) : 0;
+    const target = enabled ? Math.sqrt(voiceSeaClamp(live, 0, 1)) : 0;
     const current = voiceSeaClamp(voiceSeaFinite(field.smoothed, 0), 0, 1);
     const next = target > current ? Math.min(target, current + dt / VOICE_SEA_ATTACK_SECONDS) : Math.max(target, current - dt / VOICE_SEA_RELEASE_SECONDS);
     const resting = !enabled && next === 0 && current === 0 && rings.length === 0 && voiceSeaFinite(field.level, 0) === 0;

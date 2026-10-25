@@ -791,8 +791,8 @@ test('dictation repaints in place and the voice swell only paints while recordin
   assert.equal(stats.getContext, 1);
   assert.equal(canvases.length, 1);
 
-  // A loud take paints the swell from the composer anchor.
-  layer.setDictation({ schema: 1, seq: 1, phase: 'recording' }, () => 1);
+  // Quiet raw microphone RMS must still paint from the measured composer anchor.
+  layer.setDictation({ schema: 1, seq: 1, phase: 'recording' }, () => 0.02);
   for (let frame = 0; frame < 120; frame += 1) raf.step();
   assert.ok(drawn.some(point => swellGlyphs.has(point.glyph)), 'the voice swell reaches the canvas');
   assert.equal(stats.getContext, 1, 'the swell shares the layer context');

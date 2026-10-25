@@ -748,7 +748,7 @@ function motionIntegrate(scene, speed) {
     const wants = directive.active === true && Boolean(directive.anchor) && Array.isArray(directive.slots);
     directive.engage = stepEngage(directive.engage, wants, motionTick * speed);
   }
-  const holdEngage = directive ? directive.engage : 0;
+  const schoolEngage = directive ? directive.engage : 0;
   const holdSlots = directive && Array.isArray(directive.slots) ? directive.slots : null;
   // Update every body's geometry before reciprocal avoidance. Rescale historical
   // nodes about the centre without advancing their steering history twice.
@@ -756,7 +756,7 @@ function motionIntegrate(scene, speed) {
     const whale = whales[i], previousLength = whale.length;
     // A gathered whale holds its depth; the slow vertical excursion would read
     // as drift when the whole point is that the body is still.
-    if (!(holdEngage > 0 && holdSlots && holdSlots[i])) {
+    if (!(schoolEngage > 0 && holdSlots && holdSlots[i])) {
       motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
     }
     motionGeometry(whale, width, height, whales.length, size);
@@ -817,7 +817,8 @@ function motionIntegrate(scene, speed) {
     const activityKind = whale.activity?.kind;
     const activityPace = activityKind === 'running' ? 1.35
       : activityKind === 'waiting' ? 0.32 : activityKind === 'idle' ? 0.62 : 1;
-    const holdSlot = holdEngage > 0 && holdSlots ? holdSlots[i] || null : null;
+    const holdSlot = schoolEngage > 0 && holdSlots ? holdSlots[i] || null : null;
+    const holdEngage = holdSlot ? schoolEngage : 0;
     const travelTick = motionTick * speed;
     state.age += travelTick;
     motionPrepareDive(whale, i, scene.diveSeed, anatomy, travelTick,
