@@ -24,6 +24,7 @@ function readConfig() {
     composerAvoid: el('composerAvoid').checked, ripples: el('ripples').checked, activity: el('activity').checked,
     wind: el('wind').checked, clouds: el('clouds').checked, rain: el('rain').checked,
     rainIntensity: readNumber('rainIntensity', 0, 1, DEFAULTS.rainIntensity),
+    pauseOnScroll: el('pauseOnScroll').checked,
   };
 }
 
@@ -83,7 +84,7 @@ el('activityScene').addEventListener('change', applyActivity);
 el('whaleSize').addEventListener('input', scheduleSamples);
 el('dark').addEventListener('change', () => { apply(); scheduleSamples(); });
 el('pause').addEventListener('click', () => { paused = !paused; apply(); });
-for (const id of ['glass', 'composerAvoid', 'ripples', 'activity', 'wind', 'clouds', 'rain']) {
+for (const id of ['glass', 'composerAvoid', 'ripples', 'activity', 'wind', 'clouds', 'rain', 'pauseOnScroll']) {
   el(id).addEventListener('change', () => changeOption(id, el(id).checked));
 }
 const sampleObserver = new ResizeObserver(scheduleSamples);

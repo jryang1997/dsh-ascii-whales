@@ -77,7 +77,10 @@ export function stepWake(field, scene, elapsed, options = {}) {
     field.tracks.set(key, current);
     const submergence = clamp(finite(motion?.submergence));
     const diving = motion?.dive && Number.isFinite(motion.dive.startedAt);
-    if (!previous || dt > 0.5 || diving || submergence >= 0.12 || previous.radius !== radius) continue;
+    // Gradual cruise-depth changes preserve the trail; a discrete geometry
+    // change still establishes a fresh anchor instead of connecting old poses.
+    const resized = previous && Math.abs(previous.radius - radius) > Math.max(0.5, previous.radius * 0.05);
+    if (!previous || dt > 0.5 || diving || submergence >= 0.12 || resized) continue;
     const dx = delta(whale.x - previous.x, width), dy = delta(whale.y - previous.y, height);
     const distance = Math.hypot(dx, dy);
     const tailDX = delta(tail.x - previous.tailX, width), tailDY = delta(tail.y - previous.tailY, height);

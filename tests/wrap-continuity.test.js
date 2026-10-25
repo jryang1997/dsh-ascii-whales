@@ -106,18 +106,18 @@ test('actual mesh coverage, owner depth and partial visibility match a full toru
   }
 });
 
-test('four edges and a corner preserve one-tick visible coverage and rigid spine offsets across folding', () => {
+test('four edges and a corner preserve one-tick visible coverage and normalized spine offsets across folding', () => {
   const width = 803, height = 601;
   for (const [x, y, heading] of [[width - 0.1, 300, 0], [0.1, 300, Math.PI],
     [400, height - 0.1, Math.PI / 2], [400, 0.1, -Math.PI / 2],
     [width - 0.1, height - 0.1, Math.PI / 4]]) {
     const scene = sceneAt(width, height, 1.55, x, y, heading), whale = scene.whales[0];
     const before = raster(scene), beforeStats = summary(before);
-    const offsets = Array.from(whale.rig.nodes, (value, i) => value - (i % 2 ? whale.y : whale.x));
+    const offsets = Array.from(whale.rig.nodes, (value, i) => (value - (i % 2 ? whale.y : whale.x)) / whale.length);
     stepScene(scene, dt);
     assert.ok(Math.abs(wrapDelta(whale.x, x, width) - whale.vx * dt) < 1e-9);
     assert.ok(Math.abs(wrapDelta(whale.y, y, height) - whale.vy * dt) < 1e-9);
-    whale.rig.nodes.forEach((value, i) => assert.ok(Math.abs(value - (i % 2 ? whale.y : whale.x) - offsets[i]) < 1e-8));
+    whale.rig.nodes.forEach((value, i) => assert.ok(Math.abs(value - (i % 2 ? whale.y : whale.x) - offsets[i] * whale.length) < 1e-8));
     const after = raster(scene), afterStats = summary(after);
     assert.ok(afterStats.mass / beforeStats.mass > 0.85 && afterStats.mass / beforeStats.mass < 1.15,
       `fold ${heading}: raster mass ${beforeStats.mass} -> ${afterStats.mass}`);

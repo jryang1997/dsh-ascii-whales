@@ -57,7 +57,7 @@ const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength', 'readingEffect']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity']);
+const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'pauseOnScroll']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -458,8 +458,9 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
    * the input card for avoidance.
    *
    * Card geometry uses a 120ms budget plus invalidations. Text ranges are cached
-   * until content, scrolling, fonts or viewport changes invalidate them. During
-   * scrolling the whole layer yields, so neither scan competes with input.
+   * until content, scrolling, fonts or viewport changes invalidate them. With the
+   * optional scroll pause switched on, the whole layer yields while scrolling, so
+   * neither scan competes with input.
    */
   function measure() {
     measuredAt = performance.now();
@@ -472,7 +473,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     if (demo) {
       applyReadingSnapshot(demoReadingSnapshot(demo, width, height));
       const card = demoCardRect();
-      const groups = card && config.glass
+      const groups = card && config.glass && config.readingEffect !== 'none'
         ? [{ clip: { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius },
           regions: demoTextRegions(card) }] : [];
       readingProtection.setRegions(groups, { width, height }, config.readingEffect);
@@ -487,7 +488,8 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     sidebarForegrounds = sidebars.map(panel => measureForeground(panel.element, canvasRect, canvas));
     readingRoots = [scroller, composer?.element, ...sidebars.map(panel => panel.element)].filter(Boolean);
     if (readingTextDirty) {
-      readingProtection.measure(readingRoots, canvasRect, config.readingEffect);
+      if (config.readingEffect === 'none') readingProtection.dispose();
+      else readingProtection.measure(readingRoots, canvasRect, config.readingEffect);
       readingTextDirty = false;
     }
     foreground = measureForeground(scroller, canvasRect, canvas);
@@ -555,14 +557,14 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       if (card) {
         paintDemoCardBody(card);
         paintGlassMaterial(seaReady);
-        readingProtection.paint(ink, width, height, { ...readingOptions,
+        if (config.readingEffect !== 'none') readingProtection.paint(ink, width, height, { ...readingOptions,
           underlay: document.body.hasAttribute('data-ds-dark-theme') ? DEMO_CARD_BODY_DARK : DEMO_CARD_BODY_LIGHT });
         paintDemoCardText(card);
       }
       return;
     }
     paintGlassMaterial(seaReady);
-    readingProtection.paint(ink, width, height, readingOptions);
+    if (config.readingEffect !== 'none') readingProtection.paint(ink, width, height, readingOptions);
     clearForeground(ink, foreground, width, height);
     for (const media of sidebarForegrounds) clearForeground(ink, media, width, height);
   }
@@ -645,7 +647,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       materials.push(tone);
       if (readingLayout.sidebarPanes.length) materials.push(readingLayout.sidebarTone);
     }
-    if (readingProtection.active && readingMaterial.mode !== 'glow') materials.push(readingMaterial);
+    if (readingProtection.active && readingMaterial.mode !== 'none' && readingMaterial.mode !== 'glow') materials.push(readingMaterial);
     if (!materials.length) return false;
     const shared = { ...materials[0], blur: Math.max(...materials.map(material => material.blur)) };
     if (!seaBuffers(shared)) return false;
@@ -749,6 +751,13 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     // opacity and speed apply from the next frame without any rebuild.
     const sceneRebuilt = simulation.update(next);
     Object.assign(config, next);
+    if (config.readingEffect === 'none') readingProtection.dispose();
+    // Switching the pause off mid-burst must not leave the layer hidden: the
+    // abandoned quiet interval was the only thing that would have restored it.
+    // Stop yielding here and reveal below, so the redraw in between happens
+    // while hidden exactly like the ordinary resume path.
+    const wasPaused = scrolling && !config.pauseOnScroll;
+    if (wasPaused) leaveScrollPause();
 
     if (sceneRebuilt) {
       scene = simulation.scene;
@@ -786,15 +795,28 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       draw();
       lastPaint = performance.now();
     }
+    if (wasPaused) revealLayer();
   }
 
   function finishScroll() {
     scrollTimer = 0;
     if (disposed) return;
-    scrolling = false;
+    leaveScrollPause();
     // Repaint while hidden before showing the new mask. Reset the clock so the
     // pause never becomes a catch-up leap in the school or a dive.
     sync();
+    revealLayer();
+  }
+
+  /** Stop yielding to scrolling without touching the canvas presentation. */
+  function leaveScrollPause() {
+    clearTimeout(scrollTimer);
+    scrollTimer = 0;
+    scrolling = false;
+  }
+
+  /** Show the layer again, fading in unless the system asked for no motion. */
+  function revealLayer() {
     if (canvas.style) {
       canvas.style.transition = reduced.matches ? 'none' : 'opacity 120ms ease-out';
       canvas.style.opacity = originalOpacity;
@@ -807,8 +829,17 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     const target = event?.target;
     if (target && target !== document && target !== document.body && target !== document.documentElement
       && !readingRoots.some(root => root === target || root.contains?.(target))) return;
-    measuredAt = -Infinity;
+    // Without the optional pause the school keeps swimming: the cached text lines
+    // are flagged stale and the running draw loop re-reads them on its ordinary
+    // 120ms measure budget. No layout read and no paint happens in this handler.
     readingTextDirty = true;
+    if (!config.pauseOnScroll) {
+      // A stopped animation loop needs its own coalesced redraw, otherwise the
+      // mask would stay at the pre-scroll positions until something else moves.
+      if (reduced.matches) onForegroundChange();
+      return;
+    }
+    measuredAt = -Infinity;
     if (!scrolling) {
       scrolling = true;
       cancelAnimationFrame(raf);

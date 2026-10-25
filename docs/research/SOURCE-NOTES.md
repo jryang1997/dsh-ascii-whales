@@ -224,3 +224,44 @@
 浏览器验收（真实 Chrome + CDP，DSH 忠实仿真页，非真实 DSH 窗口，见 `.scratch/v0110/final-validation.json`）：面板与 DOM 框误差 ≤1px、边界只剩卡片自身一条中性 ring、框内无锐利字形且开/关玻璃的框内墨量差 >50%、正文对比 ≥4.5:1、8–12 个卡片时每帧绘制耗时中位数、设置页隐藏行/互斥/保存与刷新、减少透明与减少动态、预览页回归。具体数字以该 JSON 为准。
 
 边界：候选框依赖「不透明背景 + 圆角」这两个 DOM 特征；透明底的卡片不会得到玻璃（避免误伤）。结论为仿真环境实测，真实 DSH 窗口观感仍未验收。
+
+## 未发布：滚动暂退改为可选（`pauseOnScroll`）
+
+用户反馈「现在滚动会暂停渲染，效果我不喜欢」。0.14.0 的滚动阅读响应把「暂退装饰层 + 暂停仿真」做成了无条件行为，所以本轮不是修 bug，而是把这个观感决定交还给用户：新增布尔字段 `pauseOnScroll`，放在设置页「高级设置」内，**默认关闭**。
+
+### 实现
+
+- `model.js`：`pauseOnScroll: { kind: 'boolean', default: false }`。旧配置没有这个键时按默认值走，即升级后滚动不再暂停；`index.js` 的 Host schema 由 `FIELDS` 自动生成，无需另改。
+- `engine.js`：`onScroll` 的前半段保持不变——先做便宜的来源过滤，再只把 `readingTextDirty` 置真。开关关闭时到此返回，不再把 `measuredAt` 打成 `-Infinity`、不取消 RAF、不改 `canvas.style.opacity`、不安排 140ms 恢复计时器。文字几何因此仍会刷新，只是走 `draw()` 原有的 120ms 测量预算（`MEASURE_INTERVAL`），一次滚动突发最多一次文字扫描，而不是每个事件一次。
+- 关闭时若系统正在「减少动态效果」（动画循环本来就停着），滚动会调用 `onForegroundChange()` 安排一帧合并后的静态重绘，否则遮罩会停在滚动前的位置直到别的东西变化。
+- 开启时行为逐字保留：立即隐藏、暂停仿真、静止 140ms 后 `sync()` 重绘再 120ms 淡入。
+- 新增 `leaveScrollPause()`（只停止让路：清计时器、`scrolling = false`）与 `revealLayer()`（只恢复画面：设置 transition 与 opacity），`finishScroll` 与 `update()` 共用。原来的恢复顺序是「先隐藏着重绘，再淡入」，避免用户看见遮罩跳位；两个函数拆开后这条顺序在两条路径上都保持不变。在滚动突发中间把开关关掉时，`update()` 会走同一顺序当场恢复——否则被放弃的那条计时器是唯一会让海面重新出现的东西，图层会被永久留在隐藏状态。
+- `pauseOnScroll` 归入 `LIVE_KEYS`：它只改变后续事件的处理方式，不重建场景、字体、调色板或玻璃分组。`update.test.js` 的「每个字段恰好落在一个重建组」断言覆盖这一点。
+
+### 验证范围
+
+逻辑与命令流（`node --test`，与产品代码同一份 `src/`）：
+
+- `media-occlusion.test.js` 新增三项。默认关闭时，10 帧 40ms 的滚动突发内 `canvas.style.opacity` 始终不是 `'0'`、没有安排恢复计时器、绘制调用持续增长；四次间隔 10ms 的事件合计文字扫描 ≤ 24 行（即至多一次扫描，证明走的是预算而非每事件）。诊断输出为 `{"geometry":140,"style":46,"ranges":44}`，即 10 帧约两次完整测量。
+- 中途关开关：先断言隐藏态与一个待触发计时器，`update({ pauseOnScroll: false })` 后断言不再隐藏、计时器清空、当帧即重绘。
+- 减少动态 + 关闭：滚动后确实安排了一帧合并重绘且没有恢复计时器。
+- 原有三项暂退断言（`glow/blur/frost` 突发零布局读取、滚动中关文字效果、`wheel` 隐藏与释放）改为显式 `pauseOnScroll: true`，仍然通过，说明开启路径没有回归。
+- `model.test.js` 断言默认值、非法值回落与 `FIELDS` 顺序；`settings.test.js` 断言该开关只出现在 `details.aw-advanced` 内、不在四个主分组里、默认 `aria-checked=false`、点击只改草稿、保存只写一条 `set pauseOnScroll`。
+- `pnpm verify` 全绿：346 项通过（本轮前基线 342 项），含 `client.js` 与 `preview/whale-preview.html` 产物一致性检查。
+
+指针与滚轮交互（ego lite 真实浏览器 + 真实 `mouse.wheel`，页面为正式产物 `preview/whale-preview.html`，最后一轮跑的是重新构建后的产物）：
+
+- 关闭（新默认）：10 次真实滚轮事件，`opacity` 采样 10/10 为默认值、0 次隐藏；画布像素指纹 9/10 帧在变，即滚动期间鲸群继续巡游。处理器内采到的 21 个滚动事件全部为可见（`hidden: 0, visible: 14`）。
+- 开启：同样输入下，处理器内 21/21 个滚动事件读到 `opacity === '0'`（`hidden: 21, visible: 0`），即滚动期间装饰层确实暂退；静止 800ms 后恢复为默认可见且仍有像素。两条路径只差这个开关。
+- 两种情况下 `settled` 的 `opacity` 都不是 `'0'`，即不存在把海面永久留在隐藏状态的路径。
+- 证据文件：`.scratch/pause-on-scroll-20261024/round-0{2..8}.mjs` 与该目录下 `canvas-pause-off.png`、`canvas-pause-on.png`（由 `toDataURL` 导出的真实画布像素）。
+
+设置页（真实 React 组件，`.scratch/settings-preview.html`，ego lite 真实浏览器）：`[data-aw-field="pauseOnScroll"]` 位于 `details.aw-advanced` 内、与 `leftInset` 并列，四个主分组（外观/鲸群/阅读/海面）都不含它；`<details>` 默认折叠。`label` 的 `htmlFor` 指向开关 `id`，`aria-labelledby`/`aria-describedby` 与提示段落 id 一致，初始 `aria-checked="false"`。真实鼠标点击、聚焦后 Space 与 Enter 均可切换；切到英文显示 "Pause rendering while scrolling" 与对应说明；保存只提交一条 `{ op: 'set', path: ['pauseOnScroll'], value: true }`。证据 `round-09/10/11.mjs`。
+
+边界与未验证项：
+
+- 本轮浏览器验收在独立预览页完成，**未在当前运行的 DSH 桌面窗口内验收**，也没有确认正在使用的插件来源与构建。
+- `Page.captureScreenshot` 在该环境超时，画面证据改用画布自身像素导出；整页叠层观感（玻璃、正文对比度）本轮未重新测量。
+- 前几轮脚本的失败是几何问题而非产品缺陷：`#stage` 的 `overflow` 为 `visible` 且 `scrollHeight === clientHeight`，它本身不可滚动，真实滚轮滚动的是文档；早期一次采样点落在视口外（`y = -370`、`top = -345`）。第四轮的事件计数与 `scrollIntoView` 修正后才是上表数据。
+- 关闭状态下滚动期间的布局读取高于开启状态（开启时突发内为 0 次），这是把观感交给用户带来的直接代价；本轮未做逐帧耗时测量，不能据此推断设备帧率。
+

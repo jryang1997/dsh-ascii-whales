@@ -19,7 +19,7 @@ export const FIELDS = Object.freeze({
   activity: { kind: 'boolean', default: true },
   quietCenter: { kind: 'boolean', default: true },
   leftInset: { kind: 'number', min: 0, max: 500, step: 1, default: 280 },
-  readingEffect: { kind: 'enum', values: ['glow', 'blur', 'frost'], default: 'frost' },
+  readingEffect: { kind: 'enum', values: ['none', 'glow', 'blur', 'frost'], default: 'frost' },
   glass: { kind: 'boolean', default: true },
   glassStrength: { kind: 'number', min: 0, max: 1, step: 0.05, default: 0.55 },
   // Folded into `glass` in 0.11.0: every content box, the composer included, is
@@ -34,6 +34,11 @@ export const FIELDS = Object.freeze({
   clouds: { kind: 'boolean', default: true },
   rain: { kind: 'boolean', default: false },
   rainIntensity: { kind: 'number', min: 0, max: 1, step: 0.01, default: 0.45 },
+  // Opt-in reading guard, off by default. When on, a scroll burst hides the
+  // decorative layer and freezes the school until the page goes quiet, so the
+  // soft text mask can never trail behind moving text. When off the whales keep
+  // swimming and the mask refreshes on the ordinary 120ms measure budget.
+  pauseOnScroll: { kind: 'boolean', default: false },
 });
 export const DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -183,9 +188,18 @@ export function createScene(count, text = DEFAULTS.text, species = DEFAULTS.spec
   const size = clamp(typeof whaleSize === 'number' && Number.isFinite(whaleSize) ? whaleSize : DEFAULTS.whaleSize,
     FIELDS.whaleSize.min, FIELDS.whaleSize.max);
   const total = Math.min(8000, Math.round(count * 2200 * Math.max(0.36, size * size)));
+  // Give every whale its own plane, including schools larger than five.
+  // A separate shuffle leaves the existing color assignments untouched.
+  const depthOrder = Array.from({ length: count }, (_, index) => index);
+  let depthSeed = (colorSeed ^ 0x6a09e667) >>> 0;
+  for (let i = count - 1; i > 0; i--) {
+    depthSeed = (Math.imul(depthSeed, 1664525) + 1013904223) >>> 0;
+    const j = Math.floor(depthSeed / 0x100000000 * (i + 1));
+    [depthOrder[i], depthOrder[j]] = [depthOrder[j], depthOrder[i]];
+  }
   const whales = Array.from({ length: count }, (_, id) => ({
     id, colorIndex: colorOrder[id], species: species === 'mixed' || !WHALE_SPECIES[species] ? SPECIES_IDS[id % SPECIES_IDS.length] : species,
-    depth: [0.14, 0.52, 0.72, 0.95, 0.38][id % 5], phase: noise(id + 80) * Math.PI * 2,
+    depth: count === 1 ? 0.16 : 0.16 + 0.89 * depthOrder[id] / (count - 1), phase: noise(id + 80) * Math.PI * 2,
   }));
   const particles = [], triangles = [], decals = [];
   for (const whale of whales) {

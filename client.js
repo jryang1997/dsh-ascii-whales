@@ -703,7 +703,7 @@
     for (const whale of next.whales || []) {
       const source = sources.get(whale.id);
       if (!source || source === whale) continue;
-      for (const key of ["x", "y", "heading", "turn", "speed", "vx", "vy"]) {
+      for (const key of ["x", "y", "heading", "turn", "speed", "vx", "vy", "depth"]) {
         if (Number.isFinite(source[key])) whale[key] = source[key];
       }
       if (source._motion) {
@@ -715,6 +715,13 @@
         whale._motion.cruise *= nextAnatomy.cruise / previousAnatomy.cruise;
         whale._motion.agility *= nextAnatomy.turnRate / previousAnatomy.turnRate;
       }
+      motionGeometry(
+        whale,
+        next.width,
+        next.height,
+        next.whales.length,
+        motionLimit(motionFinite(next.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling)
+      );
       resetWhaleRig(whale);
       const nodes = source.rig && source.rig.nodes;
       if (nodes && nodes.length === whale.rig.nodes.length) {
@@ -880,8 +887,45 @@
     }
     return { distance: Math.sqrt(bestSquared), x: bestX, y: bestY };
   }
+  function motionCruiseDepth(whale, index, age) {
+    const state = whale._motion;
+    if (!Number.isFinite(state.cruiseBase)) {
+      state.cruiseBase = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5);
+      state.depthSeed = (motionSeed(whale, index) ^ 1013904242) >>> 0;
+      state.depthFrom = state.cruiseBase;
+      state.depthTarget = state.cruiseBase;
+      state.depthStartedAt = state.age;
+      state.depthDuration = 0;
+      state.depthDirection = 1;
+    }
+    if (age >= state.depthStartedAt + state.depthDuration) {
+      state.depthFrom = state.depthTarget;
+      state.depthSeed = Math.imul(state.depthSeed, 1664525) + 1013904223 >>> 0;
+      const excursion = 0.14 + state.depthSeed / 4294967296 * 0.1;
+      state.depthDirection *= -1;
+      state.depthTarget = motionLimit(state.cruiseBase + state.depthDirection * excursion, 0.1, 2.5);
+      state.depthStartedAt += state.depthDuration;
+      state.depthSeed = Math.imul(state.depthSeed, 1664525) + 1013904223 >>> 0;
+      state.depthDuration = 20 + state.depthSeed / 4294967296 * 18;
+    }
+    const u = motionLimit((age - state.depthStartedAt) / state.depthDuration, 0, 1);
+    whale.depth = state.depthFrom + (state.depthTarget - state.depthFrom) * u * u * (3 - 2 * u);
+  }
   function motionIntegrate(scene, speed) {
     const whales = scene.whales, width = scene.width, height = scene.height;
+    const size2 = motionLimit(motionFinite(scene.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling);
+    for (let i = 0; i < whales.length; i++) {
+      const whale = whales[i], previousLength = whale.length;
+      motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
+      motionGeometry(whale, width, height, whales.length, size2);
+      const nodes = whale.rig?.nodes, ratio = whale.length / previousLength;
+      if (nodes && Number.isFinite(ratio) && ratio !== 1) {
+        for (let j = 0; j < nodes.length; j += 2) {
+          nodes[j] = whale.x + (nodes[j] - whale.x) * ratio;
+          nodes[j + 1] = whale.y + (nodes[j + 1] - whale.y) * ratio;
+        }
+      }
+    }
     const environmentSpeed = Math.min(1, Math.min(width, height) / 650);
     const obstacles = motionPeriodicObstacles(scene.obstacles, width, height);
     const forces = whales.map(() => ({ x: 0, y: 0, caution: 0 }));
@@ -1245,7 +1289,7 @@
     if (state) motionEnsureDive(state);
     const age = state ? state.age : motionFinite(elapsed, 0) * motionFinite(speed, 1);
     const heading = motionFinite(whale.heading, 0), turn2 = motionFinite(whale.turn, 0);
-    const depth = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5) + Math.sin(age * 0.07 + phase) * 0.025;
+    const depth = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5);
     const focal = motionLimit(width * 0.95, 520, 1800);
     const yaw = 0, pitch = Math.PI / 2, roll = heading;
     const cy = 1, sy = 0, cp = 0, sp = 1;
@@ -1365,7 +1409,7 @@
     activity: { kind: "boolean", default: true },
     quietCenter: { kind: "boolean", default: true },
     leftInset: { kind: "number", min: 0, max: 500, step: 1, default: 280 },
-    readingEffect: { kind: "enum", values: ["glow", "blur", "frost"], default: "frost" },
+    readingEffect: { kind: "enum", values: ["none", "glow", "blur", "frost"], default: "frost" },
     glass: { kind: "boolean", default: true },
     glassStrength: { kind: "number", min: 0, max: 1, step: 0.05, default: 0.55 },
     // Folded into `glass` in 0.11.0: every content box, the composer included, is
@@ -1379,7 +1423,12 @@
     wind: { kind: "boolean", default: true },
     clouds: { kind: "boolean", default: true },
     rain: { kind: "boolean", default: false },
-    rainIntensity: { kind: "number", min: 0, max: 1, step: 0.01, default: 0.45 }
+    rainIntensity: { kind: "number", min: 0, max: 1, step: 0.01, default: 0.45 },
+    // Opt-in reading guard, off by default. When on, a scroll burst hides the
+    // decorative layer and freezes the school until the page goes quiet, so the
+    // soft text mask can never trail behind moving text. When off the whales keep
+    // swimming and the mask refreshes on the ordinary 120ms measure budget.
+    pauseOnScroll: { kind: "boolean", default: false }
   });
   var DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
   var clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -1507,11 +1556,18 @@
       FIELDS.whaleSize.max
     );
     const total = Math.min(8e3, Math.round(count * 2200 * Math.max(0.36, size2 * size2)));
+    const depthOrder = Array.from({ length: count }, (_, index) => index);
+    let depthSeed = (colorSeed ^ 1779033703) >>> 0;
+    for (let i = count - 1; i > 0; i--) {
+      depthSeed = Math.imul(depthSeed, 1664525) + 1013904223 >>> 0;
+      const j = Math.floor(depthSeed / 4294967296 * (i + 1));
+      [depthOrder[i], depthOrder[j]] = [depthOrder[j], depthOrder[i]];
+    }
     const whales = Array.from({ length: count }, (_, id) => ({
       id,
       colorIndex: colorOrder[id],
       species: species === "mixed" || !WHALE_SPECIES[species] ? SPECIES_IDS[id % SPECIES_IDS.length] : species,
-      depth: [0.14, 0.52, 0.72, 0.95, 0.38][id % 5],
+      depth: count === 1 ? 0.16 : 0.16 + 0.89 * depthOrder[id] / (count - 1),
       phase: noise(id + 80) * Math.PI * 2
     }));
     const particles = [], triangles = [], decals = [];
@@ -2159,6 +2215,11 @@
     surfacePalettes.set(name, palette);
     return palette;
   }
+  function surfaceDepthOpacity(pose) {
+    const depth = pose?.focal > 0 && Number.isFinite(pose.cameraZ) ? pose.cameraZ / pose.focal : 0.14;
+    const t = Math.max(0, Math.min(1, (depth - 0.14) / 1.21));
+    return 1 - 0.38 * t * t * (3 - 2 * t);
+  }
   function createWhalePainter(scene, config) {
     const ascii = config.fillMode === "ascii", tiles = config.renderStyle === "cells";
     const font = ascii ? `600 ${config.glyphSize}px Consolas, "Cascadia Mono", "Courier New", monospace` : `600 ${config.glyphSize}px "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`;
@@ -2171,6 +2232,7 @@
     const textDark = "#122635", textLight = "#f2f6fa";
     function paint(target, grid, poses, width, height, ratio = 1, fade = null, dark = false) {
       const opacity = config.opacity, quietCenter = config.quietCenter;
+      const depthOpacities = poses.map(surfaceDepthOpacity);
       target.font = font;
       target.textAlign = "center";
       target.textBaseline = "middle";
@@ -2186,7 +2248,7 @@
         if (owner < 0) continue;
         const particle = scene.particles[owner], pose = poses[particle.whale];
         const x = grid.centersX[cell], y = grid.centersY[cell], coverage = grid.coverage[cell], light = grid.lights[cell];
-        let alpha = glyphOpacity(opacity, light, grid.visibility[cell], attenuation(x, y, width, height, quietCenter)) * (0.3 + coverage * 0.7);
+        let alpha = glyphOpacity(opacity, light, grid.visibility[cell], attenuation(x, y, width, height, quietCenter)) * (0.3 + coverage * 0.7) * depthOpacities[particle.whale];
         if (fade) alpha *= fade(x, y);
         if (alpha < 0.01) continue;
         const inkLight = grid.atmosphereLights ? grid.atmosphereLights[cell] : light;
@@ -2313,7 +2375,8 @@
       field.tracks.set(key, current);
       const submergence = clamp2(finite(motion?.submergence));
       const diving = motion?.dive && Number.isFinite(motion.dive.startedAt);
-      if (!previous || dt > 0.5 || diving || submergence >= 0.12 || previous.radius !== radius) continue;
+      const resized = previous && Math.abs(previous.radius - radius) > Math.max(0.5, previous.radius * 0.05);
+      if (!previous || dt > 0.5 || diving || submergence >= 0.12 || resized) continue;
       const dx = delta(whale.x - previous.x, width), dy = delta(whale.y - previous.y, height);
       const distance = Math.hypot(dx, dy);
       const tailDX = delta(tail.x - previous.tailX, width), tailDY = delta(tail.y - previous.tailY, height);
@@ -3635,40 +3698,40 @@
   var SPOUT_STAMPS = Object.freeze({
     blue: {
       basis: "screen",
-      jet: { anchor: { row: 0, col: 1 }, rows: [" * "] },
-      bush: { anchor: { row: 1, col: 1 }, rows: [" o ", "o*o", " o "] },
-      droplets: { anchor: { row: 1, col: 1 }, rows: [" . ", ". .", " . "] }
+      jet: { anchor: { row: 1, col: 2 }, rows: ["  *  ", "* * *", "  *  "] },
+      bush: { anchor: { row: 2, col: 2 }, rows: [" . . ", ". * .", "* * *", ". * .", " . . "] },
+      droplets: { anchor: { row: 2, col: 2 }, rows: [".   .", "  .  ", ". . .", "  .  ", ".   ."] }
     },
     humpback: {
       basis: "screen",
-      jet: { anchor: { row: 0, col: 2 }, rows: [" *** "] },
-      bush: { anchor: { row: 1, col: 3 }, rows: [" 'o o' ", "o  *  o", " 'o o' "] },
-      droplets: { anchor: { row: 1, col: 3 }, rows: [".  .  .", " .   . ", "   .   "] }
+      jet: { anchor: { row: 1, col: 4 }, rows: ["  .*.*.  ", "   ***   ", "  .*.*.  "] },
+      bush: { anchor: { row: 2, col: 4 }, rows: ["  .  *  .", " . o  o .", "*   *   *", " . o  o .", "  .  *  ."] },
+      droplets: { anchor: { row: 2, col: 4 }, rows: [".   .   .", "  .   .  ", ".   .   .", "    .    ", ".   .   ."] }
     },
     bowhead: {
       basis: "lateral",
-      jet: { anchor: { row: 1, col: 2 }, rows: ["  '  ", "  *  "] },
-      bush: { anchor: { row: 3, col: 4 }, rows: ["O       O", " '     ' ", "  '   '  ", "    *    "] },
-      droplets: { anchor: { row: 2, col: 4 }, rows: [".       .", " '     ' ", "    .    "] }
+      jet: { anchor: { row: 1, col: 5 }, rows: ["  .     .  ", "     *     ", "  '     '  "] },
+      bush: { anchor: { row: 2, col: 5 }, rows: [".    .    .", "  '     '  ", "    * *    ", "  '     '  ", ".    .    ."] },
+      droplets: { anchor: { row: 2, col: 5 }, rows: [".         .", "  .     .  ", "     .     ", "  .     .  ", ".         ."] }
     },
     fin: {
       basis: "screen",
       unverified: true,
       jet: { anchor: { row: 0, col: 1 }, rows: [" * "] },
-      bush: { anchor: { row: 1, col: 1 }, rows: [" . ", " * ", " . "] },
+      bush: { anchor: { row: 1, col: 1 }, rows: [" . ", "* *", " . "] },
       droplets: { anchor: { row: 0, col: 1 }, rows: [" . "] }
     },
     sperm: {
       basis: "body",
-      jet: { anchor: { row: 0, col: 0 }, rows: ["*  ", " ' ", "  o"] },
-      bush: { anchor: { row: 0, col: 0 }, rows: ["*   ", " '  ", "  o ", "   ~"] },
-      droplets: { anchor: { row: 0, col: 0 }, rows: ["*  ", " . ", "  ."] }
+      jet: { anchor: { row: 0, col: 0 }, rows: ["* .", " ' ", "  o"] },
+      bush: { anchor: { row: 0, col: 0 }, rows: ["* ..", " '~ ", " o. ", "  . "] },
+      droplets: { anchor: { row: 0, col: 0 }, rows: ["* .", " . ", "  ."] }
     }
   });
   function spoutAge(ageMs) {
-    if (typeof ageMs !== "number" || !Number.isFinite(ageMs) || ageMs < 0 || ageMs >= 760) return null;
-    const alpha = ageMs < 160 ? 1 : (760 - ageMs) / 600;
-    const phase = ageMs < 160 ? "jet" : ageMs < 420 ? "bush" : "droplets";
+    if (typeof ageMs !== "number" || !Number.isFinite(ageMs) || ageMs < 0 || ageMs >= 1500) return null;
+    const alpha = ageMs < 700 ? 1 : (1500 - ageMs) / 800;
+    const phase = ageMs < 220 ? "jet" : ageMs < 700 ? "bush" : "droplets";
     return { phase, alpha };
   }
   function spoutFrame(species, phase) {
@@ -4059,6 +4122,7 @@
 
   // src/reading-protection.js
   function readingEffectTone(effect = "frost", strength = 0.55, options = {}) {
+    if (effect === "none") return { mode: "none" };
     const base = glassContentTone(strength, options);
     if (effect === "glow" || options.reducedTransparency) return { ...base, mode: "glow" };
     const frost = effect !== "blur";
@@ -4210,7 +4274,15 @@
   }
   function createReadingProtection() {
     let mask = null, key = "", replacement = null, replacementInk = null;
+    function clear() {
+      mask = replacement = replacementInk = null;
+      key = "";
+    }
     function setRegions(groups, canvasRect, effect = "glow") {
+      if (effect === "none") {
+        clear();
+        return;
+      }
       const nextKey = JSON.stringify([canvasRect.width, canvasRect.height, effect, groups]);
       if (nextKey === key) return;
       key = nextKey;
@@ -4253,11 +4325,15 @@
         return Boolean(mask);
       },
       measure(roots, canvasRect, effect = "glow") {
+        if (effect === "none") {
+          clear();
+          return;
+        }
         setRegions(measureReadingText(roots, canvasRect), canvasRect, effect);
       },
       setRegions,
       paint(target, width, height, { material = { mode: "glow" }, source = null, sourceRect = null, underlay = null } = {}) {
-        if (!mask) return;
+        if (!mask || material.mode === "none") return;
         target.save();
         target.globalAlpha = 1;
         target.globalCompositeOperation = "destination-out";
@@ -4300,10 +4376,7 @@
         target.drawImage(replacement, 0, 0, width, height);
         target.restore();
       },
-      dispose() {
-        mask = replacement = replacementInk = null;
-        key = "";
-      }
+      dispose: clear
     };
   }
 
@@ -4369,7 +4442,7 @@
   var PALETTE_KEYS = Object.freeze(["color"]);
   var GLASS_KEYS = Object.freeze(["glass", "glassStrength", "readingEffect"]);
   var COMPOSER_KEYS = Object.freeze(["composerGlass", "composerAvoid"]);
-  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds", "rain", "rainIntensity", "activity"]);
+  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds", "rain", "rainIntensity", "activity", "pauseOnScroll"]);
   var anyChanged = (keys, previous, next) => keys.some((key) => previous[key] !== next[key]);
   var noChange = (changes) => !changes.scene && !changes.metrics && !changes.palette && !changes.glass && !changes.composer && !changes.live;
   function diffWhaleConfig(previous, next) {
@@ -4710,7 +4783,7 @@
       if (demo) {
         applyReadingSnapshot(demoReadingSnapshot(demo, width, height));
         const card = demoCardRect();
-        const groups = card && config.glass ? [{
+        const groups = card && config.glass && config.readingEffect !== "none" ? [{
           clip: { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius },
           regions: demoTextRegions(card)
         }] : [];
@@ -4726,7 +4799,8 @@
       sidebarForegrounds = sidebars.map((panel) => measureForeground(panel.element, canvasRect, canvas));
       readingRoots = [scroller, composer?.element, ...sidebars.map((panel) => panel.element)].filter(Boolean);
       if (readingTextDirty) {
-        readingProtection.measure(readingRoots, canvasRect, config.readingEffect);
+        if (config.readingEffect === "none") readingProtection.dispose();
+        else readingProtection.measure(readingRoots, canvasRect, config.readingEffect);
         readingTextDirty = false;
       }
       foreground = measureForeground(scroller, canvasRect, canvas);
@@ -4811,7 +4885,7 @@
         if (card) {
           paintDemoCardBody(card);
           paintGlassMaterial(seaReady);
-          readingProtection.paint(ink, width, height, {
+          if (config.readingEffect !== "none") readingProtection.paint(ink, width, height, {
             ...readingOptions,
             underlay: document.body.hasAttribute("data-ds-dark-theme") ? DEMO_CARD_BODY_DARK : DEMO_CARD_BODY_LIGHT
           });
@@ -4820,7 +4894,7 @@
         return;
       }
       paintGlassMaterial(seaReady);
-      readingProtection.paint(ink, width, height, readingOptions);
+      if (config.readingEffect !== "none") readingProtection.paint(ink, width, height, readingOptions);
       clearForeground(ink, foreground, width, height);
       for (const media of sidebarForegrounds) clearForeground(ink, media, width, height);
     }
@@ -4867,7 +4941,7 @@
         materials.push(tone);
         if (readingLayout.sidebarPanes.length) materials.push(readingLayout.sidebarTone);
       }
-      if (readingProtection.active && readingMaterial.mode !== "glow") materials.push(readingMaterial);
+      if (readingProtection.active && readingMaterial.mode !== "none" && readingMaterial.mode !== "glow") materials.push(readingMaterial);
       if (!materials.length) return false;
       const shared = { ...materials[0], blur: Math.max(...materials.map((material) => material.blur)) };
       if (!seaBuffers(shared)) return false;
@@ -4953,6 +5027,9 @@
       if (noChange(changes)) return;
       const sceneRebuilt = simulation.update(next);
       Object.assign(config, next);
+      if (config.readingEffect === "none") readingProtection.dispose();
+      const wasPaused = scrolling && !config.pauseOnScroll;
+      if (wasPaused) leaveScrollPause();
       if (sceneRebuilt) {
         scene = simulation.scene;
         poses = scene.whales.map(() => ({}));
@@ -4979,12 +5056,21 @@
         draw();
         lastPaint = performance.now();
       }
+      if (wasPaused) revealLayer();
     }
     function finishScroll() {
       scrollTimer = 0;
       if (disposed) return;
-      scrolling = false;
+      leaveScrollPause();
       sync();
+      revealLayer();
+    }
+    function leaveScrollPause() {
+      clearTimeout(scrollTimer);
+      scrollTimer = 0;
+      scrolling = false;
+    }
+    function revealLayer() {
       if (canvas.style) {
         canvas.style.transition = reduced.matches ? "none" : "opacity 120ms ease-out";
         canvas.style.opacity = originalOpacity;
@@ -4994,8 +5080,12 @@
       if (demo || disposed || document.hidden || event?.ctrlKey) return;
       const target = event?.target;
       if (target && target !== document && target !== document.body && target !== document.documentElement && !readingRoots.some((root) => root === target || root.contains?.(target))) return;
-      measuredAt = -Infinity;
       readingTextDirty = true;
+      if (!config.pauseOnScroll) {
+        if (reduced.matches) onForegroundChange();
+        return;
+      }
+      measuredAt = -Infinity;
       if (!scrolling) {
         scrolling = true;
         cancelAnimationFrame(raf);
@@ -5140,10 +5230,6 @@
     const safe = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
     return `${(safe * 100).toFixed(1)}%`;
   }
-  function optionIndex(field, value) {
-    const index = field.values.indexOf(value);
-    return index < 0 ? 0 : index;
-  }
   function registerWhales(ctx, React, dictionaries) {
     const h = React.createElement;
     const form = ctx.configForms.get("ascii-whale-background");
@@ -5182,6 +5268,8 @@
       return h("canvas", { ref, "aria-hidden": true, style: { display: "block", width: "100%", height: "100%" } });
     }
     function LivePreview({ draft }) {
+      const [paused, setPaused] = React.useState(false);
+      const pauseRef = React.useRef(false);
       const ref = React.useRef(null);
       const latest = React.useRef(draft);
       const layer = React.useRef(null);
@@ -5211,24 +5299,38 @@
       }, []);
       const apply = React.useCallback(() => {
         frame.current = 0;
-        layer.current?.update(previewConfigOf(latest.current));
+        const config = previewConfigOf(latest.current);
+        if (pauseRef.current) config.speed = 0;
+        layer.current?.update(config);
       }, []);
       const schedule = React.useCallback(() => {
         if (!frame.current) frame.current = requestAnimationFrame(apply);
       }, [apply]);
       React.useEffect(() => {
         latest.current = draft;
+        pauseRef.current = paused;
         schedule();
-      }, [draft, schedule]);
+      }, [draft, paused, schedule]);
       return h(
-        "aside",
-        { className: "aw-preview" },
+        "section",
+        { className: "aw-preview", "aria-label": t("stylePreview") },
+        h(
+          "div",
+          { className: "aw-preview-toolbar" },
+          h("div", null, h("h3", null, t("previewTitle")), h("p", null, t("previewSubtitle"))),
+          h("button", {
+            type: "button",
+            className: "aw-preview-pause",
+            "aria-pressed": paused,
+            onClick: () => setPaused((value) => !value)
+          }, t(paused ? "previewPlay" : "previewPause"))
+        ),
         h(
           "div",
           { className: "aw-preview-card" },
           h("canvas", { ref, role: "img", "aria-label": t("stylePreview") })
         ),
-        h("p", null, t("stylePreviewNote"))
+        h("p", { className: "aw-preview-note" }, t("stylePreviewNote"))
       );
     }
     function Overlay(props) {
@@ -5271,6 +5373,23 @@
         if (snapshot.status === "ready" && !dirty) setEditor(createConfigEditor(snapshot));
       }, [snapshot, dirty]);
       const prefix = React.useId();
+      const viewportRef = React.useRef(null);
+      React.useEffect(() => {
+        const root = viewportRef.current;
+        if (!root) return;
+        const fit = () => {
+          const top = Math.max(0, root.getBoundingClientRect().top);
+          root.style.setProperty("--aw-height", `${Math.max(200, window.innerHeight - top - 12)}px`);
+        };
+        fit();
+        window.addEventListener("resize", fit);
+        const observer = new ResizeObserver(fit);
+        if (root.parentElement) observer.observe(root.parentElement);
+        return () => {
+          observer.disconnect();
+          window.removeEventListener("resize", fit);
+        };
+      }, [snapshot.status, !!editor]);
       if (snapshot.status !== "ready" || !editor) return h("p", { role: "status" }, t(snapshot.status === "loading" ? "loading" : "unavailable"));
       const disabled = !snapshot.writable || saving;
       function update(key, value) {
@@ -5294,120 +5413,166 @@
         setEditor(createConfigEditor(form.getSnapshot()));
         setNotice("");
       }
-      return h(
-        "form",
-        { className: "aw-settings", onSubmit: save },
-        h("style", null, SETTINGS_CSS),
-        h("h2", null, t("title")),
-        h("p", { className: "aw-purpose" }, t("purpose")),
-        h(
-          "div",
-          { className: "aw-layout" },
-          h(LivePreview, { draft: editor.draft }),
-          h(
+      function formatValue(key, field, value) {
+        if (key === "opacity" || key === "rainIntensity") return `${Math.round(Number(value) * 100)}%`;
+        if (key === "whaleSize" || key === "speed") return `${readout(field, value)}×`;
+        if (key === "glyphSize" || key === "leftInset") return `${readout(field, value)} px`;
+        return readout(field, value);
+      }
+      function renderField(key) {
+        const field = FIELDS[key], value = editor.draft[key];
+        const id = `${prefix}-${key}`, hint = `${id}-hint`, label = `${id}-label`;
+        const off = disabled || key === "text" && editor.draft.fillMode === "ascii" || key === "rainIntensity" && !editor.draft.rain || key === "glassStrength" && !editor.draft.glass && !["blur", "frost"].includes(editor.draft.readingEffect);
+        const common = { id, disabled: off, "aria-describedby": hint };
+        const title = field.kind === "enum" ? h("span", { id: label, className: "aw-label" }, t(key)) : h("label", { id: label, htmlFor: id }, t(key));
+        let control, output = null;
+        if (field.kind === "boolean") {
+          control = h("button", {
+            ...common,
+            type: "button",
+            role: "switch",
+            "aria-checked": value,
+            "aria-labelledby": label,
+            className: "aw-switch",
+            onClick: () => update(key, !value)
+          }, h("span", { className: "aw-switch-knob", "aria-hidden": true }));
+        } else if (field.kind === "enum" && (key === "species" || key === "color")) {
+          control = h(
+            "select",
+            {
+              ...common,
+              className: "aw-select",
+              "aria-labelledby": label,
+              value,
+              onChange: (event) => update(key, event.target.value)
+            },
+            ...field.values.map((option) => h("option", { key: option, value: option }, t(option)))
+          );
+        } else if (field.kind === "enum") {
+          control = h(
             "div",
-            { className: "aw-fields" },
-            !snapshot.writable && h("p", { role: "status" }, t("readOnly")),
-            ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
-              const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
-              const off = disabled || key === "text" && editor.draft.fillMode === "ascii" || key === "rainIntensity" && !editor.draft.rain;
-              const common = { id, disabled: off, "aria-describedby": hint };
-              let control;
-              if (field.kind === "boolean") {
-                control = h("button", {
-                  ...common,
-                  type: "button",
-                  role: "switch",
-                  "aria-checked": value,
-                  "aria-label": t(key),
-                  className: "aw-switch",
-                  onClick: () => update(key, !value)
-                }, h("span", { className: "aw-switch-knob" }));
-              } else if (field.kind === "enum") {
-                const index = optionIndex(field, value), current = field.values[index];
-                const last = field.values.length - 1;
-                control = h(
-                  "div",
-                  { className: "aw-control aw-segments", style: { "--aw-stops": String(field.values.length) } },
-                  h("input", {
-                    ...common,
-                    type: "range",
-                    className: "aw-slider",
-                    min: 0,
-                    max: last,
-                    step: 1,
-                    value: index,
-                    "aria-valuetext": t(current),
-                    style: { "--aw-pct": trackFill(last ? index / last : 0) },
-                    onChange: (event) => update(key, field.values[Number(event.target.value)] ?? current)
-                  }),
-                  h("div", { className: "aw-ticks" }, ...field.values.map((option, position) => h("button", {
-                    key: option,
-                    type: "button",
-                    disabled: off,
-                    className: "aw-tick",
-                    tabIndex: -1,
-                    "aria-pressed": position === index,
-                    onClick: () => update(key, option)
-                  }, t(option))))
-                );
-              } else if (field.kind === "string") {
-                control = h("input", {
-                  ...common,
-                  className: "aw-text",
-                  type: "text",
-                  value,
-                  maxLength: field.max,
-                  onChange: (event) => update(key, event.target.value)
-                });
-              } else {
-                const number = value === "" || !Number.isFinite(Number(value)) ? field.default : Number(value);
-                control = h(
-                  "div",
-                  { className: "aw-control aw-number" },
-                  h(
-                    "div",
-                    { className: "aw-number-head" },
-                    h("output", { htmlFor: id, className: "aw-readout" }, key === "rainIntensity" ? `${Math.round(number * 100)}%` : readout(field, value))
-                  ),
-                  h("input", {
-                    ...common,
-                    type: "range",
-                    className: "aw-slider",
-                    min: field.min,
-                    max: field.max,
-                    step: field.step,
-                    value: number,
-                    "aria-valuetext": key === "rainIntensity" ? `${Math.round(number * 100)}%` : void 0,
-                    style: { "--aw-pct": trackFill((number - field.min) / (field.max - field.min || 1)) },
-                    onChange: (event) => update(key, Number(event.target.value))
-                  }),
-                  h(
-                    "div",
-                    { className: "aw-scale", "aria-hidden": "true" },
-                    h("span", null, readout(field, field.min)),
-                    h("span", null, readout(field, field.max))
-                  )
-                );
-              }
-              return h(
-                "div",
-                { className: "aw-row", key },
-                h("div", { className: "aw-copy" }, h("label", { htmlFor: id }, t(key)), h("p", { id: hint }, t(`${key}Hint`))),
-                control
-              );
+            { id, role: "group", className: "aw-segments", "aria-labelledby": label, "aria-describedby": hint },
+            ...field.values.map((option) => h("button", {
+              key: option,
+              type: "button",
+              disabled: off,
+              "aria-pressed": value === option,
+              className: "aw-segment",
+              onClick: () => update(key, option)
+            }, t(option)))
+          );
+        } else if (field.kind === "string") {
+          control = h("input", {
+            ...common,
+            className: "aw-text",
+            type: "text",
+            value,
+            maxLength: field.max,
+            onChange: (event) => update(key, event.target.value)
+          });
+        } else if (key === "leftInset") {
+          control = h(
+            "div",
+            { className: "aw-pixel-input" },
+            h("input", {
+              ...common,
+              type: "number",
+              value,
+              min: field.min,
+              max: field.max,
+              step: field.step,
+              inputMode: "numeric",
+              onChange: (event) => update(key, event.target.value === "" ? "" : Number(event.target.value))
+            }),
+            h("span", { "aria-hidden": true }, "px")
+          );
+        } else {
+          const number = value === "" || !Number.isFinite(Number(value)) ? field.default : Number(value);
+          output = h("output", { htmlFor: id, className: "aw-readout" }, formatValue(key, field, value));
+          control = h(
+            "div",
+            { className: "aw-number" },
+            h("input", {
+              ...common,
+              type: "range",
+              className: "aw-slider",
+              min: field.min,
+              max: field.max,
+              step: field.step,
+              value: number,
+              "aria-valuetext": formatValue(key, field, number),
+              style: { "--aw-pct": trackFill((number - field.min) / (field.max - field.min || 1)) },
+              onChange: (event) => update(key, Number(event.target.value))
             }),
             h(
               "div",
-              { className: "aw-actions" },
-              h("button", { type: "submit", disabled: disabled || !dirty, className: "aw-save" }, t(saving ? "saving" : "save")),
-              h("button", { type: "button", disabled, onClick: () => {
-                setEditor((e) => e.reset());
-                setNotice("");
-              } }, t("reset")),
-              h("button", { type: "button", disabled: saving, onClick: discard }, t("discard"))
-            ),
-            notice && h("p", { role: notice === "saved" ? "status" : "alert", "aria-live": "polite" }, t(notice))
+              { className: "aw-scale", "aria-hidden": true },
+              h("span", null, formatValue(key, field, field.min)),
+              h("span", null, formatValue(key, field, field.max))
+            )
+          );
+        }
+        return h(
+          "div",
+          { className: `aw-row aw-row--${field.kind}`, key, "data-aw-field": key },
+          h(
+            "div",
+            { className: "aw-copy" },
+            h("div", { className: "aw-row-heading" }, title, output),
+            h("p", { id: hint }, t(`${key}Hint`))
+          ),
+          control
+        );
+      }
+      const groups = [
+        { id: "appearance", fields: ["renderStyle", "fillMode", "text", "color", "opacity", "glyphSize"] },
+        { id: "school", fields: ["species", "count", "whaleSize", "speed", "activity", "spout"] },
+        { id: "reading", fields: ["readingEffect", "glass", "glassStrength", "quietCenter", "composerAvoid"] },
+        { id: "sea", fields: ["wind", "clouds", "ripples", "rain", "rainIntensity"] }
+      ];
+      return h(
+        "form",
+        { ref: viewportRef, className: "aw-settings", onSubmit: save },
+        h("style", null, SETTINGS_CSS),
+        h(
+          "header",
+          { className: "aw-header" },
+          h("div", null, h("h2", null, t("title")), h("p", { className: "aw-purpose" }, t("purpose"))),
+          h("div", { className: "aw-master" }, renderField("enabled"))
+        ),
+        !snapshot.writable && h("p", { role: "status", className: "aw-notice" }, t("readOnly")),
+        h(LivePreview, { draft: editor.draft }),
+        h(
+          "div",
+          { className: "aw-options", role: "region", "aria-label": t("settingsOptions"), tabIndex: 0 },
+          h("div", { className: "aw-groups" }, ...groups.map((group) => h(
+            "fieldset",
+            { className: "aw-group", key: group.id },
+            h("legend", null, t(`${group.id}Group`)),
+            h("p", { className: "aw-group-note" }, t(`${group.id}Description`)),
+            ...group.fields.map(renderField)
+          ))),
+          h(
+            "details",
+            { className: "aw-advanced" },
+            h("summary", null, t("advancedGroup")),
+            h("div", { className: "aw-advanced-body" }, renderField("leftInset"), renderField("pauseOnScroll"))
+          ),
+          notice && h("p", { className: "aw-notice", role: notice === "saved" ? "status" : "alert", "aria-live": "polite" }, t(notice))
+        ),
+        h(
+          "footer",
+          { className: "aw-actions" },
+          h("div", { className: "aw-save-state", role: "status", "aria-live": "polite" }, t(dirty ? "unsavedDraft" : "savedDraft")),
+          h(
+            "div",
+            { className: "aw-action-buttons" },
+            h("button", { type: "button", disabled, onClick: () => {
+              setEditor((e) => e.reset());
+              setNotice("");
+            } }, t("reset")),
+            h("button", { type: "button", disabled: saving, onClick: discard }, t("discard")),
+            h("button", { type: "submit", disabled: disabled || !dirty, className: "aw-save" }, t(saving ? "saving" : "save"))
           )
         )
       );
@@ -5430,8 +5595,8 @@
         minWidth: 0,
         minHeight: 0,
         height: "100%",
-        overflowY: "auto",
-        padding: "24px clamp(16px, 3vw, 40px)",
+        overflow: "hidden",
+        padding: "16px clamp(16px, 3vw, 40px) 0",
         boxSizing: "border-box"
       } }, h(Settings));
     }
@@ -5456,80 +5621,131 @@
     }, Settings));
   }
   var SETTINGS_CSS = `
-.aw-settings{color:var(--dsw-alias-label-primary);font:inherit;width:100%;max-width:1280px;min-width:0;container-type:inline-size;padding:4px 0 24px}
-.aw-settings h2{font-size:18px;font-weight:600;margin:0 0 8px}
-.aw-settings .aw-purpose{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 20px}
-/* Two columns: a live preview that stays in view while the fields scroll. The
-   host plugin page is the scroll container and none of the ancestors between it
-   and this form clips, so sticky works. align-items:flex-start is load-bearing:
-   a stretched aside would fill the whole row and sticky would have nowhere to
-   travel inside its own column. */
-.aw-settings .aw-layout{display:flex;gap:24px;align-items:flex-start}
-.aw-settings .aw-preview{position:sticky;top:16px;flex:0 0 58%;min-width:0}
-.aw-settings .aw-preview-card{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;margin:0 0 8px;background:var(--dsw-alias-bg-layer-1)}
-.aw-settings .aw-preview-card canvas{display:block;width:100%;height:clamp(260px,48vh,480px)}
-.aw-settings .aw-preview p{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:0}
-.aw-settings .aw-fields{flex:1 1 0;min-width:0}
-.aw-settings .aw-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;padding:14px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.aw-settings .aw-copy{min-width:0;flex:1 1 200px}
-.aw-settings label{font-weight:500}
-.aw-settings .aw-copy p{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary);margin:5px 0 0}
-.aw-settings input,.aw-settings select,.aw-settings button{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:7px;padding:7px 10px}
-.aw-settings input[type=text]{box-sizing:border-box;flex:1 1 160px;width:100%;min-width:0;max-width:320px}
+.aw-settings{--aw-accent:#007aff;--aw-ink:var(--dsw-alias-label-primary,#1d2633);--aw-muted:var(--dsw-alias-label-secondary,#647184);--aw-surface:var(--dsw-alias-bg-layer-1,#fff);--aw-line:var(--dsw-alias-border-l1,#e3e7ed);--aw-rail:rgba(120,135,155,.22);--aw-inset:rgba(120,135,155,.09);color:var(--aw-ink);font:inherit;width:100%;max-width:1280px;min-width:0;margin-inline:auto;padding:8px 0 24px;container-type:inline-size;box-sizing:border-box}
+.aw-settings *{box-sizing:border-box}
+/* The form owns a bounded viewport; only options scroll, never the canvas. */
+.aw-settings{display:flex;flex-direction:column;height:var(--aw-height,calc(100dvh - 120px));overflow:hidden;min-height:200px;padding-bottom:0}
+.aw-settings .aw-header,.aw-settings .aw-preview,.aw-settings .aw-actions{flex-shrink:0}
+.aw-settings .aw-header{margin-bottom:12px}
+.aw-settings .aw-preview{margin-bottom:14px;padding:12px 16px}
+.aw-settings .aw-preview-card canvas{height:clamp(64px,calc(var(--aw-height,700px) * .28),300px)}
+.aw-settings .aw-preview-note{margin-top:6px}
+.aw-settings .aw-options{flex:1 1 0;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-gutter:stable;padding:3px 8px 8px 3px;scroll-padding-block:12px}
+.aw-settings .aw-actions{position:static;margin-top:0;padding-block:10px}
+.aw-settings .aw-header{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:24px}
+.aw-settings h2{font-size:24px;line-height:1.25;font-weight:650;letter-spacing:-.025em;margin:0 0 8px}
+.aw-settings .aw-purpose{font-size:13px;line-height:1.6;color:var(--aw-muted);margin:0;max-width:680px}
+.aw-settings .aw-master{flex:0 0 220px}
+.aw-settings .aw-master .aw-row{border:0;padding:0}
+.aw-settings .aw-master .aw-copy p{font-size:11px}
+.aw-settings input,.aw-settings select,.aw-settings button{font:inherit;color:var(--aw-ink)}
 .aw-settings button{cursor:pointer}
-.aw-settings :disabled{opacity:.5;cursor:default}
-.aw-settings :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}
-/* One flexible control column: it yields space first and never widens the row. */
-.aw-settings .aw-control{flex:1 1 160px;min-width:160px;max-width:320px;display:flex;flex-direction:column;gap:5px}
-.aw-settings .aw-switch{width:36px;height:22px;border-radius:12px;padding:2px;flex:0 0 auto}
-.aw-settings .aw-switch-knob{display:block;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-label-secondary)}
-.aw-settings .aw-switch[aria-checked=true]{background:var(--dsw-alias-brand-primary)}
-.aw-settings .aw-switch[aria-checked=true] .aw-switch-knob{transform:translateX(12px);background:var(--dsw-alias-bg-base)}
-/* Slider track and thumb. The rail uses a translucent grey so it reads on both
-   themes; the filled part takes the brand colour through --aw-pct. */
-.aw-settings input[type=range]{-webkit-appearance:none;appearance:none;display:block;width:100%;min-width:0;height:22px;margin:0;padding:0;background:none;border:0;border-radius:6px;cursor:pointer;accent-color:var(--dsw-alias-brand-primary)}
-.aw-settings input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:999px;background:rgba(120,140,160,.35);background:linear-gradient(to right,var(--dsw-alias-brand-primary) 0 var(--aw-pct,0%),rgba(120,140,160,.35) var(--aw-pct,0%) 100%)}
-.aw-settings input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;margin-top:-5px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);border:2px solid var(--dsw-alias-brand-primary);box-shadow:0 1px 2px rgba(0,0,0,.28)}
-.aw-settings input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:rgba(120,140,160,.35)}
-.aw-settings input[type=range]::-moz-range-progress{height:6px;border-radius:999px;background:var(--dsw-alias-brand-primary)}
-.aw-settings input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);border:2px solid var(--dsw-alias-brand-primary)}
-.aw-settings input[type=range]:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
-.aw-settings .aw-number-head{display:flex;align-items:baseline;justify-content:flex-end;min-height:18px}
-.aw-settings .aw-readout{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.35;white-space:nowrap}
-.aw-settings .aw-scale{display:flex;justify-content:space-between;gap:10px;font-size:11px;line-height:1.4;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
-.aw-settings .aw-scale span{white-space:nowrap}
-/* Segmented slider: option names under the track double as jump buttons. */
-.aw-settings .aw-ticks{display:grid;grid-template-columns:repeat(var(--aw-stops,2),minmax(0,1fr));gap:2px}
-.aw-settings .aw-tick{font:inherit;font-size:11px;line-height:1.35;min-width:0;padding:3px 1px;border:0;border-radius:5px;background:none;color:var(--dsw-alias-label-secondary);text-align:center;overflow-wrap:normal;word-break:normal;hyphens:none;letter-spacing:-.01em}
-.aw-settings .aw-tick[aria-pressed=true]{color:var(--dsw-alias-label-primary);font-weight:600;background:rgba(120,145,170,.16);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent)}
-.aw-settings .aw-tick:disabled{cursor:default}
-body[data-ds-dark-theme] .aw-settings input[type=range]::-webkit-slider-runnable-track{background:rgba(160,180,200,.32);background:linear-gradient(to right,var(--dsw-alias-brand-primary) 0 var(--aw-pct,0%),rgba(160,180,200,.32) var(--aw-pct,0%) 100%)}
-body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgba(120,160,200,.2);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 24%,transparent)}
-@media(prefers-reduced-motion:no-preference){
-.aw-settings input[type=range]::-webkit-slider-thumb{transition:transform .12s ease}
-.aw-settings input[type=range]:active::-webkit-slider-thumb{transform:scale(1.08)}
-.aw-settings .aw-switch-knob{transition:transform .14s ease,background .14s ease}
-.aw-settings .aw-tick{transition:color .12s ease,background .12s ease}
+.aw-settings :disabled{opacity:.45;cursor:default}
+.aw-settings :focus-visible{outline:3px solid var(--aw-accent);outline-offset:3px}
+.aw-settings .aw-preview{display:block;min-width:0;margin:0 0 24px;padding:18px;border:1px solid var(--aw-line);border-radius:22px;background:var(--aw-surface);box-shadow:0 3px 16px rgba(25,45,65,.035)}
+.aw-settings .aw-preview-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}
+.aw-settings .aw-preview h3{font-size:15px;line-height:1.4;font-weight:600;margin:0 0 3px}
+.aw-settings .aw-preview-toolbar p{font-size:12px;line-height:1.4;color:var(--aw-muted);margin:0}
+.aw-settings .aw-preview-pause{flex-shrink:0;font-size:12px;font-weight:500;min-height:36px;padding:7px 14px;border:1px solid var(--aw-line);border-radius:999px;background:var(--aw-inset)}
+.aw-settings .aw-preview-card{overflow:hidden;isolation:isolate;border-radius:14px;background:var(--aw-surface);border:1px solid var(--aw-line)}
+.aw-settings .aw-preview-card canvas{display:block;width:100%;height:clamp(320px,50vh,560px)}
+.aw-settings .aw-preview-note{font-size:12px;line-height:1.6;color:var(--aw-muted);margin:12px 2px 0}
+.aw-settings .aw-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:20px}
+.aw-settings .aw-group{min-width:0;margin:0;padding:0 22px 10px;border:1px solid var(--aw-line);border-radius:20px;background:var(--aw-surface)}
+.aw-settings .aw-group legend{float:left;width:100%;padding:20px 0 0;font-size:17px;line-height:1.4;font-weight:650;letter-spacing:-.015em}
+.aw-settings .aw-group-note{clear:both;color:var(--aw-muted);font-size:12px;line-height:1.5;padding:5px 0 14px;margin:0;border-bottom:1px solid var(--aw-line)}
+.aw-settings .aw-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 18px;min-width:0;padding:15px 0;border-bottom:1px solid var(--aw-line)}
+.aw-settings .aw-row:last-child{border-bottom:0}
+.aw-settings .aw-copy{min-width:0;flex:1 1 100%}
+.aw-settings .aw-row--boolean{flex-wrap:nowrap;min-height:76px}
+.aw-settings .aw-row--boolean .aw-copy{flex:1 1 0}
+.aw-settings .aw-row-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.aw-settings label,.aw-settings .aw-label{font-size:13px;line-height:1.45;font-weight:550}
+.aw-settings .aw-copy p{font-size:12px;line-height:1.5;color:var(--aw-muted);margin:5px 0 0;overflow-wrap:break-word}
+.aw-settings .aw-readout{flex-shrink:0;font-size:12px;font-weight:600;line-height:1.4;font-variant-numeric:tabular-nums;color:var(--aw-accent);background:rgba(0,122,255,.07);border-radius:6px;padding:2px 7px;white-space:nowrap}
+.aw-settings .aw-text,.aw-settings .aw-select{width:100%;min-width:0;min-height:40px;padding:9px 12px;border:1px solid var(--aw-line);border-radius:10px;background:var(--aw-inset);font-size:13px;line-height:1.4}
+.aw-settings .aw-select{cursor:pointer;color-scheme:light}
+.aw-settings .aw-select option{color:#1d2633;background:#fff}
+.aw-settings .aw-segments{display:flex;flex:1 1 100%;min-width:0;padding:3px;gap:3px;border-radius:11px;background:var(--aw-inset)}
+.aw-settings .aw-segment{flex:1 1 0;min-width:0;min-height:36px;padding:7px 4px;background:transparent;border:1px solid transparent;border-radius:8px;font-size:12px;line-height:1.35;text-align:center;overflow-wrap:normal;word-break:normal;hyphens:none;letter-spacing:-.01em;color:var(--aw-muted)}
+.aw-settings .aw-segment[aria-pressed=true]{background:var(--aw-surface);color:var(--aw-ink);font-weight:600;border-color:var(--aw-line);box-shadow:0 1px 3px rgba(20,40,60,.08)}
+.aw-settings .aw-number{width:100%;min-width:0}
+.aw-settings input[type=range]{-webkit-appearance:none;appearance:none;display:block;width:100%;height:32px;margin:0;padding:0;background:transparent;border:0;border-radius:999px;cursor:pointer;accent-color:var(--aw-accent);touch-action:pan-y}
+.aw-settings input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:999px;background:linear-gradient(to right,var(--aw-accent) 0 var(--aw-pct,0%),var(--aw-rail) var(--aw-pct,0%) 100%)}
+.aw-settings input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;margin-top:-8.5px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.06);box-shadow:0 1px 4px rgba(20,35,50,.22),0 2px 8px rgba(20,35,50,.06)}
+.aw-settings input[type=range]::-moz-range-track{height:5px;border-radius:999px;background:var(--aw-rail)}
+.aw-settings input[type=range]::-moz-range-progress{height:5px;border-radius:999px;background:var(--aw-accent)}
+.aw-settings input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.06);box-shadow:0 1px 4px rgba(20,35,50,.22)}
+.aw-settings .aw-scale{display:flex;justify-content:space-between;gap:12px;font-size:10px;line-height:1.4;color:var(--aw-muted);font-variant-numeric:tabular-nums}
+.aw-settings .aw-switch{position:relative;flex:0 0 48px;width:48px;height:44px;min-height:44px;padding:0;border:0;border-radius:14px;background:transparent}
+.aw-settings .aw-switch::before{content:'';position:absolute;inset:8px 0;border-radius:999px;background:var(--aw-rail)}
+.aw-settings .aw-switch-knob{position:absolute;top:10px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.aw-settings .aw-switch[aria-checked=true]::before{background:var(--aw-accent)}
+.aw-settings .aw-switch[aria-checked=true] .aw-switch-knob{transform:translateX(20px)}
+.aw-settings .aw-advanced{margin-top:20px;border:1px solid var(--aw-line);border-radius:16px;background:var(--aw-surface)}
+.aw-settings .aw-advanced summary{padding:16px 22px;font-size:13px;font-weight:550;cursor:pointer}
+.aw-settings .aw-advanced-body{padding:0 22px 5px}
+.aw-settings .aw-advanced .aw-row{flex-wrap:nowrap}
+.aw-settings .aw-advanced .aw-copy{flex:1 1 0}
+.aw-settings .aw-pixel-input{display:flex;align-items:center;gap:8px;flex:0 0 116px;color:var(--aw-muted);font-size:12px}
+.aw-settings .aw-pixel-input input{min-width:0;width:84px;padding:8px;border:1px solid var(--aw-line);border-radius:8px;background:var(--aw-inset);font-variant-numeric:tabular-nums}
+.aw-settings .aw-actions{position:sticky;bottom:0;z-index:4;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;padding:14px 0;background:var(--aw-surface);border-top:1px solid var(--aw-line)}
+.aw-settings .aw-save-state{font-size:12px;line-height:1.4;color:var(--aw-muted)}
+.aw-settings .aw-action-buttons{display:flex;flex-wrap:wrap;gap:8px}
+.aw-settings .aw-action-buttons button{min-height:38px;padding:8px 14px;font-size:12px;font-weight:500;line-height:1.4;border:1px solid var(--aw-line);border-radius:10px;background:var(--aw-inset)}
+.aw-settings .aw-action-buttons .aw-save{color:#fff;border-color:var(--aw-accent);background:var(--aw-accent);padding-inline:22px}
+.aw-settings .aw-notice{font-size:13px;line-height:1.5;padding:12px 14px;border-radius:10px;background:var(--aw-inset)}
+body[data-ds-dark-theme] .aw-settings{--aw-accent:#0a84ff;--aw-inset:rgba(160,175,195,.10);--aw-rail:rgba(160,175,195,.27)}
+body[data-ds-dark-theme] .aw-settings .aw-select{color-scheme:dark}
+body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background:#242c36}
+@media(hover:hover) and (pointer:fine){
+.aw-settings .aw-segment:not(:disabled):hover{color:var(--aw-ink);background:var(--aw-surface)}
+.aw-settings .aw-action-buttons button:not(:disabled):hover,.aw-settings .aw-preview-pause:hover{filter:brightness(.96)}
 }
-/* The settings region can be narrow even on a wide screen with sidebars. */
+@media(prefers-reduced-motion:no-preference){
+.aw-settings .aw-switch-knob{transition:transform 160ms cubic-bezier(.23,1,.32,1)}
+.aw-settings .aw-switch::before{transition:background-color 160ms ease}
+}
+@media(max-height:600px){.aw-settings .aw-actions{position:static}}
+@media(prefers-contrast:more){.aw-settings{--aw-line:currentColor}.aw-settings .aw-copy p,.aw-settings .aw-scale{color:var(--aw-ink)}}
 @container(max-width:760px){
-.aw-settings .aw-layout{display:block}
-.aw-settings .aw-preview{position:static;flex:none}
-.aw-settings .aw-preview-card canvas{height:280px}
+.aw-settings .aw-header{align-items:flex-start;flex-direction:column;gap:16px}
+.aw-settings .aw-master{flex:auto;width:100%}
+.aw-settings .aw-groups{grid-template-columns:minmax(0,1fr);gap:16px}
+.aw-settings .aw-preview-card canvas{height:clamp(280px,45vh,420px)}
 }
 @container(max-width:440px){
-.aw-settings .aw-row{gap:8px 12px;align-items:flex-start}
-.aw-settings .aw-copy{flex:1 1 100%}
-.aw-settings .aw-control,.aw-settings input[type=text]{flex:1 1 100%;max-width:none}
-.aw-settings .aw-number-head{justify-content:flex-start}
-.aw-settings .aw-tick{font-size:10px}
+.aw-settings .aw-preview{padding:12px;border-radius:16px}
+.aw-settings .aw-preview-card canvas{height:280px}
+.aw-settings .aw-group{padding-inline:16px}
+.aw-settings .aw-actions{align-items:flex-start}
+.aw-settings .aw-action-buttons{width:100%}
+.aw-settings .aw-action-buttons button{flex:1 1 auto;padding-inline:10px}
+.aw-settings .aw-segment{font-size:11px;padding-inline:3px}
+.aw-settings .aw-preview-toolbar{gap:8px}
+.aw-settings .aw-preview-pause{padding-inline:10px}
+.aw-settings .aw-advanced .aw-row{flex-wrap:wrap}
+.aw-settings .aw-advanced .aw-copy{flex-basis:100%}
 }
-@media(max-width:540px){
-.aw-settings .aw-row{gap:8px 12px;align-items:flex-start}
-.aw-settings .aw-copy{flex:1 1 100%}
-.aw-settings .aw-control,.aw-settings input[type=text]{flex:1 1 100%;max-width:none}
-.aw-settings .aw-number-head{justify-content:flex-start}
-.aw-settings .aw-tick{font-size:10px}
+.aw-settings .aw-header{margin-bottom:12px}
+.aw-settings .aw-preview{margin-bottom:14px;padding:12px 16px}
+.aw-settings .aw-preview-card canvas{height:clamp(64px,calc(var(--aw-height,700px) * .28),300px)}
+.aw-settings .aw-preview-note{margin-top:6px}
+.aw-settings .aw-actions{position:static;margin-top:0;padding-block:10px}
+@media(max-height:760px){
+.aw-settings .aw-purpose,.aw-settings .aw-preview-note,.aw-settings .aw-preview-toolbar p{display:none}
+.aw-settings .aw-header h2{font-size:19px;margin:0}
+.aw-settings .aw-master .aw-copy p{display:none}
+.aw-settings .aw-preview-toolbar{margin-bottom:6px}
+.aw-settings .aw-preview{padding:8px 12px;margin-bottom:8px}
+.aw-settings .aw-preview-card canvas{height:clamp(56px,calc(var(--aw-height,500px) * .22),150px)}
+.aw-settings .aw-actions{gap:6px;padding-block:6px}
+.aw-settings .aw-save-state{display:none}
+.aw-settings .aw-action-buttons{margin-left:auto}
+}
+@container(max-width:760px){
+.aw-settings .aw-header{flex-direction:row;align-items:center;gap:12px}
+.aw-settings .aw-master{width:auto;flex:0 1 190px}
 }
 `;
 
@@ -5541,7 +5757,24 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
     },
     ui: {
       title: "Glyph whales",
-      purpose: "Look straight down through the interface as a sea surface. Each species has its own head, flippers and flukes. Calm cruising alternates vertical tail strokes with glides. Raised backs are darker; flanks and deeper water are paler.",
+      purpose: "Make a sea of text whales your conversation background. Preview it, adjust the scene, then save to apply.",
+      settingsOptions: "Whale settings options",
+      previewTitle: "Scene preview",
+      previewSubtitle: "See your draft as you adjust the settings below",
+      previewPause: "Pause preview",
+      previewPlay: "Resume preview",
+      appearanceGroup: "Appearance & text",
+      appearanceDescription: "Choose the characters, colors and contrast.",
+      schoolGroup: "Whales & movement",
+      schoolDescription: "Set the species, count, size and swimming pace.",
+      readingGroup: "Reading & glass",
+      readingDescription: "Text effects and card glass are independent. Both can be turned off.",
+      seaGroup: "Sea & weather",
+      seaDescription: "Choose wind, clouds, swimming wakes and rain.",
+      advancedGroup: "Advanced settings",
+      unsavedDraft: "Unsaved changes, shown in the preview only",
+      savedDraft: "Changes preview immediately. Save to apply to the background.",
+      none: "Off",
       enabled: "Show whales",
       enabledHint: "Visible on the conversation page. Stops on other pages.",
       count: "Whale count",
@@ -5569,12 +5802,12 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       leftInset: "Browser left inset",
       leftInsetHint: "0 to 500 pixels. Default 280. Desktop follows the sidebar automatically. In a browser, adjust this to match its width.",
       readingEffect: "Text edge effect",
-      readingEffectHint: "Glow clears whales around text. Soft blur keeps a translucent silhouette. Frosted glass adds a light mist while retaining the whale's shape. Defaults to frosted glass; independent of the content-box glass switch.",
+      readingEffectHint: "Choose Off, Glow, Soft blur or Frosted glass around text. Independent of card glass.",
       glow: "Glow",
       blur: "Soft blur",
       frost: "Frosted glass",
       glass: "Frosted content boxes",
-      glassHint: "Frosts content cards, the input box and the right sidebar, with quieter whale silhouettes in the sidebar. Text uses the selected edge effect even when this switch is off. On by default; mutually exclusive with input-box avoidance.",
+      glassHint: "Frost content cards, the input box and the right sidebar. Independent of text effects. Enabling this turns input-box avoidance off.",
       glassStrength: "Glass strength",
       glassStrengthHint: "0 to 1. Default 0.55. Higher values make the glass thicker and blurrier, so less of the whale shows through.",
       composerGlass: "Frosted input box (folded into content boxes)",
@@ -5582,7 +5815,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       composerAvoid: "Whales avoid the input box",
       composerAvoidHint: "Whales treat the input box as an obstacle and swim around it instead of crossing it. Use either this or the frosted content boxes, not both.",
       spout: "Random spout",
-      spoutHint: "On by default. Each whale occasionally lets out a short mist from its blowhole, and stays quiet while submerged. The mist fades and does not become a fountain.",
+      spoutHint: "On by default. Each whale occasionally lets out a round puff from its blowhole. The puff stays where it started and fades. The whale stays quiet while submerged, and the puff does not become a fountain.",
       wind: "Wind on the sea",
       windHint: "Sparse aligned surface strokes drift with the breeze, appearing and fading gently. On by default.",
       clouds: "Passing cloud shadows",
@@ -5591,6 +5824,8 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       rainHint: "Fine rain makes small splashes and spreading ripples. Its direction follows the sea breeze. Off by default; turning wind off gradually returns the rain to vertical.",
       rainIntensity: "Rain intensity",
       rainIntensityHint: "0 to 1. Default 0.45. Smoothly changes rain density, impacts and ripples. Zero stops the rain; switching rain off keeps this value. Rain ripples are independent of swimming wakes.",
+      pauseOnScroll: "Pause rendering while scrolling",
+      pauseOnScrollHint: "Off by default: the school keeps swimming while you scroll and the text mask follows the new positions. When on, scrolling hides the decorative layer at once and freezes the simulation; about 140 ms after the last scroll it measures once and fades back in, so a soft mask can never lag behind moving text.",
       ripples: "Swimming wakes and splashes",
       ripplesHint: "Swimming and gliding leave an ASCII wake that spreads and fades along the trail. Strong tail strokes add a brief splash. Submerged whales stop making new wakes.",
       save: "Save",
@@ -5633,7 +5868,24 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
     },
     ui: {
       title: "文字蓝鲸",
-      purpose: "把界面看作海面，从正上方俯看文字鲸鱼。各鲸类有独立头型、胸鳍和尾叶，缓缓巡游并在上下摆尾之间滑行。背部隆起较深，两侧和深水处渐浅。",
+      purpose: "让文字鲸群成为对话背景。先看效果，再调整外观、鲸群与海面；保存后应用。",
+      settingsOptions: "鲸鱼设置选项",
+      previewTitle: "效果预览",
+      previewSubtitle: "调整下方设置，即时查看当前草稿",
+      previewPause: "暂停预览",
+      previewPlay: "继续预览",
+      appearanceGroup: "外观与文字",
+      appearanceDescription: "选择字符、色调与画面的浓淡。",
+      schoolGroup: "鲸群与游动",
+      schoolDescription: "调整鲸类、数量、大小和游动节奏。",
+      readingGroup: "阅读与玻璃",
+      readingDescription: "文字效果与卡片玻璃分别控制，均可关闭。",
+      seaGroup: "海面与天气",
+      seaDescription: "按喜好开关风纹、云影、尾流和雨水。",
+      advancedGroup: "高级设置",
+      unsavedDraft: "有未保存的调整，仅在预览中显示",
+      savedDraft: "调整会即时预览，保存后应用到背景",
+      none: "关闭",
       enabled: "显示鲸鱼",
       enabledHint: "仅在对话页面显示，切换到其他页面时停止。",
       count: "鲸鱼数量",
@@ -5661,12 +5913,12 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       leftInset: "浏览器左侧留白",
       leftInsetHint: "0 至 500 像素，默认 280。桌面版自动跟随左侧栏；浏览器版按侧栏宽度手动调整。",
       readingEffect: "文字边缘效果",
-      readingEffectHint: "微光让文字周围的鲸鱼隐去；柔和模糊保留通透鲸影；毛玻璃加上轻雾，让鲸影连续、文字易读。默认毛玻璃，独立于内容框毛玻璃开关。",
+      readingEffectHint: "选择关闭、微光、柔和模糊或毛玻璃；只作用于文字附近，与卡片玻璃独立。",
       glow: "微光",
       blur: "柔和模糊",
       frost: "毛玻璃",
       glass: "内容框毛玻璃",
-      glassHint: "为内容卡片、输入框和右侧边栏添加磨砂玻璃，右侧栏的鲸影更淡。文字使用上方选择的边缘效果，关闭此开关也保留文字保护。默认开启；与「鱼群避让输入框」二选一。",
+      glassHint: "为内容卡片、输入框和右侧栏添加磨砂玻璃。与文字边缘效果独立；开启后会关闭输入框避让。",
       glassStrength: "玻璃强度",
       glassStrengthHint: "0 至 1，默认 0.55。数值越大玻璃更厚、磨砂更重，透出的鲸影也更淡。",
       composerGlass: "输入框毛玻璃（已并入内容框毛玻璃）",
@@ -5674,7 +5926,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       composerAvoid: "鱼群避让输入框",
       composerAvoidHint: "鲸鱼把输入框当作障碍物绕开，不再从框内穿过。与「内容框毛玻璃」二选一。",
       spout: "随机喷水",
-      spoutHint: "默认开启。鲸鱼自己隔一会儿从喷气孔吐一小团雾，潜入水下时不吐。雾会散掉，不会连成喷泉。",
+      spoutHint: "默认开启。鲸鱼隔一会儿从喷气孔鼓出一小团圆雾，停在原地散掉。潜入水下时不吐，也不会连成喷泉。",
       wind: "海面风纹",
       windHint: "少量同向的短波纹随风掠过海面，缓缓出现和散去。默认开启。",
       clouds: "掠海云影",
@@ -5683,6 +5935,8 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       rainHint: "细雨落海时带出小水花与扩散涟漪，方向随海面风纹缓慢偏转。默认关闭；关闭风纹后逐渐回到直雨。",
       rainIntensity: "雨量",
       rainIntensityHint: "0 至 1，默认 0.45。由疏雨到密雨，雨丝、落点与水纹平滑变化；0 为停雨，开关关闭时保留此数值。雨水纹不受游动尾流开关影响。",
+      pauseOnScroll: "滚动时暂停渲染",
+      pauseOnScrollHint: "默认关闭，滚动时鲸群继续巡游，文字遮罩随位置刷新。开启后滚动即刻隐去装饰层并暂停仿真，停手约 140 毫秒后按新位置测量一次再淡入恢复，可避免柔边遮罩跟不上移动中的文字。",
       ripples: "游动尾流与水花",
       ripplesHint: "游过后留下逐渐展开、消散的 ASCII 尾流，滑行也有；用力拍尾时带少量碎水。潜入水下后停止生成新尾流。",
       save: "保存",
