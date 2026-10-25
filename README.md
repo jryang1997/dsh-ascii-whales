@@ -216,9 +216,9 @@ pnpm verify
 
 修改浏览器源码后，先用 `pnpm build` 和 `pnpm preview` 更新两个生成产物，再运行 `pnpm verify`。验证只检查、不重建，过期产物会直接失败。测试只递归发现 `tests/` 下的 `*.test.js`，排除隐藏目录与 `node_modules/`；不会扫描仓库中的临时备份、参考项目或 worktree 副本。GitHub Actions 在 Windows 与 Linux 执行同一验证入口。
 
-验证、打包与审查共用本地开发依赖 [@jryang1997/dsh-plugin-kit](../dsh-plugin-kit)（`dshPluginKit` 配置在 [package.json](./package.json)）：`pnpm check` 跑清单、locale、README、版本与语法检查，`pnpm test` 发现并运行测试，`pnpm verify` 依次检查静态项、生成物、发布包、截图清单和测试。`pnpm --silent review:snapshot --base <ref>` 输出包含新增文件的 JSON 审查清单；`pnpm --silent agent:probe` 探测当前命令进程能否读取入口文件。派单前的原生工具读取预检、审查范围与浏览器证据要求见 [工程说明](./docs/agents/engineering.md)。
+验证、打包与审查共用开发依赖 [@jryang1997/dsh-plugin-kit](https://github.com/jryang1997/dsh-plugin-kit)（v1.0.0 固定 tag，`dshPluginKit` 配置在 [package.json](./package.json)）：`pnpm check` 跑清单、locale、README、版本与语法检查，`pnpm test` 发现并运行测试，`pnpm verify` 依次检查静态项、生成物、发布包、截图清单和测试。`pnpm --silent review:snapshot --base <ref>` 输出包含新增文件的 JSON 审查清单；`pnpm --silent agent:probe` 探测当前命令进程能否读取入口文件。派单前的原生工具读取预检、审查范围与浏览器证据要求见 [工程说明](./docs/agents/engineering.md)。
 
-发布包只包含运行文件、`locale/`、图标、README/CHANGELOG 与 `docs/images/`、`docs/research/`；`tests/`、`scripts/`、`preview/`、`.node-version` 等开发路径由打包检查拒绝。当前 kit 以本地 `file:` 依赖接入，等仓库与 tag 可用后改为固定 git 依赖。
+发布包只包含运行文件、`locale/`、图标、README/CHANGELOG 与 `docs/images/`、`docs/research/`；`tests/`、`scripts/`、`preview/`、`.node-version` 等开发路径由打包检查拒绝。kit 以 v1.0.0 tag 的 GitHub tarball 固定引用；本机 git 访问 GitHub 受限，因此不用 `git+https` 说明符。
 
 打包使用 `pnpm --config.ignore-scripts=true pack`。
 

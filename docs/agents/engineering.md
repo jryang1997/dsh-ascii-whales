@@ -8,7 +8,7 @@ esbuild 从对应平台的 optional dependency 取得二进制，安装策略不
 
 日常验证运行 `pnpm verify`，由 devDependency `@jryang1997/dsh-plugin-kit` 执行，配置在 `package.json` 的 `dshPluginKit` 键：先做清单、locale、README、版本与语法五项静态检查，再以 `--check` 比较两份生成产物（不重建）、检查真实 `npm pack` 的发布内容与 `docs/images/` 引用、校验 `screenshots.json`，最后发现并运行测试。
 测试发现覆盖根目录与 `src/`、`tests/`、`scripts/`、`preview/` 的 `*.test.js`/`*.test.mjs`，跳过隐藏目录与 `node_modules/`；不会扫描仓库中的 `.scratch/`、`.agents/`、参考项目或依赖。新增测试放入这些目录即可被执行，`tests/helpers/` 的适配器参与语法检查。
-`pnpm check` 跑上述静态检查，`pnpm test` 只运行测试。kit 当前以本地 `file:../dsh-plugin-kit` 接入；仓库与 tag 发布后应改为固定 git 依赖，CI 才能安装。若 CI 在 kit 发布前运行，`pnpm install --frozen-lockfile` 会因路径不存在而失败，这是已知待授权项。
+`pnpm check` 跑上述静态检查，`pnpm test` 只运行测试。kit 以 v1.0.0 tag 的 GitHub tarball 固定引用（`https://codeload.github.com/jryang1997/dsh-plugin-kit/tar.gz/refs/tags/v1.0.0`），CI 可直接安装。本机对 github.com 的 git 访问受限，因此不使用 `git+https` 说明符；升级 kit 时同时改 URL 中的 tag 与锁文件。
 
 修改浏览器实现后，先运行 `pnpm build` 和 `pnpm preview` 更新 `client.js` 与 `preview/whale-preview.html`，再运行 `pnpm verify`。构建入口位于 `scripts/build.mjs` 和 `scripts/preview.mjs`。
 验证命令本身不重建产物：发现过期就失败，使漏提交生成文件在本地与 CI 都能被发现。
