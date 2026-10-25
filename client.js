@@ -5661,13 +5661,13 @@
 .aw-settings .aw-row--boolean .aw-copy{flex:1 1 0}
 .aw-settings .aw-row-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .aw-settings label,.aw-settings .aw-label{font-size:13px;line-height:1.45;font-weight:550}
-.aw-settings .aw-copy p{font-size:12px;line-height:1.5;color:var(--aw-muted);margin:5px 0 0;overflow-wrap:anywhere}
+.aw-settings .aw-copy p{font-size:12px;line-height:1.5;color:var(--aw-muted);margin:5px 0 0;overflow-wrap:break-word}
 .aw-settings .aw-readout{flex-shrink:0;font-size:12px;font-weight:600;line-height:1.4;font-variant-numeric:tabular-nums;color:var(--aw-accent);background:rgba(0,122,255,.07);border-radius:6px;padding:2px 7px;white-space:nowrap}
 .aw-settings .aw-text,.aw-settings .aw-select{width:100%;min-width:0;min-height:40px;padding:9px 12px;border:1px solid var(--aw-line);border-radius:10px;background:var(--aw-inset);font-size:13px;line-height:1.4}
 .aw-settings .aw-select{cursor:pointer;color-scheme:light}
 .aw-settings .aw-select option{color:#1d2633;background:#fff}
 .aw-settings .aw-segments{display:flex;flex:1 1 100%;min-width:0;padding:3px;gap:3px;border-radius:11px;background:var(--aw-inset)}
-.aw-settings .aw-segment{flex:1 1 0;min-width:0;min-height:36px;padding:7px 5px;background:transparent;border:1px solid transparent;border-radius:8px;font-size:12px;line-height:1.35;text-align:center;overflow-wrap:anywhere;color:var(--aw-muted)}
+.aw-settings .aw-segment{flex:1 1 0;min-width:0;min-height:36px;padding:7px 4px;background:transparent;border:1px solid transparent;border-radius:8px;font-size:12px;line-height:1.35;text-align:center;overflow-wrap:normal;word-break:normal;hyphens:none;letter-spacing:-.01em;color:var(--aw-muted)}
 .aw-settings .aw-segment[aria-pressed=true]{background:var(--aw-surface);color:var(--aw-ink);font-weight:600;border-color:var(--aw-line);box-shadow:0 1px 3px rgba(20,40,60,.08)}
 .aw-settings .aw-number{width:100%;min-width:0}
 .aw-settings input[type=range]{-webkit-appearance:none;appearance:none;display:block;width:100%;height:32px;margin:0;padding:0;background:transparent;border:0;border-radius:999px;cursor:pointer;accent-color:var(--aw-accent);touch-action:pan-y}
@@ -5753,7 +5753,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
   var en_default = {
     meta: {
       title: "Glyph whales",
-      description: "Five species of text whales cruise, stroke their horizontal flukes vertically, and glide below the conversation."
+      description: "Five species of text whales cruise, beat their flukes up and down, and glide behind the conversation."
     },
     ui: {
       title: "Glyph whales",
@@ -5780,7 +5780,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       count: "Whale count",
       countHint: "1 to 8 whales with different sizes and depths.",
       text: "Whale body text",
-      textHint: "Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境. Up to 40 characters.",
+      textHint: "Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境 (the default phrase, “explore the uncharted”). Up to 40 characters.",
       speed: "Swimming speed",
       speedHint: "0.3 to 2. Default 0.65. Scales cruising, turning and tail beats, with glides between strokes.",
       opacity: "Background opacity",
@@ -5819,7 +5819,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       wind: "Wind on the sea",
       windHint: "Sparse aligned surface strokes drift with the breeze, appearing and fading gently. On by default.",
       clouds: "Passing cloud shadows",
-      cloudsHint: "Soft, slow-moving ASCII shadows cross the sea and slightly shade whale ink while respecting reading areas. On by default.",
+      cloudsHint: "Soft, slow-moving cloud shadows cross the sea and slightly shade whale ink while respecting reading areas. On by default.",
       rain: "Rain over the sea",
       rainHint: "Fine rain makes small splashes and spreading ripples. Its direction follows the sea breeze. Off by default; turning wind off gradually returns the rain to vertical.",
       rainIntensity: "Rain intensity",
@@ -5852,11 +5852,11 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       stylePreview: "Live whale preview of the current draft",
       stylePreviewNote: "The preview scales the conversation background uniformly, keeping characters and whales in proportion. Changes appear live; save to apply them. The card at the lower right demonstrates glass and avoidance.",
       mixed: "Mixed group",
-      blue: "Blue whale",
-      humpback: "Humpback whale",
-      sperm: "Sperm whale",
-      fin: "Fin whale",
-      bowhead: "Bowhead whale"
+      blue: "Blue",
+      humpback: "Humpback",
+      sperm: "Sperm",
+      fin: "Fin",
+      bowhead: "Bowhead"
     }
   };
 
@@ -5886,7 +5886,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       unsavedDraft: "有未保存的调整，仅在预览中显示",
       savedDraft: "调整会即时预览，保存后应用到背景",
       none: "关闭",
-      enabled: "显示蓝鲸",
+      enabled: "显示鲸鱼",
       enabledHint: "仅在对话页面显示，切换到其他页面时停止。",
       count: "鲸鱼数量",
       countHint: "1 至 8 条，大小与远近各有不同。",
@@ -5930,7 +5930,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       wind: "海面风纹",
       windHint: "少量同向的短波纹随风掠过海面，缓缓出现和散去。默认开启。",
       clouds: "掠海云影",
-      cloudsHint: "云层投下柔和、缓慢漂移的字符阴影，轻微压暗鲸体颜色，并让开阅读区域。默认开启。",
+      cloudsHint: "云层投下柔和、缓慢漂移的云影，轻微压暗鲸体颜色，并让开阅读区域。默认开启。",
       rain: "海上落雨",
       rainHint: "细雨落海时带出小水花与扩散涟漪，方向随海面风纹缓慢偏转。默认关闭；关闭风纹后逐渐回到直雨。",
       rainIntensity: "雨量",
