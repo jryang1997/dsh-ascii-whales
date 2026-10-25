@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Glyph whales",
-    "description": "Five species of text whales cruise, stroke their horizontal flukes vertically, and glide below the conversation."
+    "description": "Five species of text whales cruise, beat their flukes up and down, and glide behind the conversation."
   },
   "ui": {
     "title": "Glyph whales",
@@ -11,7 +11,7 @@
     "count": "Whale count",
     "countHint": "1 to 8 whales with different sizes and depths.",
     "text": "Whale body text",
-    "textHint": "Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境. Up to 40 characters.",
+    "textHint": "Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境 (the default phrase, “explore the uncharted”). Up to 40 characters.",
     "speed": "Swimming speed",
     "speedHint": "0.3 to 2. Default 0.65. Scales cruising, turning and tail beats, with glides between strokes.",
     "opacity": "Background opacity",
@@ -50,7 +50,7 @@
     "wind": "Wind on the sea",
     "windHint": "Sparse aligned surface strokes drift with the breeze, appearing and fading gently. On by default.",
     "clouds": "Passing cloud shadows",
-    "cloudsHint": "Soft, slow-moving ASCII shadows cross the sea and slightly shade whale ink while respecting reading areas. On by default.",
+    "cloudsHint": "Soft, slow-moving cloud shadows cross the sea and slightly shade whale ink while respecting reading areas. On by default.",
     "rain": "Rain over the sea",
     "rainHint": "Fine rain makes small splashes and spreading ripples. Its direction follows the sea breeze. Off by default; turning wind off gradually returns the rain to vertical.",
     "rainIntensity": "Rain intensity",

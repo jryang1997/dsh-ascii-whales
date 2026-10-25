@@ -117,9 +117,11 @@ For the input box, you can show blurred whale silhouettes or have the whales swi
 
 </details>
 
-Screenshots use the Chinese UI and come from the standalone preview or simulated environments. See [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
+Screenshots use the Chinese UI and come from the standalone preview or simulated environments. The settings page itself follows the DSH UI language; its English and Simplified Chinese strings ship with the plugin. See [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
 
 ## Settings
+
+The settings page follows the DSH UI language. English and Simplified Chinese strings are bundled with the plugin.
 
 Dragging a slider updates the static sample in the settings page. Select **Save** to apply the draft to the conversation background. **Restore defaults** changes the draft; **Reload saved values** discards unsaved edits.
 

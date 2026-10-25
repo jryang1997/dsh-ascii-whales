@@ -5500,7 +5500,7 @@
 .aw-settings .aw-scale span{white-space:nowrap}
 /* Segmented slider: option names under the track double as jump buttons. */
 .aw-settings .aw-ticks{display:grid;grid-template-columns:repeat(var(--aw-stops,2),minmax(0,1fr));gap:2px}
-.aw-settings .aw-tick{font:inherit;font-size:11px;line-height:1.35;min-width:0;padding:3px 2px;border:0;border-radius:5px;background:none;color:var(--dsw-alias-label-secondary);text-align:center;overflow-wrap:anywhere}
+.aw-settings .aw-tick{font:inherit;font-size:11px;line-height:1.35;min-width:0;padding:3px 2px;border:0;border-radius:5px;background:none;color:var(--dsw-alias-label-secondary);text-align:center;overflow-wrap:break-word;word-break:normal;hyphens:none}
 .aw-settings .aw-tick[aria-pressed=true]{color:var(--dsw-alias-label-primary);font-weight:600;background:rgba(120,145,170,.16);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent)}
 .aw-settings .aw-tick:disabled{cursor:default}
 body[data-ds-dark-theme] .aw-settings input[type=range]::-webkit-slider-runnable-track{background:rgba(160,180,200,.32);background:linear-gradient(to right,var(--dsw-alias-brand-primary) 0 var(--aw-pct,0%),rgba(160,180,200,.32) var(--aw-pct,0%) 100%)}
@@ -5537,7 +5537,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
   var en_default = {
     meta: {
       title: "Glyph whales",
-      description: "Five species of text whales cruise, stroke their horizontal flukes vertically, and glide below the conversation."
+      description: "Five species of text whales cruise, beat their flukes up and down, and glide behind the conversation."
     },
     ui: {
       title: "Glyph whales",
@@ -5547,7 +5547,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       count: "Whale count",
       countHint: "1 to 8 whales with different sizes and depths.",
       text: "Whale body text",
-      textHint: "Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境. Up to 40 characters.",
+      textHint: "Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境 (the default phrase, “explore the uncharted”). Up to 40 characters.",
       speed: "Swimming speed",
       speedHint: "0.3 to 2. Default 0.65. Scales cruising, turning and tail beats, with glides between strokes.",
       opacity: "Background opacity",
@@ -5586,7 +5586,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       wind: "Wind on the sea",
       windHint: "Sparse aligned surface strokes drift with the breeze, appearing and fading gently. On by default.",
       clouds: "Passing cloud shadows",
-      cloudsHint: "Soft, slow-moving ASCII shadows cross the sea and slightly shade whale ink while respecting reading areas. On by default.",
+      cloudsHint: "Soft, slow-moving cloud shadows cross the sea and slightly shade whale ink while respecting reading areas. On by default.",
       rain: "Rain over the sea",
       rainHint: "Fine rain makes small splashes and spreading ripples. Its direction follows the sea breeze. Off by default; turning wind off gradually returns the rain to vertical.",
       rainIntensity: "Rain intensity",
@@ -5634,7 +5634,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
     ui: {
       title: "文字蓝鲸",
       purpose: "把界面看作海面，从正上方俯看文字鲸鱼。各鲸类有独立头型、胸鳍和尾叶，缓缓巡游并在上下摆尾之间滑行。背部隆起较深，两侧和深水处渐浅。",
-      enabled: "显示蓝鲸",
+      enabled: "显示鲸鱼",
       enabledHint: "仅在对话页面显示，切换到其他页面时停止。",
       count: "鲸鱼数量",
       countHint: "1 至 8 条，大小与远近各有不同。",
@@ -5678,7 +5678,7 @@ body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgb
       wind: "海面风纹",
       windHint: "少量同向的短波纹随风掠过海面，缓缓出现和散去。默认开启。",
       clouds: "掠海云影",
-      cloudsHint: "云层投下柔和、缓慢漂移的字符阴影，轻微压暗鲸体颜色，并让开阅读区域。默认开启。",
+      cloudsHint: "云层投下柔和、缓慢漂移的云影，轻微压暗鲸体颜色，并让开阅读区域。默认开启。",
       rain: "海上落雨",
       rainHint: "细雨落海时带出小水花与扩散涟漪，方向随海面风纹缓慢偏转。默认关闭；关闭风纹后逐渐回到直雨。",
       rainIntensity: "雨量",
