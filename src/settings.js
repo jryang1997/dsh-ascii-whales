@@ -2,6 +2,7 @@ import { FIELDS, normalizeConfig, configSignature } from './model.js';
 import { createConfigEditor } from './config-editor.js';
 import { createWhaleLayer } from './engine.js';
 import { EMPTY_ACTIVITY, currentSessionId, readActivitySnapshot, createJobsBridge } from './activity.js';
+import { createActivityAnnouncer, createLegendPreference } from './activity-ui.js';
 
 /** The preview always shows the school, whatever the saved switches say. */
 function previewConfigOf(draft) {
@@ -35,7 +36,26 @@ export function registerWhales(ctx, React, dictionaries) {
   const t = ctx.locale.bind('asciiWhales');
   const useForm = () => React.useSyncExternalStore(formSubscribe, formSnapshot, formSnapshot);
   const jobs = createJobsBridge();
-  // Jobs are optional: absent services keep the original decorative background.
+  const legendPreference = createLegendPreference(globalThis.window?.location?.origin ?? null);
+  const labelOf = entity => entity.label || t(entity.type === 'job' ? 'activityJob' : entity.type === 'subagent' ? 'activitySubagent' : 'activitySession');
+  const statusOf = entity => t({ running: 'activityRunning', waiting: 'activityWaiting', idle: 'activityIdle',
+    completed: 'activityCompleted', failed: 'activityFailed', unavailable: 'activityUnavailable' }[entity.kind]);
+  function Legend({ onClose }) {
+    const returnFocus = React.useRef(null);
+    React.useEffect(() => { returnFocus.current = document.activeElement; }, []);
+    function close() {
+      onClose();
+      if (returnFocus.current?.isConnected) returnFocus.current.focus();
+    }
+    return h('section', { className: 'aw-legend', 'aria-label': t('activityLegend') },
+      h('h3', null, t('activityLegend')),
+      h('ul', null, ...[['···', 'activityRunning'], ['!', 'activityWaiting'], ['', 'activityIdle'],
+        ['✓', 'activityCompleted'], ['×', 'activityFailed'], ['?', 'activityUnavailable']].map(([symbol, key]) =>
+        h('li', { key }, symbol && h('span', { 'aria-hidden': true }, `${symbol} `), t(key)))),
+      h('p', null, t('activityLegendNote')),
+      h('button', { type: 'button', onClick: close,
+        onFocus: event => { if (event.relatedTarget?.isConnected) returnFocus.current = event.relatedTarget; } }, t('activityLegendClose')));
+  }
   ctx.inject?.(['jobs'], child => child.effect(() => jobs.attach(child.jobs)));
 
   /**
@@ -48,13 +68,13 @@ export function registerWhales(ctx, React, dictionaries) {
    * So the layer lives for as long as the canvas node and only the update effect
    * reacts to configuration changes.
    */
-  function Canvas({ config, activity = EMPTY_ACTIVITY }) {
+  function Canvas({ config, activity = EMPTY_ACTIVITY, onActivityChange }) {
     const ref = React.useRef(null);
     const configRef = React.useRef(config);
     const activityRef = React.useRef(activity);
     const layer = React.useRef(null);
     React.useEffect(() => {
-      const instance = createWhaleLayer(ref.current, configRef.current);
+      const instance = createWhaleLayer(ref.current, configRef.current, { onActivityChange });
       instance.setActivity(activityRef.current);
       layer.current = instance;
       return () => { instance.dispose(); layer.current = null; };
@@ -138,6 +158,16 @@ export function registerWhales(ctx, React, dictionaries) {
 
   function Overlay(props) {
     const panelId = props.usePanelInfo(s => s.activePanelId);
+    const language = React.useSyncExternalStore(localeSubscribe, localeSnapshot, localeSnapshot);
+    const [presentation, setPresentation] = React.useState(null);
+    const [announcement, setAnnouncement] = React.useState({ serial: 0, entities: [] });
+    const [legendOpen, setLegendOpen] = React.useState(() => !legendPreference.seen);
+    const announcer = React.useMemo(() => createActivityAnnouncer({ announce: setAnnouncement }), []);
+    const receiveActivity = React.useCallback(value => {
+      setPresentation(value);
+      announcer.update(value);
+    }, [announcer]);
+    React.useEffect(() => () => announcer.dispose(), [announcer]);
     const snapshot = useForm();
     // Compare content, not references: an unchanged settings document must keep
     // the very same config object, so the update effect does not even fire.
@@ -146,7 +176,10 @@ export function registerWhales(ctx, React, dictionaries) {
     const list = props.useSessions?.(state => state);
     const statuses = props.useSessionStatus?.(state => state);
     const jobSnapshot = React.useSyncExternalStore(jobs.subscribe, jobs.getSnapshot, jobs.getSnapshot);
-    const nextActivity = React.useMemo(() => readActivitySnapshot(list, statuses, jobSnapshot), [list, statuses, jobSnapshot]);
+    const nextActivity = React.useMemo(() => {
+      const value = readActivitySnapshot(list, statuses, jobSnapshot);
+      return { ...value, entities: value.entities.map(entity => ({ ...entity, label: labelOf(entity) })) };
+    }, [list, statuses, jobSnapshot, language]);
     const activityKey = JSON.stringify(nextActivity);
     const activity = React.useMemo(() => nextActivity, [activityKey]);
     const scope = currentSessionId(list);
@@ -155,12 +188,34 @@ export function registerWhales(ctx, React, dictionaries) {
       jobs.watch(visible && config.activity ? scope : null);
       return () => jobs.watch(null);
     }, [visible, config.activity, scope]);
+    React.useEffect(() => {
+      if (!visible || !config.activity) announcer.update({ enabled: false, scope: null });
+    }, [visible, config.activity, scope, announcer]);
     if (!visible) return null;
-    return h('div', { 'aria-hidden': true, style: {
+    const current = config.activity && presentation?.enabled && presentation.scope === activity.scope ? presentation : null;
+    return h('div', { className: 'aw-overlay', style: {
       position: 'absolute', left: 'var(--dsh-windows-sidebar-width, var(--ascii-whale-inset, 280px))',
       top: 'var(--dsh-frame-top-clearance, 0px)', right: 0, bottom: 0,
       '--ascii-whale-inset': `${config.leftInset}px`, pointerEvents: 'none', overflow: 'hidden',
-    } }, h(Canvas, { config, activity }));
+    } },
+    h('style', null, ACTIVITY_CSS),
+    h('div', { 'aria-hidden': true, style: { position: 'absolute', inset: 0 } },
+      h(Canvas, { config, activity: config.activity ? activity : EMPTY_ACTIVITY, onActivityChange: receiveActivity })),
+    config.activity && h('aside', { className: 'aw-activity' },
+      legendOpen && h(Legend, { onClose: () => { legendPreference.dismiss(); setLegendOpen(false); } }),
+      current && h('details', { className: 'aw-activity-summary' },
+        h('summary', null, t('activitySummary')),
+        h('section', { 'aria-label': t('activitySummary') },
+          current.availability.currentSession === 'unavailable' && h('p', null, t('activityScopeUnavailable')),
+          current.availability.liveStatus === 'unavailable' && h('p', null, t('activityWaitingUnavailable')),
+          current.availability.jobs === 'unavailable' && h('p', null, t('activityJobsUnavailable')),
+          h('p', null, t('activityOverflow'), ' ', current.overflow.length),
+          h('ul', null, ...current.entities.map(entity => h('li', { key: entity.key },
+            labelOf(entity), ' · ', statusOf(entity),
+            entity.waitingAvailable === false && h('span', null, ' · ', t('activityWaitingUnavailable')))))))),
+    h('div', { className: 'aw-sr-only', 'aria-live': 'polite', 'aria-atomic': true, 'aria-label': t('activityAnnouncements') },
+      config.activity && h('span', { key: announcement.serial },
+        announcement.entities.map(entity => `${labelOf(entity)} · ${statusOf(entity)}`).join('; '))));
   }
 
   function Settings() {
@@ -169,6 +224,7 @@ export function registerWhales(ctx, React, dictionaries) {
     const [editor, setEditor] = React.useState(() => snapshot.status === 'ready' ? createConfigEditor(snapshot) : null);
     const [saving, setSaving] = React.useState(false);
     const [notice, setNotice] = React.useState('');
+    const [showLegend, setShowLegend] = React.useState(false);
     const dirty = editor?.dirty ?? false;
     React.useEffect(() => {
       if (snapshot.status === 'ready' && !dirty) setEditor(createConfigEditor(snapshot));
@@ -279,7 +335,10 @@ export function registerWhales(ctx, React, dictionaries) {
       h('div', { className: 'aw-groups' }, ...groups.map(group => h('fieldset', { className: 'aw-group', key: group.id },
         h('legend', null, t(`${group.id}Group`)),
         h('p', { className: 'aw-group-note' }, t(`${group.id}Description`)),
-        ...group.fields.map(renderField)))),
+        ...group.fields.map(renderField),
+        group.id === 'school' && h('button', { type: 'button', 'aria-expanded': showLegend,
+          onClick: () => setShowLegend(value => !value) }, t('activityLegendOpen')),
+        group.id === 'school' && showLegend && h(Legend, { onClose: () => setShowLegend(false) })))),
       h('details', { className: 'aw-advanced' }, h('summary', null, t('advancedGroup')),
         h('div', { className: 'aw-advanced-body' }, renderField('leftInset'), renderField('pauseOnScroll'))),
       notice && h('p', { className: 'aw-notice', role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice))),
@@ -318,6 +377,17 @@ export function registerWhales(ctx, React, dictionaries) {
     name: 'plugins.bundle.config', key: '@local/dsh-ascii-ocean',
   }, Settings));
 }
+
+const ACTIVITY_CSS = `
+.aw-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.aw-activity{position:absolute;right:16px;top:12px;max-width:min(360px,calc(100% - 32px));max-height:calc(100% - 24px);overflow:auto;color:var(--dsw-alias-label-primary,#1d2633);font:13px/1.5 system-ui,sans-serif}
+.aw-activity-summary,.aw-legend{pointer-events:auto;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,#c9d2de);border-radius:12px;padding:12px;margin-bottom:8px;overflow-wrap:anywhere}
+.aw-activity-summary summary{cursor:pointer}.aw-legend h3{font-size:14px;margin:0 0 8px}.aw-legend ul,.aw-activity-summary ul{padding-left:20px;margin:8px 0}.aw-legend p{margin:8px 0}
+.aw-legend button,.aw-activity-summary button{font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:6px;min-height:36px;padding:4px 10px;cursor:pointer}
+.aw-overlay :focus-visible{outline:3px solid #007aff;outline-offset:3px}
+body[data-ds-dark-theme] .aw-activity{color:var(--dsw-alias-label-primary,#edf1f7)}
+body[data-ds-dark-theme] .aw-activity-summary,body[data-ds-dark-theme] .aw-activity .aw-legend{background:var(--dsw-alias-bg-layer-1,#242c36)}
+`;
 
 const SETTINGS_CSS = `
 .aw-settings{--aw-accent:#007aff;--aw-ink:var(--dsw-alias-label-primary,#1d2633);--aw-muted:var(--dsw-alias-label-secondary,#647184);--aw-surface:var(--dsw-alias-bg-layer-1,#fff);--aw-line:var(--dsw-alias-border-l1,#e3e7ed);--aw-rail:rgba(120,135,155,.22);--aw-inset:rgba(120,135,155,.09);color:var(--aw-ink);font:inherit;width:100%;max-width:1280px;min-width:0;margin-inline:auto;padding:8px 0 24px;container-type:inline-size;box-sizing:border-box}

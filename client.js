@@ -3132,11 +3132,12 @@
   }
 
   // src/activity.js
-  var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]) });
-  var emptyJobs = Object.freeze({ rows: Object.freeze({}) });
+  var unavailable = Object.freeze({ currentSession: "unavailable", liveStatus: "unavailable", jobs: "unavailable" });
+  var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]), availability: unavailable });
+  var emptyJobs = Object.freeze({ rows: Object.freeze({}), available: false });
   var rank = (entity) => entity.kind === "waiting" ? 0 : entity.kind === "failed" ? 1 : entity.kind === "completed" ? 2 : entity.kind === "running" ? 3 : 4;
   var record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-  var sessionKind = (row, status) => status?.pendingInteraction ? "waiting" : (status?.running ?? row?.running) === true ? "running" : "idle";
+  var sessionKind = (row, status) => status?.pendingInteraction ? "waiting" : (status?.running ?? row?.running) === true ? "running" : typeof status?.running === "boolean" ? "idle" : "unavailable";
   function currentSessionId(list) {
     return Object.values(list?.byId ?? {}).find((row) => (row?.retainedBy?.mainView ?? 0) > 0)?.id ?? null;
   }
@@ -3162,42 +3163,78 @@
     const entities = [];
     for (const [id, row] of rows) {
       if (!record(row) || typeof id !== "string") continue;
-      const kind = sessionKind(row, statuses?.get?.(id));
-      if (!related.has(id) && kind === "idle") continue;
+      if (!related.has(id)) continue;
+      const status = statuses?.get?.(id);
+      const kind = sessionKind(row, status);
       entities.push({
         key: `session:${id}`,
         type: row.origin === "subagent" || row.parentId ? "subagent" : "session",
-        label: String(row.displayTitle ?? row.title ?? id),
+        label: String(row.displayTitle ?? row.title ?? "").trim(),
         kind,
-        primary: id === scope
+        primary: id === scope,
+        waitingAvailable: record(status)
       });
     }
     const seen = /* @__PURE__ */ new Set();
-    for (const job of jobs?.rows?.[scope] ?? []) {
+    for (const job of jobs?.available === false ? [] : jobs?.rows?.[scope] ?? []) {
       if (!record(job) || typeof job.id !== "string" && typeof job.id !== "number") continue;
       const key = `job:${job.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const kind = job.status === "running" || job.status === "stopping" ? "running" : job.status === "completed" ? "completed" : job.status === "failed" ? "failed" : "idle";
-      entities.push({ key, type: "job", label: String(job.label ?? job.id), kind, primary: false });
+      const kind = job.status === "running" || job.status === "stopping" ? "running" : job.status === "completed" ? "completed" : job.status === "failed" ? "failed" : ["killed", "cancelled", "stopped"].includes(job.status) ? "idle" : "unavailable";
+      entities.push({ key, type: "job", label: String(job.label ?? "").trim(), kind, primary: false });
     }
-    return { scope, entities };
+    return { scope, entities, availability: {
+      currentSession: "available",
+      liveStatus: typeof statuses?.get === "function" ? "available" : "unavailable",
+      jobs: jobs && jobs.available !== false && record(jobs.rows) ? "available" : "unavailable"
+    } };
   }
-  function createActivityTracker() {
+  function createActivityTracker({ onChange } = {}) {
     let snapshot = EMPTY_ACTIVITY, scope = null, seats = [], now = 0;
     let dirty = true, appliedWhales = null, appliedEnabled = null, nextExpiry = Infinity;
     const runningJobs = /* @__PURE__ */ new Set(), terminal = /* @__PURE__ */ new Map();
+    let previousKinds = /* @__PURE__ */ new Map(), transitions = [], serial = 0, published = "";
+    function publish(entities, badges, overflow, enabled) {
+      const value = {
+        scope: enabled ? scope : null,
+        enabled,
+        availability: snapshot.availability ?? unavailable,
+        entities,
+        seats: badges,
+        overflow
+      };
+      const signature = JSON.stringify(value);
+      if (signature === published && !transitions.length) return;
+      published = signature;
+      const freezeRows = (rows) => Object.freeze(rows.map((row) => row ? Object.freeze({ ...row }) : null));
+      onChange?.(Object.freeze({
+        ...value,
+        availability: Object.freeze({ ...value.availability }),
+        entities: freezeRows(entities),
+        seats: freezeRows(badges),
+        overflow: freezeRows(overflow),
+        transitions: freezeRows(transitions)
+      }));
+      transitions = [];
+    }
     function update(next = EMPTY_ACTIVITY) {
-      if (next.scope !== scope) {
+      const changedScope = next.scope !== scope;
+      if (changedScope) {
         scope = next.scope;
         seats = [];
         runningJobs.clear();
         terminal.clear();
+        previousKinds.clear();
+        transitions = [];
       }
       snapshot = next;
       dirty = true;
       const present = /* @__PURE__ */ new Set();
       for (const entity of snapshot.entities) {
+        if (!changedScope && entity.kind === "waiting" && previousKinds.get(entity.key) !== "waiting") {
+          transitions.push({ ...entity, event: ++serial });
+        }
         if (entity.type !== "job") continue;
         present.add(entity.key);
         if (entity.kind === "running") {
@@ -3205,8 +3242,12 @@
           terminal.delete(entity.key);
         } else if (runningJobs.delete(entity.key) && (entity.kind === "completed" || entity.kind === "failed")) {
           terminal.set(entity.key, { ...entity, until: now + 6 });
+          transitions.push({ ...entity, event: ++serial });
+        } else if (terminal.has(entity.key)) {
+          terminal.set(entity.key, { ...terminal.get(entity.key), label: entity.label });
         }
       }
+      previousKinds = new Map(snapshot.entities.map((entity) => [entity.key, entity.kind]));
       for (const key of runningJobs) if (!present.has(key)) runningJobs.delete(key);
       for (const key of terminal.keys()) if (!present.has(key)) terminal.delete(key);
     }
@@ -3218,12 +3259,20 @@
       appliedEnabled = enabled;
       if (!enabled || !scope) {
         for (const whale of whales) delete whale.activity;
+        transitions = [];
+        nextExpiry = Infinity;
+        if (!enabled) {
+          runningJobs.clear();
+          terminal.clear();
+          previousKinds.clear();
+        }
+        publish([], [], [], enabled);
         return;
       }
       for (const [key, entity] of terminal) if (entity.until <= now) terminal.delete(key);
       nextExpiry = Infinity;
       for (const entity of terminal.values()) nextExpiry = Math.min(nextExpiry, entity.until);
-      const candidates = snapshot.entities.filter((entity) => entity.type !== "job" || entity.kind === "running");
+      const candidates = snapshot.entities.filter((entity) => entity.type !== "job" || !["completed", "failed"].includes(entity.kind));
       candidates.push(...terminal.values());
       const primary = candidates.find((entity) => entity.primary);
       const rest = candidates.filter((entity) => !entity.primary).sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
@@ -3237,7 +3286,7 @@
         seats[index] = entity.key;
         seated.add(entity.key);
       }
-      const overflow = candidates.filter((entity) => !seated.has(entity.key) && entity.kind !== "idle");
+      const overflow = candidates.filter((entity) => !seated.has(entity.key));
       const urgent = overflow.sort((a, b) => rank(a) - rank(b))[0];
       for (let i = 0; i < whales.length; i++) {
         const entity = wanted.get(seats[i]);
@@ -3251,6 +3300,12 @@
           ...urgent && rank(urgent) < rank(entity) ? { kind: urgent.kind, attention: urgent.label } : {}
         } : entity;
       }
+      publish(
+        candidates.map(({ until, ...entity }) => entity),
+        whales.map((whale) => whale.activity ?? null),
+        overflow.map(({ until, ...entity }) => entity),
+        enabled
+      );
     }
     return { update, apply };
   }
@@ -3258,22 +3313,29 @@
     let service = null, scope = null, release = null, unsubscribe = null, snapshot = emptyJobs;
     const listeners = /* @__PURE__ */ new Set();
     const publish = () => {
-      snapshot = service?.state.getSnapshot() ?? emptyJobs;
+      snapshot = scope && service ? service.state.getSnapshot() ?? emptyJobs : emptyJobs;
       for (const listener of listeners) listener();
     };
+    function connect() {
+      release?.();
+      unsubscribe?.();
+      release = unsubscribe = null;
+      if (scope && service) {
+        unsubscribe = service.state.subscribe(publish);
+        release = service.watchRows(scope);
+      }
+      publish();
+    }
     function watch(next) {
       if (next === scope) return;
-      release?.();
-      release = null;
       scope = next;
-      if (scope && service) release = service.watchRows(scope);
+      connect();
     }
     function attach(next) {
       service = next;
-      unsubscribe = service.state.subscribe(publish);
-      if (scope) release = service.watchRows(scope);
-      publish();
+      connect();
       return () => {
+        if (service !== next) return;
         release?.();
         unsubscribe?.();
         release = unsubscribe = null;
@@ -3298,10 +3360,12 @@
     ink.textBaseline = "middle";
     for (const whale of whales) {
       const activity = whale.activity;
-      if (!activity || activity.kind === "idle") continue;
-      const symbol = activity.kind === "waiting" ? "!" : activity.kind === "failed" ? "×" : activity.kind === "completed" ? "✓" : "···";
-      const label = activity.kind === "running" ? "" : ` ${Array.from(activity.attention ?? activity.label).slice(0, 18).join("")}`;
-      const text = `${symbol}${label}${activity.overflow ? ` +${activity.overflow}` : ""}`;
+      if (!activity) continue;
+      const quiet = activity.kind === "idle" || activity.kind === "unavailable";
+      if (quiet && !activity.overflow) continue;
+      const symbol = quiet ? "" : activity.kind === "waiting" ? "!" : activity.kind === "failed" ? "×" : activity.kind === "completed" ? "✓" : "···";
+      const label = quiet || activity.kind === "running" ? "" : ` ${Array.from(activity.attention ?? activity.label).slice(0, 18).join("")}`;
+      const text = `${symbol}${label}${activity.overflow ? ` +${activity.overflow}` : ""}`.trim();
       ink.fillStyle = activity.kind === "waiting" ? dark ? "#ffd27d" : "#875000" : activity.kind === "failed" ? dark ? "#ffaaaa" : "#a82b36" : activity.kind === "completed" ? dark ? "#9ee6c5" : "#17654e" : dark ? "#a9c6d6" : "#42667a";
       for (const ox of [-width, 0, width]) for (const oy of [-height, 0, height]) {
         const x = whale.x + ox, y = whale.y + oy - whale.bodyRadius - 16;
@@ -3608,7 +3672,7 @@
   function sceneConfigChanged(previous = {}, next = {}) {
     return sceneConfigKeys.some((key) => previous[key] !== next[key]);
   }
-  function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
+  function createWhaleSimulation(initialConfig, { seed = 0, onActivityChange } = {}) {
     let disposed = false;
     let activityTime = 0;
     let config = { ...initialConfig };
@@ -3617,7 +3681,7 @@
     const water = createWaterField();
     const atmosphere = createAtmosphereField({ seed });
     const rain = createRainField({ seed });
-    const activity = createActivityTracker();
+    const activity = createActivityTracker({ onChange: onActivityChange });
     return {
       get scene() {
         return scene;
@@ -4620,7 +4684,7 @@
     const scenerySeed = Math.floor(Math.random() * 4294967296) >>> 0;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reducedTransparency = window.matchMedia("(prefers-reduced-transparency: reduce)");
-    const simulation = createWhaleSimulation(config, { seed: scenerySeed });
+    const simulation = createWhaleSimulation(config, { seed: scenerySeed, onActivityChange: options.onActivityChange });
     let scene = simulation.scene;
     const { water, atmosphere, rain } = simulation;
     let sceneryPalette = createInkPalette(config.color);
@@ -5217,6 +5281,66 @@
     return { update, setActivity, dispose };
   }
 
+  // src/activity-ui.js
+  function createActivityAnnouncer({ announce, schedule = setTimeout, cancel = clearTimeout, delay = 120 }) {
+    let scope = null, timer = null, lastEvent = 0, serial = 0;
+    const pending = /* @__PURE__ */ new Map();
+    function clear() {
+      if (timer !== null) cancel(timer);
+      timer = null;
+      pending.clear();
+      lastEvent = 0;
+      announce({ serial: ++serial, entities: [] });
+    }
+    function update(presentation) {
+      const nextScope = presentation.enabled ? presentation.scope : null;
+      if (nextScope !== scope) {
+        clear();
+        scope = nextScope;
+      }
+      if (!scope) return;
+      const current = new Map(presentation.entities.map((entity) => [entity.key, entity]));
+      for (const [key, entity] of pending) if (current.has(entity.key)) {
+        pending.set(key, { ...entity, label: current.get(entity.key).label });
+      }
+      for (const entity of presentation.transitions) {
+        if (entity.event <= lastEvent) continue;
+        lastEvent = entity.event;
+        pending.set(`${entity.key}:${entity.kind}`, entity);
+      }
+      if (pending.size && timer === null) timer = schedule(() => {
+        timer = null;
+        const entities = [...pending.values()];
+        pending.clear();
+        announce({ serial: ++serial, entities });
+      }, delay);
+    }
+    return { update, dispose() {
+      clear();
+      scope = null;
+    } };
+  }
+  function createLegendPreference(scope, storage2 = () => window.localStorage) {
+    const key = scope ? `ascii-whales.legend.v1:${scope}` : null;
+    let seen = false;
+    try {
+      seen = key !== null && storage2()?.getItem(key) === "seen";
+    } catch {
+    }
+    return {
+      get seen() {
+        return seen;
+      },
+      dismiss() {
+        seen = true;
+        try {
+          if (key !== null) storage2()?.setItem(key, "seen");
+        } catch {
+        }
+      }
+    };
+  }
+
   // src/settings.js
   function previewConfigOf(draft) {
     return normalizeConfig({ ...draft, enabled: true, quietCenter: false });
@@ -5242,14 +5366,55 @@
     const t = ctx.locale.bind("asciiWhales");
     const useForm = () => React.useSyncExternalStore(formSubscribe, formSnapshot, formSnapshot);
     const jobs = createJobsBridge();
+    const legendPreference = createLegendPreference(globalThis.window?.location?.origin ?? null);
+    const labelOf = (entity) => entity.label || t(entity.type === "job" ? "activityJob" : entity.type === "subagent" ? "activitySubagent" : "activitySession");
+    const statusOf = (entity) => t({
+      running: "activityRunning",
+      waiting: "activityWaiting",
+      idle: "activityIdle",
+      completed: "activityCompleted",
+      failed: "activityFailed",
+      unavailable: "activityUnavailable"
+    }[entity.kind]);
+    function Legend({ onClose }) {
+      const returnFocus = React.useRef(null);
+      React.useEffect(() => {
+        returnFocus.current = document.activeElement;
+      }, []);
+      function close() {
+        onClose();
+        if (returnFocus.current?.isConnected) returnFocus.current.focus();
+      }
+      return h(
+        "section",
+        { className: "aw-legend", "aria-label": t("activityLegend") },
+        h("h3", null, t("activityLegend")),
+        h("ul", null, ...[
+          ["···", "activityRunning"],
+          ["!", "activityWaiting"],
+          ["", "activityIdle"],
+          ["✓", "activityCompleted"],
+          ["×", "activityFailed"],
+          ["?", "activityUnavailable"]
+        ].map(([symbol, key]) => h("li", { key }, symbol && h("span", { "aria-hidden": true }, `${symbol} `), t(key)))),
+        h("p", null, t("activityLegendNote")),
+        h("button", {
+          type: "button",
+          onClick: close,
+          onFocus: (event) => {
+            if (event.relatedTarget?.isConnected) returnFocus.current = event.relatedTarget;
+          }
+        }, t("activityLegendClose"))
+      );
+    }
     ctx.inject?.(["jobs"], (child) => child.effect(() => jobs.attach(child.jobs)));
-    function Canvas({ config, activity = EMPTY_ACTIVITY }) {
+    function Canvas({ config, activity = EMPTY_ACTIVITY, onActivityChange }) {
       const ref = React.useRef(null);
       const configRef = React.useRef(config);
       const activityRef = React.useRef(activity);
       const layer = React.useRef(null);
       React.useEffect(() => {
-        const instance = createWhaleLayer(ref.current, configRef.current);
+        const instance = createWhaleLayer(ref.current, configRef.current, { onActivityChange });
         instance.setActivity(activityRef.current);
         layer.current = instance;
         return () => {
@@ -5335,13 +5500,26 @@
     }
     function Overlay(props) {
       const panelId = props.usePanelInfo((s) => s.activePanelId);
+      const language = React.useSyncExternalStore(localeSubscribe, localeSnapshot, localeSnapshot);
+      const [presentation, setPresentation] = React.useState(null);
+      const [announcement, setAnnouncement] = React.useState({ serial: 0, entities: [] });
+      const [legendOpen, setLegendOpen] = React.useState(() => !legendPreference.seen);
+      const announcer = React.useMemo(() => createActivityAnnouncer({ announce: setAnnouncement }), []);
+      const receiveActivity = React.useCallback((value) => {
+        setPresentation(value);
+        announcer.update(value);
+      }, [announcer]);
+      React.useEffect(() => () => announcer.dispose(), [announcer]);
       const snapshot = useForm();
       const signature = snapshot.status === "ready" ? configSignature(snapshot.value) : "";
       const config = React.useMemo(() => normalizeConfig(snapshot.value ?? {}), [signature]);
       const list = props.useSessions?.((state) => state);
       const statuses = props.useSessionStatus?.((state) => state);
       const jobSnapshot = React.useSyncExternalStore(jobs.subscribe, jobs.getSnapshot, jobs.getSnapshot);
-      const nextActivity = React.useMemo(() => readActivitySnapshot(list, statuses, jobSnapshot), [list, statuses, jobSnapshot]);
+      const nextActivity = React.useMemo(() => {
+        const value = readActivitySnapshot(list, statuses, jobSnapshot);
+        return { ...value, entities: value.entities.map((entity) => ({ ...entity, label: labelOf(entity) })) };
+      }, [list, statuses, jobSnapshot, language]);
       const activityKey = JSON.stringify(nextActivity);
       const activity = React.useMemo(() => nextActivity, [activityKey]);
       const scope = currentSessionId(list);
@@ -5350,17 +5528,68 @@
         jobs.watch(visible && config.activity ? scope : null);
         return () => jobs.watch(null);
       }, [visible, config.activity, scope]);
+      React.useEffect(() => {
+        if (!visible || !config.activity) announcer.update({ enabled: false, scope: null });
+      }, [visible, config.activity, scope, announcer]);
       if (!visible) return null;
-      return h("div", { "aria-hidden": true, style: {
-        position: "absolute",
-        left: "var(--dsh-windows-sidebar-width, var(--ascii-whale-inset, 280px))",
-        top: "var(--dsh-frame-top-clearance, 0px)",
-        right: 0,
-        bottom: 0,
-        "--ascii-whale-inset": `${config.leftInset}px`,
-        pointerEvents: "none",
-        overflow: "hidden"
-      } }, h(Canvas, { config, activity }));
+      const current = config.activity && presentation?.enabled && presentation.scope === activity.scope ? presentation : null;
+      return h(
+        "div",
+        { className: "aw-overlay", style: {
+          position: "absolute",
+          left: "var(--dsh-windows-sidebar-width, var(--ascii-whale-inset, 280px))",
+          top: "var(--dsh-frame-top-clearance, 0px)",
+          right: 0,
+          bottom: 0,
+          "--ascii-whale-inset": `${config.leftInset}px`,
+          pointerEvents: "none",
+          overflow: "hidden"
+        } },
+        h("style", null, ACTIVITY_CSS),
+        h(
+          "div",
+          { "aria-hidden": true, style: { position: "absolute", inset: 0 } },
+          h(Canvas, { config, activity: config.activity ? activity : EMPTY_ACTIVITY, onActivityChange: receiveActivity })
+        ),
+        config.activity && h(
+          "aside",
+          { className: "aw-activity" },
+          legendOpen && h(Legend, { onClose: () => {
+            legendPreference.dismiss();
+            setLegendOpen(false);
+          } }),
+          current && h(
+            "details",
+            { className: "aw-activity-summary" },
+            h("summary", null, t("activitySummary")),
+            h(
+              "section",
+              { "aria-label": t("activitySummary") },
+              current.availability.currentSession === "unavailable" && h("p", null, t("activityScopeUnavailable")),
+              current.availability.liveStatus === "unavailable" && h("p", null, t("activityWaitingUnavailable")),
+              current.availability.jobs === "unavailable" && h("p", null, t("activityJobsUnavailable")),
+              h("p", null, t("activityOverflow"), " ", current.overflow.length),
+              h("ul", null, ...current.entities.map((entity) => h(
+                "li",
+                { key: entity.key },
+                labelOf(entity),
+                " · ",
+                statusOf(entity),
+                entity.waitingAvailable === false && h("span", null, " · ", t("activityWaitingUnavailable"))
+              )))
+            )
+          )
+        ),
+        h(
+          "div",
+          { className: "aw-sr-only", "aria-live": "polite", "aria-atomic": true, "aria-label": t("activityAnnouncements") },
+          config.activity && h(
+            "span",
+            { key: announcement.serial },
+            announcement.entities.map((entity) => `${labelOf(entity)} · ${statusOf(entity)}`).join("; ")
+          )
+        )
+      );
     }
     function Settings() {
       const snapshot = useForm();
@@ -5368,6 +5597,7 @@
       const [editor, setEditor] = React.useState(() => snapshot.status === "ready" ? createConfigEditor(snapshot) : null);
       const [saving, setSaving] = React.useState(false);
       const [notice, setNotice] = React.useState("");
+      const [showLegend, setShowLegend] = React.useState(false);
       const dirty = editor?.dirty ?? false;
       React.useEffect(() => {
         if (snapshot.status === "ready" && !dirty) setEditor(createConfigEditor(snapshot));
@@ -5550,7 +5780,13 @@
             { className: "aw-group", key: group.id },
             h("legend", null, t(`${group.id}Group`)),
             h("p", { className: "aw-group-note" }, t(`${group.id}Description`)),
-            ...group.fields.map(renderField)
+            ...group.fields.map(renderField),
+            group.id === "school" && h("button", {
+              type: "button",
+              "aria-expanded": showLegend,
+              onClick: () => setShowLegend((value) => !value)
+            }, t("activityLegendOpen")),
+            group.id === "school" && showLegend && h(Legend, { onClose: () => setShowLegend(false) })
           ))),
           h(
             "details",
@@ -5620,6 +5856,16 @@
       key: "@local/dsh-ascii-ocean"
     }, Settings));
   }
+  var ACTIVITY_CSS = `
+.aw-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.aw-activity{position:absolute;right:16px;top:12px;max-width:min(360px,calc(100% - 32px));max-height:calc(100% - 24px);overflow:auto;color:var(--dsw-alias-label-primary,#1d2633);font:13px/1.5 system-ui,sans-serif}
+.aw-activity-summary,.aw-legend{pointer-events:auto;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,#c9d2de);border-radius:12px;padding:12px;margin-bottom:8px;overflow-wrap:anywhere}
+.aw-activity-summary summary{cursor:pointer}.aw-legend h3{font-size:14px;margin:0 0 8px}.aw-legend ul,.aw-activity-summary ul{padding-left:20px;margin:8px 0}.aw-legend p{margin:8px 0}
+.aw-legend button,.aw-activity-summary button{font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:6px;min-height:36px;padding:4px 10px;cursor:pointer}
+.aw-overlay :focus-visible{outline:3px solid #007aff;outline-offset:3px}
+body[data-ds-dark-theme] .aw-activity{color:var(--dsw-alias-label-primary,#edf1f7)}
+body[data-ds-dark-theme] .aw-activity-summary,body[data-ds-dark-theme] .aw-activity .aw-legend{background:var(--dsw-alias-bg-layer-1,#242c36)}
+`;
   var SETTINGS_CSS = `
 .aw-settings{--aw-accent:#007aff;--aw-ink:var(--dsw-alias-label-primary,#1d2633);--aw-muted:var(--dsw-alias-label-secondary,#647184);--aw-surface:var(--dsw-alias-bg-layer-1,#fff);--aw-line:var(--dsw-alias-border-l1,#e3e7ed);--aw-rail:rgba(120,135,155,.22);--aw-inset:rgba(120,135,155,.09);color:var(--aw-ink);font:inherit;width:100%;max-width:1280px;min-width:0;margin-inline:auto;padding:8px 0 24px;container-type:inline-size;box-sizing:border-box}
 .aw-settings *{box-sizing:border-box}
@@ -5856,7 +6102,26 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       humpback: "Humpback",
       sperm: "Sperm",
       fin: "Fin",
-      bowhead: "Bowhead"
+      bowhead: "Bowhead",
+      activityLegend: "Task state legend",
+      activityLegendOpen: "Show task state legend",
+      activityLegendClose: "Close legend",
+      activityLegendNote: "Idle does not mean success. Results appear only after an observed background task finishes or fails. Cancelled, stopped and missing tasks do not imply success. Whales do not replace the host task history or answer for you.",
+      activitySummary: "Current task states",
+      activityAnnouncements: "New task updates",
+      activityRunning: "Running",
+      activityWaiting: "Waiting for you",
+      activityIdle: "Idle or stopped this turn",
+      activityCompleted: "Background task completed",
+      activityFailed: "Background task failed",
+      activityUnavailable: "State unavailable",
+      activityScopeUnavailable: "Current session state is unavailable.",
+      activityWaitingUnavailable: "Waiting information is unavailable.",
+      activityJobsUnavailable: "Background task states are unavailable.",
+      activityOverflow: "Tasks without their own whale",
+      activitySession: "Session",
+      activitySubagent: "Subagent",
+      activityJob: "Background task"
     }
   };
 
@@ -5967,7 +6232,26 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       humpback: "座头鲸",
       sperm: "抹香鲸",
       fin: "长须鲸",
-      bowhead: "弓头鲸"
+      bowhead: "弓头鲸",
+      activityLegend: "任务状态图例",
+      activityLegendOpen: "查看任务状态图例",
+      activityLegendClose: "关闭图例",
+      activityLegendNote: "空闲不等于成功。只有已观察到运行的后台任务转为完成或失败时才显示结果。取消、停止和消失不表示成功。鲸群不替代宿主任务记录，也不会代你回答或审批。",
+      activitySummary: "当前任务状态",
+      activityAnnouncements: "任务新变化",
+      activityRunning: "运行中",
+      activityWaiting: "等待你处理",
+      activityIdle: "空闲或本轮停止",
+      activityCompleted: "后台任务完成",
+      activityFailed: "后台任务失败",
+      activityUnavailable: "状态不可用",
+      activityScopeUnavailable: "当前会话状态不可用。",
+      activityWaitingUnavailable: "等待信息不可用。",
+      activityJobsUnavailable: "后台任务状态不可用。",
+      activityOverflow: "未单独分配鲸鱼的任务数",
+      activitySession: "会话",
+      activitySubagent: "子代理",
+      activityJob: "后台任务"
     }
   };
 

@@ -3149,24 +3149,55 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
   }
 
   // src/activity.js
-  var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]) });
-  var emptyJobs = Object.freeze({ rows: Object.freeze({}) });
+  var unavailable = Object.freeze({ currentSession: "unavailable", liveStatus: "unavailable", jobs: "unavailable" });
+  var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]), availability: unavailable });
+  var emptyJobs = Object.freeze({ rows: Object.freeze({}), available: false });
   var rank = (entity) => entity.kind === "waiting" ? 0 : entity.kind === "failed" ? 1 : entity.kind === "completed" ? 2 : entity.kind === "running" ? 3 : 4;
-  function createActivityTracker() {
+  function createActivityTracker({ onChange } = {}) {
     let snapshot = EMPTY_ACTIVITY, scope = null, seats = [], now = 0;
     let dirty = true, appliedWhales = null, appliedEnabled = null, nextExpiry = Infinity;
     const runningJobs = /* @__PURE__ */ new Set(), terminal = /* @__PURE__ */ new Map();
+    let previousKinds = /* @__PURE__ */ new Map(), transitions = [], serial = 0, published = "";
+    function publish(entities, badges, overflow, enabled) {
+      const value = {
+        scope: enabled ? scope : null,
+        enabled,
+        availability: snapshot.availability ?? unavailable,
+        entities,
+        seats: badges,
+        overflow
+      };
+      const signature = JSON.stringify(value);
+      if (signature === published && !transitions.length) return;
+      published = signature;
+      const freezeRows = (rows) => Object.freeze(rows.map((row) => row ? Object.freeze({ ...row }) : null));
+      onChange?.(Object.freeze({
+        ...value,
+        availability: Object.freeze({ ...value.availability }),
+        entities: freezeRows(entities),
+        seats: freezeRows(badges),
+        overflow: freezeRows(overflow),
+        transitions: freezeRows(transitions)
+      }));
+      transitions = [];
+    }
     function update(next = EMPTY_ACTIVITY) {
-      if (next.scope !== scope) {
+      const changedScope = next.scope !== scope;
+      if (changedScope) {
         scope = next.scope;
         seats = [];
         runningJobs.clear();
         terminal.clear();
+        previousKinds.clear();
+        transitions = [];
       }
       snapshot = next;
       dirty = true;
       const present = /* @__PURE__ */ new Set();
       for (const entity of snapshot.entities) {
+        if (!changedScope && entity.kind === "waiting" && previousKinds.get(entity.key) !== "waiting") {
+          transitions.push({ ...entity, event: ++serial });
+        }
         if (entity.type !== "job") continue;
         present.add(entity.key);
         if (entity.kind === "running") {
@@ -3174,8 +3205,12 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
           terminal.delete(entity.key);
         } else if (runningJobs.delete(entity.key) && (entity.kind === "completed" || entity.kind === "failed")) {
           terminal.set(entity.key, { ...entity, until: now + 6 });
+          transitions.push({ ...entity, event: ++serial });
+        } else if (terminal.has(entity.key)) {
+          terminal.set(entity.key, { ...terminal.get(entity.key), label: entity.label });
         }
       }
+      previousKinds = new Map(snapshot.entities.map((entity) => [entity.key, entity.kind]));
       for (const key of runningJobs) if (!present.has(key)) runningJobs.delete(key);
       for (const key of terminal.keys()) if (!present.has(key)) terminal.delete(key);
     }
@@ -3187,12 +3222,20 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       appliedEnabled = enabled;
       if (!enabled || !scope) {
         for (const whale of whales) delete whale.activity;
+        transitions = [];
+        nextExpiry = Infinity;
+        if (!enabled) {
+          runningJobs.clear();
+          terminal.clear();
+          previousKinds.clear();
+        }
+        publish([], [], [], enabled);
         return;
       }
       for (const [key, entity] of terminal) if (entity.until <= now) terminal.delete(key);
       nextExpiry = Infinity;
       for (const entity of terminal.values()) nextExpiry = Math.min(nextExpiry, entity.until);
-      const candidates = snapshot.entities.filter((entity) => entity.type !== "job" || entity.kind === "running");
+      const candidates = snapshot.entities.filter((entity) => entity.type !== "job" || !["completed", "failed"].includes(entity.kind));
       candidates.push(...terminal.values());
       const primary = candidates.find((entity) => entity.primary);
       const rest = candidates.filter((entity) => !entity.primary).sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
@@ -3206,7 +3249,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
         seats[index] = entity.key;
         seated.add(entity.key);
       }
-      const overflow = candidates.filter((entity) => !seated.has(entity.key) && entity.kind !== "idle");
+      const overflow = candidates.filter((entity) => !seated.has(entity.key));
       const urgent = overflow.sort((a, b) => rank(a) - rank(b))[0];
       for (let i = 0; i < whales.length; i++) {
         const entity = wanted.get(seats[i]);
@@ -3220,6 +3263,12 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
           ...urgent && rank(urgent) < rank(entity) ? { kind: urgent.kind, attention: urgent.label } : {}
         } : entity;
       }
+      publish(
+        candidates.map(({ until, ...entity }) => entity),
+        whales.map((whale) => whale.activity ?? null),
+        overflow.map(({ until, ...entity }) => entity),
+        enabled
+      );
     }
     return { update, apply: apply2 };
   }
@@ -3230,10 +3279,12 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     ink.textBaseline = "middle";
     for (const whale of whales) {
       const activity = whale.activity;
-      if (!activity || activity.kind === "idle") continue;
-      const symbol = activity.kind === "waiting" ? "!" : activity.kind === "failed" ? "×" : activity.kind === "completed" ? "✓" : "···";
-      const label = activity.kind === "running" ? "" : ` ${Array.from(activity.attention ?? activity.label).slice(0, 18).join("")}`;
-      const text = `${symbol}${label}${activity.overflow ? ` +${activity.overflow}` : ""}`;
+      if (!activity) continue;
+      const quiet = activity.kind === "idle" || activity.kind === "unavailable";
+      if (quiet && !activity.overflow) continue;
+      const symbol = quiet ? "" : activity.kind === "waiting" ? "!" : activity.kind === "failed" ? "×" : activity.kind === "completed" ? "✓" : "···";
+      const label = quiet || activity.kind === "running" ? "" : ` ${Array.from(activity.attention ?? activity.label).slice(0, 18).join("")}`;
+      const text = `${symbol}${label}${activity.overflow ? ` +${activity.overflow}` : ""}`.trim();
       ink.fillStyle = activity.kind === "waiting" ? dark ? "#ffd27d" : "#875000" : activity.kind === "failed" ? dark ? "#ffaaaa" : "#a82b36" : activity.kind === "completed" ? dark ? "#9ee6c5" : "#17654e" : dark ? "#a9c6d6" : "#42667a";
       for (const ox of [-width, 0, width]) for (const oy of [-height, 0, height]) {
         const x = whale.x + ox, y = whale.y + oy - whale.bodyRadius - 16;
@@ -3540,7 +3591,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
   function sceneConfigChanged(previous = {}, next = {}) {
     return sceneConfigKeys.some((key) => previous[key] !== next[key]);
   }
-  function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
+  function createWhaleSimulation(initialConfig, { seed = 0, onActivityChange } = {}) {
     let disposed = false;
     let activityTime = 0;
     let config = { ...initialConfig };
@@ -3549,7 +3600,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     const water = createWaterField();
     const atmosphere = createAtmosphereField({ seed });
     const rain = createRainField({ seed });
-    const activity = createActivityTracker();
+    const activity = createActivityTracker({ onChange: onActivityChange });
     return {
       get scene() {
         return scene;
@@ -4552,7 +4603,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     const scenerySeed = Math.floor(Math.random() * 4294967296) >>> 0;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reducedTransparency = window.matchMedia("(prefers-reduced-transparency: reduce)");
-    const simulation = createWhaleSimulation(config, { seed: scenerySeed });
+    const simulation = createWhaleSimulation(config, { seed: scenerySeed, onActivityChange: options.onActivityChange });
     let scene = simulation.scene;
     const { water, atmosphere, rain } = simulation;
     let sceneryPalette = createInkPalette(config.color);
