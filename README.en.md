@@ -39,6 +39,8 @@ Cancellation, stopping, disconnection, and disappearing tasks do not imply succe
 
 Start with **Scene preset** and choose Default, Rainy, Minimal, or Night voyage. Open **Advanced settings** for individual controls. A preset changes the draft and preview; **Save** applies it to the conversation background. **Reload saved values** discards the draft. See [Settings](#settings).
 
+**Resource mode** is independent of scene presets. Economy reduces continuous scheduling and internal integration while keeping task-prompt time independent. Full resource benefits and energy savings remain unmeasured. See the [three-condition method](./docs/measurement.en.md) and [local evidence status](./docs/resource-report-status.md).
+
 > Inspired by [ascii-sharks](https://github.com/stackedlol/ascii-sharks). Thanks to the project for the original visual idea.
 
 Five whale species cruise, turn, and glide through the conversation page, seen from directly above. Their bodies consist of your text or ASCII characters chosen by shading. Whales are drawn locally, without image assets or external services.

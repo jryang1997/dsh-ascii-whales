@@ -18,6 +18,8 @@ The new assets use the formal plugin artifact in an isolated file fixture. The f
 
 The four GIF frames are still captures of successive simulated states, each held for 1.8 seconds. They are **not motion recordings**. The formal renderer remains static under reduced motion while state changes still redraw the badges. Build demo and Check demo are distinct background tasks. The session becomes idle after waiting; it never receives a success badge. Historical completed tasks are not injected as new results.
 
+资源档位实现已改变正式 client 构建。以下素材仍保留其生成时的身份，但源文件散列已漂移，不能标为当前构建截图。发布最终介绍前须按下方命令重新生成并核对清单。Resource-mode changes have changed the formal client build. These assets retain their recorded provenance and require regeneration before they represent current sources.
+
 ## 静态帧 / Still frames
 
 无需播放动图即可查看四个状态。

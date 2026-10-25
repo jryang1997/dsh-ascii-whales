@@ -5,7 +5,13 @@ import { createWorkMetrics } from '../src/work-metrics.js';
 const initialText = 'Deterministic simulated conversation. No model request. 阅读保护、滚动和固定文本用于受控测量。';
 const scroller = document.querySelector('[data-conversation-scroll]');
 const metrics = createWorkMetrics();
-let layer = null, config = null, initMs = null, errors = [], longTasks = [], raw = [], phaseStarted = 0;
+let layer = null, config = null, condition = null, initMs = null, errors = [], longTasks = [], raw = [], phaseStarted = 0;
+let schedulerCallbacks = { raf: 0, timer: 0 }, statusObservation = null;
+const observedMetrics = { ...metrics, end(name, started, cause) {
+  metrics.end(name, started, cause);
+  if (name === 'wakeup' && Object.hasOwn(schedulerCallbacks, cause)) schedulerCallbacks[cause]++;
+  if (name === 'draw' && cause === 'activity' && statusObservation) statusObservation.canvasMs = performance.now() - statusObservation.receivedAt;
+} };
 let longTaskObserver = null;
 window.addEventListener('error', event => errors.push(String(event.message)));
 window.addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
@@ -45,6 +51,7 @@ function scheduleFor(scenario, durationMs) {
 
 async function runPhase(scenario, durationMs) {
   metrics.reset();
+  schedulerCallbacks = { raf: 0, timer: 0 };
   longTasks = [];
   phaseStarted = performance.now();
   const plannedEvents = scheduleFor(scenario, durationMs), events = [];
@@ -75,7 +82,8 @@ async function runPhase(scenario, durationMs) {
   raw.push(final);
   return { durationMs: final.atMs, metrics: final.metrics, raw, events, plannedEvents,
     contentHash: final.contentHash, visibility: document.visibilityState, errors: [...errors],
-    longTasks: longTaskObserver ? [...longTasks] : null, environment: environment() };
+    longTasks: longTaskObserver ? [...longTasks] : null, environment: environment(),
+    schedulerCallbacks: { ...schedulerCallbacks }, effectiveResourceMode: condition === 'off' ? null : config.resourceMode };
 }
 
 window.__measurement = {
@@ -91,15 +99,41 @@ window.__measurement = {
       return card;
     }));
     scroller.scrollTop = 0;
-    config = normalizeConfig(options.config);
+    condition = options.condition;
+    if (!['off', 'standard', 'economy'].includes(condition)) throw new Error('Unknown condition');
+    config = normalizeConfig({ ...options.config, resourceMode: condition === 'economy' ? 'economy' : 'standard' });
     metrics.reset();
     errors = [];
-    layer = options.condition === 'standard' ? createWhaleLayer(document.querySelector('canvas'), config,
-      { metrics: options.observe === false ? null : metrics, seed: options.seed }) : null;
+    layer = condition !== 'off' ? createWhaleLayer(document.querySelector('canvas'), config,
+      { metrics: options.observe === false ? null : observedMetrics, seed: options.seed,
+        onActivityChange(value) {
+          document.querySelector('[data-task-summary]').textContent = value.entities.map(entity => `${entity.label} ${entity.kind}`).join('; ');
+          if (statusObservation) statusObservation.textMs = performance.now() - statusObservation.receivedAt;
+        } }) : null;
     initMs = performance.now() - started;
     return { config, initMs, metrics: metrics.snapshot(), environment: environment(), initialContentHash: hashText(scroller.textContent) };
   },
   runPhase, snapshot, environment,
+  async statusProbe({ burst = false, paused = false } = {}) {
+    if (!layer) return null;
+    const saved = config;
+    if (paused) layer.update({ ...config, speed: 0 });
+    const activity = kind => ({ scope: 'measurement', entities: [{ key: 'session:measurement', type: 'session', label: 'Deterministic fixture task', kind }] });
+    layer.setActivity(activity('running'));
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    metrics.reset();
+    statusObservation = { receivedAt: performance.now(), textMs: null, canvasMs: null };
+    layer.setActivity(activity('waiting'));
+    if (burst) for (let i = 0; i < 50; i++) layer.setActivity(activity(i % 2 ? 'waiting' : 'running'));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const result = { ...statusObservation, burst, paused, metrics: metrics.snapshot(),
+      summary: document.querySelector('[data-task-summary]').textContent,
+      endpoint: 'fixture synchronous DOM text commit and actual renderer draw completion; not DSH React or screen reader' };
+    statusObservation = null;
+    layer.setActivity({ scope: 'measurement', entities: [] });
+    if (paused) layer.update(saved);
+    return result;
+  },
   image() {
     const canvas = document.querySelector('canvas'), data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
     let painted = 0;
