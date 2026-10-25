@@ -1,6 +1,6 @@
 # 听写时鲸群聚集（dictate × whales 彩蛋）研究
 
-状态：研究结论与实现设计，未实现。日期 2026-10-25。
+状态：研究结论与实现设计；实现与验证见文末「实施与验证」。日期 2026-10-25。
 范围：触发侧 `dsh-hold-to-dictate`（`C:\Users\Jerry\Desktop\dsh_voice\dsh-hold-to-dictate`）与表现侧本仓库。
 原始证据在本地 `.scratch/research/bridge/findings.md`、`.scratch/research/motion/findings.md`（未随仓库发布）；运动原型只存在于 `.scratch/research/motion/proto/`，不是产品代码。
 配套研究：[DSH 插件共享脚手架](./PLUGIN-KIT-RESEARCH.md)。
@@ -275,3 +275,7 @@ v1 建议**不加新配置项**：只受总开关 `enabled`、`pauseOnScroll`、
 - 独立预览页用 `__previewTest.dictation(state, level)` 对照静音与高音量：高音量时输入框周围出现额外的 `~`/`·`/`;` 声浪字形，静音时没有；done 后声浪停止并散开。
 - 未验证：真实桌面窗口（本轮测试跑在独立 web profile）、真实麦克风手势、hands-free、不同 DPR 与低端设备帧率；视口为 1440×900、场景为 8 头鲸。
 
+### 后续修正（2026-10-25 晚）
+
+- 用户重申两项必需行为后修正：每头鲸鱼都转向输入框并缓慢靠近（拥挤时排队等待空间，不再跳过个体）；声浪改为驱动波前的实际纵向位移，振幅随实时响度变化。当前行为以[听写联动规格](../specs/dictation-echo.zh.md)为准。
+- 重新验证：`pnpm verify` 405 项通过（47 个测试文件），生成物一致；真实 DSH 的指针、画面与麦克风交互尚未复测。
