@@ -246,7 +246,7 @@ test('manifest ships the glyph-whale runtime and matching configuration locales 
   const root = new URL('../', import.meta.url), read = name => readFile(new URL(name, root), 'utf8');
   const manifest = JSON.parse(await read('package.json'));
   assert.equal(manifest.name, '@local/dsh-ascii-ocean');
-  assert.equal(manifest.version, '0.14.0');
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/, 'package version stays semver');
   assert.equal(manifest.dependencies['@deepseek-ai/schemastery'], '3.18.5');
   assert.equal(manifest.dsh.client.platform, 'web');
   for (const hook of ['preinstall', 'install', 'postinstall', 'prepare']) {

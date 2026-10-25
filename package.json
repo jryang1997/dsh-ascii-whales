@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-ascii-ocean",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "description": "Five whale species with shaded cells or ASCII fill; every content card and the input box is frosted glass with whales blurred behind it, plus independent random dives, tail-stroke ripples, optional input-box avoidance, occasional random spouts, drifting ASCII wind and cloud shadows, continuous toroidal swimming, a whale-size slider, and in-place config updates that never restart the school.",
@@ -79,7 +79,7 @@
     }
   },
   "devDependencies": {
-    "@jryang1997/dsh-plugin-kit": "file:../dsh-plugin-kit",
+    "@jryang1997/dsh-plugin-kit": "https://codeload.github.com/jryang1997/dsh-plugin-kit/tar.gz/refs/tags/v1.0.0",
     "esbuild": "0.28.2"
   },
   "dshPluginKit": {
