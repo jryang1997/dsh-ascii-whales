@@ -86,6 +86,18 @@ The current published package is [v0.14.0](https://github.com/jryang1997/dsh-asc
 
 Rain is off by default, with intensity from 0 to 1 and a default of 0.45. Streaks follow a slowly changing sea breeze and change length and speed by layer; turning the sea wind off returns them to vertical rain. Landing splashes and spreading ripples are separate from the swimming wake switch. Rain uses the same reading, media and glass protection, and pauses when the page is hidden, the effect is paused or the system asks for reduced motion.
 
+## Dictation echo
+
+<p align="center">
+  <img src="./docs/images/dictation-echo.gif" width="960" alt="Real DSH page: while holding the composer, the school gathers just above it and the sea follows the voice">
+</p>
+
+<p align="center"><sub>Hold the composer to speak: the school gathers just above it, the sea moves with your level, and everyone disperses once the transcript is in. Recorded on a real DSH page.</sub></p>
+
+Requires the [dsh-hold-to-dictate](https://github.com/jryang1997/dsh-hold-to-dictate) plugin. **Dictation echo** is on by default in settings and can be switched off; with only the whale plugin installed it does nothing. While a take records, the school leaves its cruise route and waits just above the composer, and the sea sends irregular wavefronts from the input box: louder speech means stronger, denser and farther fronts; silence leaves the sea calm. When the take finishes (done) the school disperses. Reduced motion never gathers or advances the swell.
+
+See the [dictation gather research](./docs/research/DICTATION-GATHER.md) for the design trade-offs; the cross-plugin contract lives in the producer's ADR.
+
 ## Whales around your conversation
 
 Text edge effect offers Off, Glow, Soft blur and Frosted glass, with Frosted glass as the default. Off leaves whales around text untreated. Glow clears them; blur and frost retain translucent silhouettes behind a paragraph. This choice is independent of the content-box glass switch. Settings start with a large live preview, followed by Appearance, Whales, Reading and Sea cards. Switches control booleans, buttons select modes, and sliders adjust numeric values. While you scroll, the school keeps swimming and the text mask follows the new positions. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones.
@@ -144,7 +156,7 @@ Dragging a slider updates the static sample in the settings page. Select **Save*
 | Drawing style | Glyphs only, colored cells |
 | Fill content | Custom text, ASCII characters |
 | Whale colors | Ocean, Azure, Indigo, random color per whale |
-| Other switches | Show whales, Follow task activity, Quieter reading area |
+| Other switches | Show whales, Follow task activity, Dictation echo, Quieter reading area |
 
 Random color per whale assigns distinct hues from eight palettes and retains body shading. Painting, saving settings, resizing, and changing count, text, species or size preserve each whale's color. Reopening the background generates a new set.
 

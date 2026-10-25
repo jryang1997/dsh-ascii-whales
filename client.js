@@ -283,6 +283,260 @@
     return out;
   }
 
+  // src/dictation.js
+  var DICTATION_SCHEMA = 1;
+  var DICTATION_PHASES = Object.freeze(["idle", "listening", "recording", "processing", "done", "error"]);
+  var GATHER_PHASES = Object.freeze(["recording", "processing"]);
+  var EMPTY_DICTATION = Object.freeze({
+    schema: DICTATION_SCHEMA,
+    seq: 0,
+    phase: "idle",
+    since: 0,
+    sessionId: null,
+    locked: false,
+    cancelArmed: false,
+    polishing: false,
+    pending: false,
+    code: null
+  });
+  var GATHER = Object.freeze({
+    enterSeconds: 1.8,
+    exitSeconds: 0.8,
+    bobAlong: 3.5,
+    bobAcross: 2,
+    bobPeriod: 6.5,
+    swayPeriod: 9,
+    edge: 16,
+    clearance: 16,
+    topLimitRatio: 0.12,
+    holdPace: 0.14,
+    approachPace: 2.8,
+    // Arrival is measured in absolute pixels, clamped to the body length: a 500 px
+    // whale must not start crawling 300 px away from its slot.
+    slowRadius: Object.freeze({ floor: 90, cap: 170, body: 0.35 }),
+    rowStep: 44,
+    maxRows: 4
+  });
+  var finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
+  var clamp = (value, low, high) => value < low ? low : value > high ? high : value;
+  function normalizeDictation(snapshot) {
+    if (!snapshot || typeof snapshot !== "object" || snapshot.schema !== DICTATION_SCHEMA) return EMPTY_DICTATION;
+    const phase = DICTATION_PHASES.includes(snapshot.phase) ? snapshot.phase : "idle";
+    return Object.freeze({
+      schema: DICTATION_SCHEMA,
+      seq: finite(snapshot.seq, 0),
+      phase,
+      since: finite(snapshot.since, 0),
+      sessionId: typeof snapshot.sessionId === "string" && snapshot.sessionId ? snapshot.sessionId : null,
+      locked: snapshot.locked === true,
+      cancelArmed: snapshot.cancelArmed === true,
+      polishing: snapshot.polishing === true,
+      pending: snapshot.pending === true,
+      code: typeof snapshot.code === "string" && snapshot.code ? snapshot.code : null
+    });
+  }
+  function gatherActive(snapshot) {
+    return Boolean(snapshot) && GATHER_PHASES.includes(snapshot.phase);
+  }
+  function bodyReach(whale) {
+    const anatomy = whaleSpecies(whale?.species);
+    const unit = Math.max(0, finite(whale?.length, 0)) / 2.24;
+    const body = Math.max(0, finite(whale?.bodyRadius, 0));
+    const fluke = anatomy.fluke.span * unit;
+    const flipperTip = Math.abs(anatomy.flipper.tip[2]) * unit;
+    const flipperRoot = Math.abs(anatomy.flipper.root[2]) * unit + anatomy.flipper.width * unit;
+    const widest = Math.max(
+      fluke,
+      Math.max(body * 0.6, fluke * 0.45),
+      Math.max(body, flipperTip),
+      Math.max(body, flipperRoot),
+      body * 0.25
+    );
+    return widest + 12;
+  }
+  function avoidancePad(whales) {
+    let radius = 0, reach = 0, length = 0;
+    for (const whale of whales) {
+      radius = Math.max(radius, finite(whale.bodyRadius, 0));
+      reach = Math.max(reach, bodyReach(whale));
+      length = Math.max(length, finite(whale.length, 0));
+    }
+    const rectangle = Math.max(26, 22 + 0.35 * radius);
+    const steering = Math.max(48, reach * 2, length * 0.14);
+    return rectangle + steering;
+  }
+  function personalSpace(a, b) {
+    return 0.53 * (finite(a.length, 0) + finite(b.length, 0)) * 1.18;
+  }
+  function layoutRow(entries, left, right) {
+    if (!entries.length) return [];
+    const width = right - left;
+    if (!(width > 0)) return null;
+    const centers = new Array(entries.length);
+    const first = left + Math.max(20, entries[0].whale.length * 0.28);
+    centers[0] = first;
+    for (let i = 1; i < entries.length; i += 1) {
+      centers[i] = centers[i - 1] + personalSpace(entries[i - 1].whale, entries[i].whale);
+    }
+    const last = centers[centers.length - 1];
+    const tail = Math.max(20, entries[entries.length - 1].whale.length * 0.28);
+    if (last + tail > right) return null;
+    return centers;
+  }
+  function gatherGeometry({ card, whales, width, height, composerAvoid = false } = {}) {
+    if (!card || !(card.width > 0) || !(card.height > 0) || !Array.isArray(whales) || !whales.length) return null;
+    if (!(width > 0) || !(height > 0)) return null;
+    const topLimit = Math.max(24, height * GATHER.topLimitRatio);
+    const pad = composerAvoid ? avoidancePad(whales) : 0;
+    const spanL = Math.max(GATHER.edge, card.left - card.width * 0.14);
+    const spanR = Math.min(width - GATHER.edge, card.left + card.width * 1.14);
+    if (!(spanR - spanL > 60)) return null;
+    const order = whales.map((whale, index) => ({ whale, index, x: finite(whale.x, 0) })).sort((a, b) => a.x - b.x || a.index - b.index);
+    const clear = order.map(({ whale }) => bodyReach(whale) + GATHER.bobAlong + GATHER.clearance + pad + Math.min(48, whale.length * 0.12));
+    for (let i = 0; i < order.length; i += 1) if (card.top - clear[i] < topLimit) return null;
+    const centreX = card.left + card.width / 2;
+    const facing = (whale) => {
+      const inward = whale.x < centreX ? 0 : Math.PI;
+      const current = finite(whale.heading, inward);
+      const turn2 = Math.abs(Math.atan2(Math.sin(inward - current), Math.cos(inward - current)));
+      if (turn2 <= Math.PI / 2) return inward;
+      return Math.cos(current) >= 0 ? 0 : Math.PI;
+    };
+    const rows = [];
+    let rest = order;
+    while (rest.length && rows.length < GATHER.maxRows) {
+      let best = null;
+      for (let take = 1; take <= rest.length; take += 1) {
+        const row = rest.slice(0, take);
+        const centers = layoutRow(row, spanL, spanR);
+        if (!centers) break;
+        best = { row, centers };
+      }
+      if (!best) return null;
+      rows.push(best);
+      rest = rest.slice(best.row.length);
+    }
+    if (rest.length) return null;
+    const slots = new Array(whales.length).fill(null);
+    const rowY = [];
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const { row, centers } = rows[rowIndex];
+      const ownClear = Math.max(...row.map((entry) => clear[order.indexOf(entry)]));
+      let y = card.top - ownClear;
+      for (let near = 0; near < rowIndex; near += 1) {
+        for (const entry of row) {
+          for (const other of rows[near].row) {
+            const dx = Math.abs(centers[row.indexOf(entry)] - rows[near].centers[rows[near].row.indexOf(other)]);
+            const space = personalSpace(entry.whale, other.whale);
+            y = Math.min(y, rowY[near] - Math.sqrt(Math.max(0, space * space - dx * dx)));
+          }
+        }
+      }
+      if (y < topLimit) return null;
+      rowY[rowIndex] = y;
+      row.forEach((entry, i) => {
+        slots[entry.index] = { x: centers[i], y, heading: facing(entry.whale), row: rowIndex };
+      });
+    }
+    return slots;
+  }
+  function holdOffset(slot, age, seed = 0) {
+    const along = Math.sin(age * Math.PI * 2 / GATHER.bobPeriod + seed) * GATHER.bobAlong;
+    const across = Math.sin(age * Math.PI * 2 / GATHER.swayPeriod + seed * 1.37) * GATHER.bobAcross;
+    return {
+      x: Math.cos(slot.heading) * along - Math.sin(slot.heading) * across,
+      y: Math.sin(slot.heading) * along + Math.cos(slot.heading) * across
+    };
+  }
+  function stepEngage(engage, active, delta2) {
+    const current = clamp(finite(engage, 0), 0, 1);
+    const step = Math.max(0, finite(delta2, 0));
+    if (!(step > 0)) return current;
+    const target = active ? 1 : 0;
+    const rate = target > current ? 1 / GATHER.enterSeconds : 1 / GATHER.exitSeconds;
+    return clamp(current + Math.sign(target - current) * rate * step, 0, 1);
+  }
+  function createDictationBridge() {
+    let service = null;
+    let unsubscribe = null;
+    let fallback = null;
+    let snapshot = EMPTY_DICTATION;
+    const listeners = /* @__PURE__ */ new Set();
+    const presenceListeners = /* @__PURE__ */ new Set();
+    const notify = () => {
+      for (const listener of [...listeners]) listener();
+    };
+    const notifyPresence = () => {
+      for (const listener of [...presenceListeners]) listener();
+    };
+    const publish = () => {
+      snapshot = service && typeof service.getSnapshot === "function" ? normalizeDictation(service.getSnapshot()) : EMPTY_DICTATION;
+      notify();
+    };
+    const onFallback = (event) => {
+      const detail = event && event.detail;
+      if (!detail || detail.schema !== DICTATION_SCHEMA) return;
+      snapshot = normalizeDictation(detail);
+      notify();
+    };
+    const dropFallback = () => {
+      if (!fallback) return;
+      fallback();
+      fallback = null;
+    };
+    return {
+      attach(next) {
+        if (!next || typeof next.subscribe !== "function" || typeof next.getSnapshot !== "function") {
+          return () => {
+          };
+        }
+        service = next;
+        unsubscribe = typeof next.subscribe === "function" ? next.subscribe(publish) : null;
+        dropFallback();
+        publish();
+        notifyPresence();
+        return () => {
+          if (service !== next) return;
+          if (typeof unsubscribe === "function") unsubscribe();
+          unsubscribe = null;
+          service = null;
+          snapshot = EMPTY_DICTATION;
+          notify();
+          notifyPresence();
+        };
+      },
+      attachFallback() {
+        if (typeof document === "undefined" || typeof CustomEvent !== "function") return () => {
+        };
+        if (fallback) return fallback;
+        document.addEventListener("dsh:dictation", onFallback);
+        document.dispatchEvent(new CustomEvent("dsh:dictation:request"));
+        fallback = () => {
+          document.removeEventListener("dsh:dictation", onFallback);
+        };
+        return fallback;
+      },
+      hasProvider() {
+        return service !== null;
+      },
+      level() {
+        const value = service && typeof service.level === "function" ? service.level() : 0;
+        return clamp(finite(value, 0), 0, 1);
+      },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      subscribePresence(listener) {
+        presenceListeners.add(listener);
+        return () => presenceListeners.delete(listener);
+      },
+      getSnapshot() {
+        return snapshot;
+      }
+    };
+  }
+
   // src/motion.js
   var motionTick = 1 / 60;
   var DIVE_WATERLINE = 0.1;
@@ -914,9 +1168,42 @@
   function motionIntegrate(scene, speed) {
     const whales = scene.whales, width = scene.width, height = scene.height;
     const size2 = motionLimit(motionFinite(scene.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling);
+    const directive = scene.dictation && typeof scene.dictation === "object" ? scene.dictation : null;
+    const wasEngaging = directive ? directive.engage > 0 : false;
+    if (directive) {
+      if (directive.anchor) {
+        const key = [
+          width,
+          height,
+          whales.length,
+          Math.round(directive.anchor.left),
+          Math.round(directive.anchor.top),
+          Math.round(directive.anchor.width),
+          Math.round(directive.anchor.height),
+          directive.composerAvoid === true ? 1 : 0,
+          whales.map((whale) => Math.round(whale.length)).join(",")
+        ].join("|");
+        if (directive.layoutKey !== key) {
+          directive.layoutKey = key;
+          directive.slots = gatherGeometry({
+            card: directive.anchor,
+            whales,
+            width,
+            height,
+            composerAvoid: directive.composerAvoid === true
+          });
+        }
+      }
+      const wants = directive.active === true && Boolean(directive.anchor) && Array.isArray(directive.slots);
+      directive.engage = stepEngage(directive.engage, wants, motionTick * speed);
+    }
+    const holdEngage = directive ? directive.engage : 0;
+    const holdSlots = directive && Array.isArray(directive.slots) ? directive.slots : null;
     for (let i = 0; i < whales.length; i++) {
       const whale = whales[i], previousLength = whale.length;
-      motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
+      if (!(holdEngage > 0 && holdSlots && holdSlots[i])) {
+        motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
+      }
       motionGeometry(whale, width, height, whales.length, size2);
       const nodes = whale.rig?.nodes, ratio = whale.length / previousLength;
       if (nodes && Number.isFinite(ratio) && ratio !== 1) {
@@ -939,8 +1226,8 @@
         const relativeSpeedSquared = dvx * dvx + dvy * dvy;
         const intercept = relativeSpeedSquared > 1e-3 ? motionLimit(-(dx * dvx + dy * dvy) / relativeSpeedSquared, 0, 2.6 / Math.max(0.3, speed)) : 0;
         const contact = motionBodyContact(a, b, intercept, width, height);
-        const personalSpace = (a.length + b.length) * 0.53;
-        const centerThreat = Math.max(0, 1 - distance / Math.max(1, personalSpace));
+        const personalSpace2 = (a.length + b.length) * 0.53;
+        const centerThreat = Math.max(0, 1 - distance / Math.max(1, personalSpace2));
         const clearance = a.bodyRadius + b.bodyRadius + Math.min(a.length, b.length) * 0.12;
         const bodyThreat = Math.max(0, 1 - contact.distance / Math.max(1, clearance));
         if (centerThreat <= 0 && bodyThreat <= 0) continue;
@@ -971,11 +1258,19 @@
       const anatomy = whaleSpecies(whale.species);
       const activityKind = whale.activity?.kind;
       const activityPace = activityKind === "running" ? 1.35 : activityKind === "waiting" ? 0.32 : activityKind === "idle" ? 0.62 : 1;
+      const holdSlot = holdEngage > 0 && holdSlots ? holdSlots[i] || null : null;
       const travelTick = motionTick * speed;
       state.age += travelTick;
-      motionPrepareDive(whale, i, scene.diveSeed, anatomy, travelTick, activityKind === "waiting");
+      motionPrepareDive(
+        whale,
+        i,
+        scene.diveSeed,
+        anatomy,
+        travelTick,
+        activityKind === "waiting" || holdEngage > 0
+      );
       const bearingHold = motionDiveBearingHold(state.dive, state.age);
-      if (state.age >= state.targetDue || Math.hypot(state.targetX - whale.x, state.targetY - whale.y) < Math.max(8, whale.length * 0.14)) {
+      if (holdEngage <= 0 && (state.age >= state.targetDue || Math.hypot(state.targetX - whale.x, state.targetY - whale.y) < Math.max(8, whale.length * 0.14))) {
         motionTarget(whale, width, height, false, obstacles);
       }
       if (state.age >= state.wanderDue) {
@@ -988,6 +1283,19 @@
       const forwardX = Math.cos(whale.heading), forwardY = Math.sin(whale.heading);
       const nearSeam = Math.min(whale.x, width - whale.x, whale.y, height - whale.y) < whale.length * 0.6 + motionHullReach(whale);
       let seamBrake = 0;
+      const holdDistance = holdSlot ? Math.hypot(
+        motionTorusDelta(holdSlot.x - whale.x, width),
+        motionTorusDelta(holdSlot.y - whale.y, height)
+      ) : 0;
+      const slowRadius = motionLimit(
+        whale.length * GATHER.slowRadius.body,
+        GATHER.slowRadius.floor,
+        GATHER.slowRadius.cap
+      );
+      const holdCloseness = holdSlot ? motionLimit(1 - holdDistance / slowRadius, 0, 1) : 0;
+      const holdBrake = holdSlot ? motionLimit(holdDistance / Math.max(1, slowRadius * 0.6), 0.06, 1) : 1;
+      const holdPace = holdSlot ? GATHER.holdPace + (GATHER.approachPace - GATHER.holdPace) * (1 - holdCloseness) : 1;
+      const pace = activityPace * (1 - holdEngage) + holdPace * holdEngage;
       if (obstacles && obstacles.length) {
         const band = Math.max(48, motionHullReach(whale) * 2, whale.length * 0.14);
         let caution = 0;
@@ -999,7 +1307,7 @@
             const closing = contact ? -(whale.vx * contact.nx + whale.vy * contact.ny) : 0;
             if (contact && closing > 0.1) {
               const gap = Math.max(0, -contact.depth);
-              const cruise2 = state.cruise * environmentSpeed * speed * activityPace;
+              const cruise2 = state.cruise * environmentSpeed * speed * pace;
               const safePace = Math.max(cruise2 * 0.15, gap / 2.8);
               seamBrake = Math.max(seamBrake, 1 - motionLimit(safePace / Math.max(1, cruise2), 0.15, 1));
             }
@@ -1019,20 +1327,34 @@
       }
       let desiredX = dx / targetDistance * 1.5 + forwardX * 0.85 + Math.cos(whale.heading + state.wander) * 0.35 + force.x;
       let desiredY = dy / targetDistance * 1.5 + forwardY * 0.85 + Math.sin(whale.heading + state.wander) * 0.35 + force.y;
-      const turnLimit = state.agility * Math.sqrt(speed);
-      const cruise = state.cruise * environmentSpeed * speed * activityPace;
+      const alignTurn = holdSlot ? motionLimit(1 - holdDistance / Math.max(1, whale.length * 0.35), 0, 1) : 0;
+      const turnLimit = state.agility * Math.sqrt(speed) * (1 + 1.4 * holdEngage + 1.8 * holdEngage * alignTurn);
+      const cruise = state.cruise * environmentSpeed * speed * pace;
       const lookAhead = whale.length * 0.35 + cruise / Math.max(0.08, turnLimit);
       const lookX = whale.x + forwardX * lookAhead, lookY = whale.y + forwardY * lookAhead;
-      if (lookX < 0 || lookX > width) {
+      if (holdEngage <= 0 && (lookX < 0 || lookX > width)) {
         desiredX = forwardX * 1.7 + Math.cos(whale.heading + state.wander) * 0.2 + force.x;
       }
-      if (lookY < 0 || lookY > height) {
+      if (holdEngage <= 0 && (lookY < 0 || lookY > height)) {
         desiredY = forwardY * 1.7 + Math.sin(whale.heading + state.wander) * 0.2 + force.y;
       }
       if (bearingHold > 0) {
         const routine = 1 - bearingHold;
         desiredX = (desiredX - force.x) * routine + forwardX * 2.7 * bearingHold + force.x;
         desiredY = (desiredY - force.y) * routine + forwardY * 2.7 * bearingHold + force.y;
+      }
+      if (holdSlot && holdEngage > 0) {
+        const bob = holdOffset(holdSlot, state.age, i * 1.37);
+        const targetX = holdSlot.x + bob.x, targetY = holdSlot.y + bob.y;
+        const toX = motionTorusDelta(targetX - whale.x, width);
+        const toY = motionTorusDelta(targetY - whale.y, height);
+        const distance = Math.hypot(toX, toY) || 1;
+        const close = motionLimit(1 - distance / Math.max(1, whale.length * 0.35), 0, 1);
+        const wanted = motionAngle(whale.heading, Math.atan2(toY, toX)) * (1 - close) + motionAngle(whale.heading, holdSlot.heading) * close;
+        const strength = 0.9 + 1.6 * (1 - close);
+        desiredX = desiredX * (1 - holdEngage) + Math.cos(whale.heading + wanted) * strength * holdEngage;
+        desiredY = desiredY * (1 - holdEngage) + Math.sin(whale.heading + wanted) * strength * holdEngage;
+        force.caution = Math.max(force.caution, close * 0.45);
       }
       let steeringError = motionAngle(whale.heading, Math.atan2(desiredY, desiredX));
       if (Math.abs(steeringError) > 2.5) {
@@ -1044,7 +1366,7 @@
       whale.turn += (requestedTurn - whale.turn) * (1 - Math.exp(-motionTick * turnResponse));
       whale.turn = motionLimit(whale.turn, -turnLimit, turnLimit);
       whale.heading += whale.turn * motionTick;
-      const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - seamBrake) * (1 - 0.12 * Math.abs(whale.turn) / Math.max(0.01, turnLimit));
+      const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - seamBrake) * (1 - 0.12 * Math.abs(whale.turn) / Math.max(0.01, turnLimit)) * (holdEngage > 0 ? 1 - holdEngage * (1 - holdBrake) : 1);
       whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + seamBrake * 3.2)));
       whale.vx = Math.cos(whale.heading) * whale.speed;
       whale.vy = Math.sin(whale.heading) * whale.speed;
@@ -1061,10 +1383,13 @@
         return t * t * (3 - 2 * t);
       };
       const envelope = gait < active ? easeStroke(gait / 1.1) * easeStroke((active - gait) / 1.1) : 0;
-      const activityStroke = activityKind === "running" ? 0.35 + envelope * 0.65 : envelope * (activityKind === "waiting" ? 0.35 : activityKind === "idle" ? 0.6 : 1);
+      const activityStroke = (activityKind === "running" ? 0.35 + envelope * 0.65 : envelope * (activityKind === "waiting" ? 0.35 : activityKind === "idle" ? 0.6 : 1)) * (1 - 0.82 * holdEngage);
       state.stroke += (activityStroke - state.stroke) * (1 - Math.exp(-travelTick * 2.2));
       state.wave += travelTick * anatomy.beat * (0.7 + 0.3 * Math.min(1.4, Math.sqrt(effort))) * (0.08 + 0.92 * state.stroke);
       motionStepDive(whale);
+    }
+    if (directive && wasEngaging && directive.engage === 0) {
+      for (let i = 0; i < whales.length; i++) motionTarget(whales[i], width, height, false, obstacles);
     }
     scene.time += motionTick;
   }
@@ -1407,6 +1732,10 @@
     whaleSize: { kind: "number", min: 0.55, max: 1.55, step: 0.05, default: 1 },
     color: { kind: "enum", values: ["ocean", "azure", "indigo", "rainbow"], default: "ocean" },
     activity: { kind: "boolean", default: true },
+    // Hold-to-talk decoration. On by default because it only does anything while
+    // the dictation plugin is installed and its bridge is live; that is what makes
+    // the easter egg discoverable, and the switch is still one click away.
+    dictationEcho: { kind: "boolean", default: true },
     quietCenter: { kind: "boolean", default: true },
     leftInset: { kind: "number", min: 0, max: 500, step: 1, default: 280 },
     readingEffect: { kind: "enum", values: ["none", "glow", "blur", "frost"], default: "frost" },
@@ -1431,10 +1760,10 @@
     pauseOnScroll: { kind: "boolean", default: false }
   });
   var DEFAULTS = Object.freeze(Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.default])));
-  var clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  var clamp2 = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   var mix = (a, b, t) => a + (b - a) * t;
   var smooth = (t) => {
-    t = clamp(t, 0, 1);
+    t = clamp2(t, 0, 1);
     return t * t * (3 - 2 * t);
   };
   var fract = (n) => n - Math.floor(n);
@@ -1443,7 +1772,7 @@
     const config = Object.fromEntries(Object.entries(FIELDS).map(([key, f]) => {
       let v = value[key];
       if (f.kind === "number") {
-        v = typeof v === "number" && Number.isFinite(v) ? clamp(v, f.min, f.max) : f.default;
+        v = typeof v === "number" && Number.isFinite(v) ? clamp2(v, f.min, f.max) : f.default;
         if (f.step === 1) v = Math.round(v);
       } else if (f.kind === "boolean") v = typeof v === "boolean" ? v : f.default;
       else if (f.kind === "enum") v = f.values.includes(v) ? v : f.default;
@@ -1474,7 +1803,7 @@
         const next = i + 1 < profile.length ? (profile[i + 1][1] - rb) / (profile[i + 1][0] - b) : slope;
         const ma = previous * slope > 0 ? 2 * previous * slope / (previous + slope) : 0;
         const mb = next * slope > 0 ? 2 * next * slope / (next + slope) : 0;
-        const t = clamp((x - a) / span, 0, 1), t2 = t * t, t3 = t2 * t;
+        const t = clamp2((x - a) / span, 0, 1), t2 = t * t, t3 = t2 * t;
         return Math.max(0, (2 * t3 - 3 * t2 + 1) * ra + (t3 - 2 * t2 + t) * span * ma + (-2 * t3 + 3 * t2) * rb + (t3 - t2) * span * mb);
       }
     }
@@ -1490,7 +1819,7 @@
   function flukeSurface(anatomy, side) {
     const { span, tipX, leadingX, trailingX, notch, width } = anatomy.fluke;
     return (u, angle) => {
-      u = clamp(u, 0, 1);
+      u = clamp2(u, 0, 1);
       angle *= -side;
       const leading = mix(leadingX, tipX, u * u) + 0.04 * Math.sin(Math.PI * u);
       const trailing = trailingX + notch * (1 - u) ** 6 + (tipX - trailingX) * u ** 1.5;
@@ -1526,7 +1855,7 @@
     bz /= crossLength;
     const cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
     return (u, angle) => {
-      const taper = Math.sin(Math.PI * clamp(u, 0, 1)) ** 0.7;
+      const taper = Math.sin(Math.PI * clamp2(u, 0, 1)) ** 0.7;
       const broad = width * taper * Math.cos(angle), thin = thickness * taper * Math.sin(angle);
       return {
         x: start[0] + dx * u + bx * broad + cx * thin,
@@ -1547,10 +1876,10 @@
   }
   function createScene(count, text = DEFAULTS.text, species = DEFAULTS.species, whaleSize = DEFAULTS.whaleSize, colorSeed = 0) {
     const alphabet = glyphSequence(text);
-    count = clamp(Math.round(count), 1, 8);
+    count = clamp2(Math.round(count), 1, 8);
     colorSeed = typeof colorSeed === "number" && Number.isFinite(colorSeed) ? colorSeed >>> 0 : 0;
     const colorOrder = whaleColorOrder(colorSeed);
-    const size2 = clamp(
+    const size2 = clamp2(
       typeof whaleSize === "number" && Number.isFinite(whaleSize) ? whaleSize : DEFAULTS.whaleSize,
       FIELDS.whaleSize.min,
       FIELDS.whaleSize.max
@@ -1916,7 +2245,7 @@
     return typeof length === "number" && Number.isFinite(length) ? length : 0;
   }
   function glyphOpacity(opacity, light, visibility, fade) {
-    return clamp(opacity * (0.9 + 0.1 * light) * visibility * fade, 0, 1);
+    return clamp2(opacity * (0.9 + 0.1 * light) * visibility * fade, 0, 1);
   }
   function fitCanvas(width, height, dpr) {
     const ratio = Math.min(2, Math.max(0.1, dpr || 1), Math.sqrt(12e6 / Math.max(1, width * height)));
@@ -1932,7 +2261,7 @@
     const vertical = edgeAttenuation(y, height) * edgeAttenuation(height - y, height);
     const horizontal = edgeAttenuation(x, side) * edgeAttenuation(width - x, side);
     const central = quietCenter ? 1 - 0.25 * Math.exp(-(((x / width - 0.5) / 0.29) ** 2)) * smooth(y / height / 0.18) : 1;
-    return clamp(vertical * horizontal * central, 0, 1);
+    return clamp2(vertical * horizontal * central, 0, 1);
   }
 
   // src/config-editor.js
@@ -2290,10 +2619,10 @@
   // src/wake.js
   var WAKE_MAX_PACKETS = 96;
   var WAKE_MAX_GLYPHS = 1200;
-  var finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
-  var clamp2 = (value, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, value));
+  var finite2 = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
+  var clamp3 = (value, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, value));
   var smooth2 = (value) => {
-    const t = clamp2(value);
+    const t = clamp3(value);
     return t * t * (3 - 2 * t);
   };
   var wrap = (value, span) => (value % span + span) % span;
@@ -2316,7 +2645,7 @@
       const dx = nodes[end - 2] - x, dy = nodes[end - 1] - y;
       if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(dx) && Number.isFinite(dy) && Math.hypot(dx, dy) > 1e-3) return { x, y, angle: Math.atan2(dy, dx) };
     }
-    const angle = finite(whale.heading), length = Math.max(0, finite(whale.length));
+    const angle = finite2(whale.heading), length = Math.max(0, finite2(whale.length));
     return {
       x: whale.x - Math.cos(angle) * length * 0.54,
       y: whale.y - Math.sin(angle) * length * 0.54,
@@ -2336,10 +2665,10 @@
     return field;
   }
   function stepWake(field, scene, elapsed, options = {}) {
-    const dt = finite(elapsed);
+    const dt = finite2(elapsed);
     if (!field || typeof field !== "object" || !(dt > 0)) return field;
     if (!Array.isArray(field.packets) || !(field.tracks instanceof Map)) resetWakeField(field);
-    const width = finite(scene?.width), height = finite(scene?.height);
+    const width = finite2(scene?.width), height = finite2(scene?.height);
     if (width > 0 && height > 0 && field.width > 0 && (field.width !== width || field.height !== height)) resetWakeField(field);
     for (let i = field.packets.length - 1; i >= 0; i--) {
       const packet = field.packets[i];
@@ -2351,7 +2680,7 @@
     }
     field.width = width;
     field.height = height;
-    const limit = Math.floor(clamp2(finite(options?.maxWakePackets, WAKE_MAX_PACKETS), 0, WAKE_MAX_PACKETS));
+    const limit = Math.floor(clamp3(finite2(options?.maxWakePackets, WAKE_MAX_PACKETS), 0, WAKE_MAX_PACKETS));
     while (field.packets.length > limit) field.packets.shift();
     const whales = Array.isArray(scene?.whales) ? scene.whales : [];
     const live = /* @__PURE__ */ new Set();
@@ -2361,7 +2690,7 @@
       const key = identity(whale, i), tail = trailingFrame(whale), motion = whale._motion;
       live.add(key);
       const previous = field.tracks.get(key);
-      const radius = clamp2(finite(whale.bodyRadius, finite(whale.length, 120) * 0.08), 4, 90);
+      const radius = clamp3(finite2(whale.bodyRadius, finite2(whale.length, 120) * 0.08), 4, 90);
       const current = {
         x: whale.x,
         y: whale.y,
@@ -2373,14 +2702,14 @@
         sequence: previous?.sequence ?? 0
       };
       field.tracks.set(key, current);
-      const submergence = clamp2(finite(motion?.submergence));
+      const submergence = clamp3(finite2(motion?.submergence));
       const diving = motion?.dive && Number.isFinite(motion.dive.startedAt);
       const resized = previous && Math.abs(previous.radius - radius) > Math.max(0.5, previous.radius * 0.05);
       if (!previous || dt > 0.5 || diving || submergence >= 0.12 || resized) continue;
       const dx = delta(whale.x - previous.x, width), dy = delta(whale.y - previous.y, height);
       const distance = Math.hypot(dx, dy);
       const tailDX = delta(tail.x - previous.tailX, width), tailDY = delta(tail.y - previous.tailY, height);
-      const pace = Math.max(1, Math.abs(finite(whale.speed)), Math.abs(finite(motion?.cruise)));
+      const pace = Math.max(1, Math.abs(finite2(whale.speed)), Math.abs(finite2(motion?.cruise)));
       if (distance > Math.max(3, pace * dt * 2.5) || Math.hypot(tailDX, tailDY) > Math.max(6, distance * 4 + radius * 0.3)) continue;
       if (distance < 1e-4) {
         current.distance = previous.distance;
@@ -2388,12 +2717,12 @@
       }
       const speed = distance / dt;
       if (speed < 0.5) continue;
-      const spacing = clamp2(radius * 0.65, 10, 24), total = previous.distance + distance;
+      const spacing = clamp3(radius * 0.65, 10, 24), total = previous.distance + distance;
       const count = Math.floor(total / spacing);
       current.distance = total % spacing;
-      const strength = (1 - smooth2(submergence / 0.12)) * (0.28 + 0.72 * clamp2(speed / Math.max(12, radius * 0.8)));
+      const strength = (1 - smooth2(submergence / 0.12)) * (0.28 + 0.72 * clamp3(speed / Math.max(12, radius * 0.8)));
       for (let emitted = Math.max(0, count - 4); emitted < count && limit > 0; emitted++) {
-        const t = clamp2((spacing * (emitted + 1) - previous.distance) / distance);
+        const t = clamp3((spacing * (emitted + 1) - previous.distance) / distance);
         const seed = seedAt(key, ++current.sequence);
         while (field.packets.length >= limit) field.packets.shift();
         field.packets.push({
@@ -2416,10 +2745,10 @@
   function visitWakePoints(field, options, paint) {
     const packets = field?.packets;
     if (!Array.isArray(packets) || typeof paint !== "function") return 0;
-    const width = finite(options?.width, field.width), height = finite(options?.height, field.height);
+    const width = finite2(options?.width, field.width), height = finite2(options?.height, field.height);
     if (!(width > 0 && height > 0)) return 0;
-    const cell = Math.max(2, (finite(options?.cellWidth, 11) + finite(options?.cellHeight, 13)) * 0.5);
-    const limit = Math.floor(clamp2(finite(options?.maxWakeGlyphs, WAKE_MAX_GLYPHS), 0, WAKE_MAX_GLYPHS));
+    const cell = Math.max(2, (finite2(options?.cellWidth, 11) + finite2(options?.cellHeight, 13)) * 0.5);
+    const limit = Math.floor(clamp3(finite2(options?.maxWakeGlyphs, WAKE_MAX_GLYPHS), 0, WAKE_MAX_GLYPHS));
     let drawn = 0;
     const emit = (x, y, glyph, alpha, light) => {
       if (drawn < limit && paint(wrap(x, width), wrap(y, height), glyph, alpha, light)) drawn++;
@@ -2438,12 +2767,12 @@
         packet.strength,
         packet.seed
       ].every(Number.isFinite)) continue;
-      const progress = clamp2(packet.age / Math.max(1e-3, packet.life));
-      const alpha = clamp2(packet.strength) * (1 - progress) ** 1.5 * (0.35 + 0.65 * smooth2(packet.age / 0.25));
+      const progress = clamp3(packet.age / Math.max(1e-3, packet.life));
+      const alpha = clamp3(packet.strength) * (1 - progress) ** 1.5 * (0.35 + 0.65 * smooth2(packet.age / 0.25));
       if (!(alpha > 0.015)) continue;
       const fx = Math.cos(packet.angle), fy = Math.sin(packet.angle), nx = -fy, ny = fx;
       const spread = packet.age * (packet.radius * 0.28 + packet.speed * 0.14);
-      const samples = Math.floor(clamp2(Math.ceil(packet.span / (cell * 0.8)), 4, 12));
+      const samples = Math.floor(clamp3(Math.ceil(packet.span / (cell * 0.8)), 4, 12));
       for (const side of [-1, 1]) for (let i = 0; i < samples && drawn < limit; i++) {
         if ((i + Math.floor(packet.seed * 17)) % 7 === 0) continue;
         const u = i / (samples - 1), along = (0.5 - u) * packet.span;
@@ -3318,9 +3647,9 @@
   var MAX_IMPACTS = 160;
   var RESPONSE = 0.26;
   var storage = /* @__PURE__ */ new WeakMap();
-  var finite2 = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
-  var clamp3 = (value, low = 0, high = 1) => Math.max(low, Math.min(high, value));
-  var size = (value) => clamp3(finite2(value), 0, 1e7);
+  var finite3 = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
+  var clamp4 = (value, low = 0, high = 1) => Math.max(low, Math.min(high, value));
+  var size = (value) => clamp4(finite3(value), 0, 1e7);
   function hash(id, seed, salt) {
     let value = Math.imul(id | 0, 374761393) ^ Math.imul(seed | 0, 668265263) ^ Math.imul(salt | 0, 1442695041);
     value = Math.imul(value ^ value >>> 13, 1274126177);
@@ -3328,10 +3657,10 @@
   }
   function createRainField({ seed = 0, width = 0, height = 0, intensity = 0 } = {}) {
     const field = {
-      seed: finite2(seed) >>> 0,
+      seed: finite3(seed) >>> 0,
       width: size(width),
       height: size(height),
-      intensity: clamp3(finite2(intensity)),
+      intensity: clamp4(finite3(intensity)),
       time: 0,
       drops: [],
       impacts: []
@@ -3390,8 +3719,8 @@
     vector.x = 0;
     vector.y = 0;
     if (options.wind && options.atmosphere) atmosphereWindAt(options.atmosphere, drop.x, drop.y, vector);
-    const side = clamp3(finite2(vector.x) * 3.2, -drop.speed * 0.8, drop.speed * 0.8);
-    const down = Math.max(drop.speed * 0.5, drop.speed + finite2(vector.y) * 3.2);
+    const side = clamp4(finite3(vector.x) * 3.2, -drop.speed * 0.8, drop.speed * 0.8);
+    const down = Math.max(drop.speed * 0.5, drop.speed + finite3(vector.y) * 3.2);
     const normal = drop.speed / Math.hypot(side, down);
     const targetX = side * normal, targetY = down * normal;
     if (initialize) {
@@ -3486,7 +3815,7 @@
   function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere } = {}) {
     const state = storage.get(field);
     if (!state || !(Number.isFinite(delta2) && delta2 > 0 && field.width > 0 && field.height > 0)) return field;
-    const target = enabled ? clamp3(finite2(intensity, 0.45)) : 0, options = { wind, atmosphere };
+    const target = enabled ? clamp4(finite3(intensity, 0.45)) : 0, options = { wind, atmosphere };
     if (delta2 > 2) advance(field, state, delta2 - 2, options, target, false);
     const window2 = Math.min(delta2, 2), steps = Math.ceil(window2 * 60), dt = window2 / steps;
     for (let i = 0; i < steps; i++) advance(field, state, dt, options, target, true);
@@ -3505,9 +3834,9 @@
         if (fade) {
           mask = Math.min(
             mask,
-            clamp3(finite2(fade(px, py))),
-            clamp3(finite2(fade(px + nx, py + ny))),
-            clamp3(finite2(fade(px - nx, py - ny)))
+            clamp4(finite3(fade(px, py))),
+            clamp4(finite3(fade(px + nx, py + ny))),
+            clamp4(finite3(fade(px - nx, py - ny)))
           );
           if (mask <= 0) return 0;
         }
@@ -3530,11 +3859,11 @@
     const result = { drops: 0, impacts: 0, glyphs: 0 }, state = storage.get(field);
     if (!state || !target || typeof target.beginPath !== "function" || typeof target.moveTo !== "function" || typeof target.lineTo !== "function" || typeof target.stroke !== "function") return result;
     const width = size(options.width ?? field.width), height = size(options.height ?? field.height);
-    const opacity = clamp3(finite2(options.opacity, 0.6));
+    const opacity = clamp4(finite3(options.opacity, 0.6));
     if (!(width > 0 && height > 0 && field.width > 0 && field.height > 0 && opacity > 0)) return result;
     const phase = options.phase, reduced = !!options.reduced;
-    const sx = width / field.width, sy = height / field.height, ratio = clamp3(finite2(options.ratio, 1), 0.1, 8);
-    const cellHeight = clamp3(finite2(options.cellHeight, 13), 5, 32), cellWidth = clamp3(finite2(options.cellWidth, 11), 5, 32);
+    const sx = width / field.width, sy = height / field.height, ratio = clamp4(finite3(options.ratio, 1), 0.1, 8);
+    const cellHeight = clamp4(finite3(options.cellHeight, 13), 5, 32), cellWidth = clamp4(finite3(options.cellWidth, 11), 5, 32);
     const palette = options.palette || createInkPalette("ocean"), segments = state.segments;
     const fade = typeof options.fade === "function" ? options.fade : null;
     const alpha = target.globalAlpha, ink = target.strokeStyle, lineWidth = target.lineWidth;
@@ -3544,7 +3873,7 @@
       target.lineJoin = "round";
       if (!phase || phase === "surface") for (const impact of field.impacts) {
         if (reduced && impact.dropId % 4) continue;
-        const progress = clamp3(impact.age / impact.life);
+        const progress = clamp4(impact.age / impact.life);
         const envelope = Math.min(1, impact.age / 0.035) * (1 - progress) ** 1.7;
         const radius = (1 + impact.radius * (1 - (1 - progress) ** 1.6)) * cellWidth / 11;
         const x = impact.x * sx, y = impact.y * sy;
@@ -3603,11 +3932,296 @@
     return result;
   }
 
+  // src/voice-sea.js
+  var VOICE_SEA_TAU = Math.PI * 2;
+  var VOICE_SEA_ATTACK_SECONDS = 0.08;
+  var VOICE_SEA_RELEASE_SECONDS = 0.4;
+  var VOICE_SEA_MAX_RINGS = 6;
+  var VOICE_SEA_MAX_GLYPHS = 180;
+  var VOICE_SEA_LEVEL_FLOOR = 0.05;
+  var VOICE_SEA_SPAWN_BASE = 1.4;
+  var VOICE_SEA_SPAWN_GAIN = 7.2;
+  var VOICE_SEA_MIN_LIFE = 0.8;
+  var VOICE_SEA_MAX_LIFE = 1.6;
+  var VOICE_SEA_RADIUS_FRACTION = 0.55;
+  var VOICE_SEA_RADIUS_FLOOR = 24;
+  var VOICE_SEA_MIN_RING_RADIUS = 12;
+  var VOICE_SEA_MAX_GLYPHS_PER_RING = 32;
+  var VOICE_SEA_DEPTH = 0.16;
+  var VOICE_SEA_ARCS = 3;
+  var VOICE_SEA_ASPECT_BASE = 0.68;
+  var VOICE_SEA_ASPECT_RANGE = 0.22;
+  var VOICE_SEA_RISE_MIN = 2;
+  var VOICE_SEA_RISE_RANGE = 8;
+  var VOICE_SEA_PRESENCE_EXPONENT = 0.7;
+  var VOICE_SEA_GLYPH_QUIET = ["·", "˙", "'"];
+  var VOICE_SEA_GLYPH_BREAK = ";";
+  var voiceSeaFinite = (value, fallback) => Number.isFinite(value) ? value : fallback;
+  var voiceSeaClamp = (value, low, high) => value < low ? low : value > high ? high : value;
+  function voiceSeaHash(a, b, salt = 0) {
+    let hash2 = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(salt | 0, 1442695041);
+    hash2 = Math.imul(hash2 ^ hash2 >>> 13, 1274126177);
+    return ((hash2 ^ hash2 >>> 16) >>> 0) / 4294967296;
+  }
+  var voiceSeaStates = /* @__PURE__ */ new WeakMap();
+  function voiceSeaState(field) {
+    let state = voiceSeaStates.get(field);
+    if (!state) {
+      state = { credit: 0, serial: 0, anchored: false };
+      voiceSeaStates.set(field, state);
+    }
+    return state;
+  }
+  function voiceSeaRadiusLimit(width, height) {
+    const span = Math.min(width, height);
+    if (!(span > 0)) return 0;
+    return Math.max(VOICE_SEA_RADIUS_FLOOR, span * VOICE_SEA_RADIUS_FRACTION);
+  }
+  function createVoiceSeaField() {
+    const field = {
+      rings: [],
+      level: 0,
+      smoothed: 0,
+      time: 0,
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0
+    };
+    voiceSeaStates.set(field, { credit: 0, serial: 0, anchored: false });
+    return field;
+  }
+  function resetVoiceSeaField(field) {
+    if (!field || typeof field !== "object") return field;
+    field.rings = [];
+    field.level = 0;
+    field.smoothed = 0;
+    field.time = 0;
+    field.x = 0;
+    field.y = 0;
+    field.width = 0;
+    field.height = 0;
+    voiceSeaStates.set(field, { credit: 0, serial: 0, anchored: false });
+    return field;
+  }
+  function voiceSeaSpawn(field, state, strength) {
+    const limit = voiceSeaRadiusLimit(field.width, field.height);
+    if (!(limit > 0) || limit > Math.max(field.width, field.height) * 1.1) return false;
+    const seed = voiceSeaHash(state.serial + 1, Math.round(field.time * 1e3), 17);
+    const shape = 0.55 * seed + 0.45 * strength;
+    field.rings.push({
+      x: field.x,
+      y: field.y,
+      age: 0,
+      life: VOICE_SEA_MIN_LIFE + (VOICE_SEA_MAX_LIFE - VOICE_SEA_MIN_LIFE) * shape,
+      startRadius: 3 + seed * 5,
+      maxRadius: Math.min(
+        limit,
+        Math.max(VOICE_SEA_MIN_RING_RADIUS, limit * (0.52 + 0.48 * strength))
+      ),
+      strength,
+      seed,
+      serial: state.serial,
+      phase: seed * VOICE_SEA_TAU,
+      rise: VOICE_SEA_RISE_MIN + VOICE_SEA_RISE_RANGE * (0.4 * seed + 0.6 * strength)
+    });
+    state.serial++;
+    return true;
+  }
+  function stepVoiceSea(field, delta2, level, options = {}) {
+    if (!field || typeof field !== "object") return field;
+    const dt = voiceSeaFinite(delta2, 0);
+    if (!(dt > 0)) return field;
+    const settings = options && typeof options === "object" ? options : {};
+    const state = voiceSeaState(field);
+    if (!Array.isArray(field.rings)) field.rings = [];
+    const rings = field.rings;
+    const enabled = settings.enabled !== false;
+    const live = typeof level === "number" && !Number.isNaN(level) ? level : 0;
+    const target = enabled ? voiceSeaClamp(live, 0, 1) : 0;
+    const current = voiceSeaClamp(voiceSeaFinite(field.smoothed, 0), 0, 1);
+    const next = target > current ? Math.min(target, current + dt / VOICE_SEA_ATTACK_SECONDS) : Math.max(target, current - dt / VOICE_SEA_RELEASE_SECONDS);
+    const resting = !enabled && next === 0 && current === 0 && rings.length === 0 && voiceSeaFinite(field.level, 0) === 0;
+    if (resting) return field;
+    field.smoothed = next;
+    field.level = target;
+    if (enabled) field.time = voiceSeaFinite(field.time, 0) + dt;
+    const width = voiceSeaFinite(settings.width, field.width);
+    const height = voiceSeaFinite(settings.height, field.height);
+    if (width > 0) field.width = width;
+    if (height > 0) field.height = height;
+    if (enabled && Number.isFinite(settings.x) && Number.isFinite(settings.y) && (settings.x !== 0 || settings.y !== 0)) {
+      field.x = settings.x;
+      field.y = settings.y;
+      state.anchored = true;
+    }
+    for (let i = 0; i < rings.length; i++) {
+      const ring = rings[i];
+      if (ring && typeof ring === "object") ring.age = Math.max(0, voiceSeaFinite(ring.age, 0) + dt);
+    }
+    const limit = voiceSeaRadiusLimit(field.width, field.height);
+    const hardCeiling = Math.max(field.width, field.height) * 1.1;
+    for (let i = rings.length - 1; i >= 0; i--) {
+      const ring = rings[i];
+      let dead = !ring || typeof ring !== "object";
+      if (!dead) {
+        const x = voiceSeaFinite(ring.x, NaN), y = voiceSeaFinite(ring.y, NaN);
+        const age = voiceSeaFinite(ring.age, NaN), life = voiceSeaFinite(ring.life, NaN);
+        const radius = voiceSeaFinite(ring.maxRadius, NaN);
+        dead = !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(age) || !Number.isFinite(life) || !(life > 0) || !Number.isFinite(radius) || !(radius > 0) || age >= life;
+        if (!dead && field.width > 0 && field.height > 0) {
+          if (x < 0 || x > field.width || y < 0 || y > field.height) dead = true;
+          else if (radius > hardCeiling) dead = true;
+        }
+        if (!dead) {
+          ring.x = x;
+          ring.y = y;
+          ring.age = age;
+          ring.life = life;
+          ring.maxRadius = limit > 0 && radius > limit ? limit : radius;
+          ring.startRadius = Math.max(1, voiceSeaFinite(ring.startRadius, 3));
+          ring.strength = voiceSeaClamp(voiceSeaFinite(ring.strength, 0.3), 0, 1);
+          ring.seed = voiceSeaClamp(voiceSeaFinite(ring.seed, 0.5), 0, 1);
+          ring.phase = voiceSeaFinite(ring.phase, ring.seed * VOICE_SEA_TAU);
+          ring.rise = voiceSeaClamp(voiceSeaFinite(ring.rise, 4), 0, 32);
+          ring.serial = Math.floor(voiceSeaFinite(ring.serial, 0));
+        }
+      }
+      if (dead) rings.splice(i, 1);
+    }
+    if (enabled && state.anchored && next > VOICE_SEA_LEVEL_FLOOR && field.width > 0 && field.height > 0) {
+      const rate = VOICE_SEA_SPAWN_BASE + VOICE_SEA_SPAWN_GAIN * next;
+      state.credit = Math.min(VOICE_SEA_MAX_RINGS, state.credit + rate * dt);
+      let spawns = Math.min(VOICE_SEA_MAX_RINGS, Math.floor(state.credit));
+      state.credit -= spawns;
+      while (spawns-- > 0 && rings.length < VOICE_SEA_MAX_RINGS) {
+        if (!voiceSeaSpawn(field, state, next)) break;
+      }
+    }
+    return field;
+  }
+  function drawVoiceSea(target, field, options = {}) {
+    if (!target || typeof target.fillText !== "function") return 0;
+    const rings = field && Array.isArray(field.rings) ? field.rings : [];
+    if (!rings.length) return 0;
+    const settings = options && typeof options === "object" ? options : {};
+    const width = voiceSeaFinite(settings.width, 0);
+    const height = voiceSeaFinite(settings.height, 0);
+    const cellWidth = Math.max(1, voiceSeaFinite(settings.cellWidth, 11));
+    const cellHeight = Math.max(1, voiceSeaFinite(settings.cellHeight, 13));
+    const ratio = Math.max(0.01, voiceSeaFinite(settings.ratio, 1));
+    const opacity = voiceSeaClamp(voiceSeaFinite(settings.opacity, 0.5), 0, 1);
+    if (!(width > 0) || !(height > 0) || !(opacity > 0)) return 0;
+    const presence = Math.pow(
+      voiceSeaClamp(voiceSeaFinite(field.smoothed, 1), 0, 1),
+      VOICE_SEA_PRESENCE_EXPONENT
+    );
+    if (!(presence > 0)) return 0;
+    const budget = Math.max(0, Math.min(
+      VOICE_SEA_MAX_GLYPHS,
+      Math.floor(voiceSeaFinite(settings.maxGlyphs, VOICE_SEA_MAX_GLYPHS))
+    ));
+    if (!(budget > 0)) return 0;
+    const palette = settings.palette && typeof settings.palette.length === "number" && settings.palette.length > 0 ? settings.palette : createInkPalette("ocean");
+    const fade = typeof settings.fade === "function" ? settings.fade : null;
+    const columns = Math.max(1, Math.ceil(width / cellWidth));
+    const rows = Math.max(1, Math.ceil(height / cellHeight));
+    const snap = (value) => Math.round(value * ratio) / ratio;
+    if (typeof settings.font === "string" && settings.font) target.font = settings.font;
+    target.textAlign = "center";
+    target.textBaseline = "middle";
+    let currentFill = null;
+    let drawn = 0;
+    const seen = /* @__PURE__ */ new Set();
+    const paintPoint = (x, y, glyph, alpha, light) => {
+      if (!(alpha > 0)) return false;
+      const col = Math.floor(x / cellWidth), row = Math.floor(y / cellHeight);
+      if (col < 0 || col >= columns || row < 0 || row >= rows) return false;
+      const key = row * columns + col;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      const centreX = snap((col + 0.5) * cellWidth);
+      const centreY = snap((row + 0.5) * cellHeight);
+      let visibility = 1;
+      if (fade) {
+        visibility = voiceSeaClamp(voiceSeaFinite(fade(centreX, centreY), 0), 0, 1);
+        if (!(visibility > 0)) return false;
+      }
+      const value = Math.min(opacity, alpha * visibility);
+      if (!(value > 0.01)) return false;
+      const shade = glyphInkIndex(light, VOICE_SEA_DEPTH);
+      const fill = palette[shade < palette.length ? shade : palette.length - 1];
+      if (fill !== currentFill) {
+        target.fillStyle = fill;
+        currentFill = fill;
+      }
+      target.globalAlpha = value;
+      target.fillText(glyph, centreX, centreY, Math.max(1, cellWidth * 1.1));
+      drawn++;
+      return true;
+    };
+    for (let r = 0; r < rings.length && drawn < budget; r++) {
+      const ring = rings[r];
+      if (!ring || typeof ring !== "object") continue;
+      const x = voiceSeaFinite(ring.x, NaN), y = voiceSeaFinite(ring.y, NaN);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const life = Math.max(1e-3, voiceSeaFinite(ring.life, 1));
+      const age = voiceSeaClamp(voiceSeaFinite(ring.age, 0), 0, life);
+      const progress = age / life;
+      const ageFade = (1 - progress) ** 1.35;
+      const birth = Math.min(1, age / 0.04);
+      if (!(ageFade > 0) || !(birth > 0)) continue;
+      const strength = voiceSeaClamp(voiceSeaFinite(ring.strength, 0.3), 0, 1);
+      const seed = voiceSeaClamp(voiceSeaFinite(ring.seed, 0.5), 0, 1);
+      const serial = Math.floor(voiceSeaFinite(ring.serial, 0));
+      const endRadius = Math.max(1, voiceSeaFinite(ring.maxRadius, 1));
+      const startRadius = Math.min(endRadius, Math.max(1, voiceSeaFinite(ring.startRadius, 3)));
+      const radius = startRadius + (endRadius - startRadius) * (1 - (1 - progress) ** 1.7);
+      if (!(radius > 1)) continue;
+      const phase = voiceSeaFinite(ring.phase, seed * VOICE_SEA_TAU);
+      const rise = voiceSeaClamp(voiceSeaFinite(ring.rise, 4), 0, 32);
+      const drift = rise * progress;
+      const aspect = VOICE_SEA_ASPECT_BASE + VOICE_SEA_ASPECT_RANGE * seed;
+      const alpha = opacity * (0.3 + 0.44 * strength) * ageFade * birth * presence;
+      if (!(alpha > 0.01)) continue;
+      const light = voiceSeaClamp(0.5 + 0.16 * strength - 0.14 * progress, 0, 1);
+      const spacing = Math.max(5, (cellWidth + cellHeight) * 0.42);
+      seen.clear();
+      let ringDrawn = 0;
+      for (let arc = 0; arc < VOICE_SEA_ARCS && drawn < budget && ringDrawn < VOICE_SEA_MAX_GLYPHS_PER_RING; arc++) {
+        const arcSeed = voiceSeaHash(serial, arc + 1, 3);
+        const span = VOICE_SEA_TAU / VOICE_SEA_ARCS * (0.5 + 0.35 * arcSeed);
+        const startAngle = phase + arc * (VOICE_SEA_TAU / VOICE_SEA_ARCS) + (arcSeed - 0.5) * 0.5;
+        const samples = Math.max(2, Math.min(
+          12,
+          Math.ceil(radius * span / spacing)
+        ));
+        for (let i = 0; i < samples; i++) {
+          if (drawn >= budget || ringDrawn >= VOICE_SEA_MAX_GLYPHS_PER_RING) break;
+          const angle = startAngle + span * (i + 0.5) / samples + (voiceSeaHash(i, arc + 5, serial) - 0.5) * 0.06;
+          const wobble = (voiceSeaHash(i, arc + 9, serial) - 0.5) * Math.min(cellWidth, radius * 0.12);
+          const pointRadius = radius + wobble;
+          const px = x + Math.cos(angle) * pointRadius;
+          const py = y + Math.sin(angle) * pointRadius * aspect - drift;
+          const tangentX = -Math.sin(angle), tangentY = Math.cos(angle) * aspect;
+          const horizontal = Math.abs(tangentX) / Math.hypot(tangentX, tangentY) > 0.86;
+          const pick2 = voiceSeaHash(i, arc + 13, serial);
+          const glyph = horizontal ? pick2 < 0.82 ? "~" : VOICE_SEA_GLYPH_QUIET[0] : strength > 0.62 && pick2 > 0.88 ? VOICE_SEA_GLYPH_BREAK : pick2 < 0.55 ? VOICE_SEA_GLYPH_QUIET[0] : pick2 < 0.84 ? VOICE_SEA_GLYPH_QUIET[1] : VOICE_SEA_GLYPH_QUIET[2];
+          const pointLight = voiceSeaClamp(light + (voiceSeaHash(i, arc + 17, serial) - 0.5) * 0.08, 0, 1);
+          if (paintPoint(px, py, glyph, alpha, pointLight)) ringDrawn++;
+        }
+      }
+    }
+    target.globalAlpha = 1;
+    return drawn;
+  }
+
   // src/simulation.js
   var sceneConfigKeys = Object.freeze(["count", "text", "species", "whaleSize"]);
   function sceneConfigChanged(previous = {}, next = {}) {
     return sceneConfigKeys.some((key) => previous[key] !== next[key]);
   }
+  var dictationAnchorOf = (value) => value && ["left", "top", "width", "height"].every((key) => Number.isFinite(value[key])) && value.width > 0 && value.height > 0 ? { left: value.left, top: value.top, width: value.width, height: value.height } : null;
   function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
     let disposed = false;
     let activityTime = 0;
@@ -3617,7 +4231,26 @@
     const water = createWaterField();
     const atmosphere = createAtmosphereField({ seed });
     const rain = createRainField({ seed });
+    const voiceSea = createVoiceSeaField();
     const activity = createActivityTracker();
+    let dictation = EMPTY_DICTATION;
+    let dictationAnchor = null;
+    let dictationLevel = () => 0;
+    let dictationEnabled = config.dictationEcho !== false;
+    function applyDictation(previous = null) {
+      if (!scene) return;
+      const before = previous || scene.dictation || null;
+      scene.dictation = {
+        active: dictationEnabled && gatherActive(dictation),
+        anchor: dictationEnabled ? dictationAnchor : null,
+        composerAvoid: config.composerAvoid === true,
+        engage: before && Number.isFinite(before.engage) ? before.engage : 0,
+        slots: before ? before.slots : null,
+        layoutKey: before ? before.layoutKey : "",
+        level: 0
+      };
+    }
+    applyDictation();
     return {
       get scene() {
         return scene;
@@ -3625,9 +4258,14 @@
       water,
       atmosphere,
       rain,
+      voiceSea,
+      get dictation() {
+        return dictation;
+      },
       update(next) {
         if (disposed) return false;
         const rebuild = sceneConfigChanged(config, next);
+        const previousDictation = scene.dictation || null;
         if (rebuild) {
           const previous = scene;
           scene = createScene(next.count, next.text, next.species, next.whaleSize, previous.colorSeed);
@@ -3641,6 +4279,8 @@
         }
         if (rebuild || config.ripples !== next.ripples) resetWaterField(water);
         config = { ...next };
+        dictationEnabled = config.dictationEcho !== false;
+        applyDictation(rebuild ? previousDictation : scene.dictation);
         activity.apply(scene.whales, activityTime, config.activity);
         return rebuild;
       },
@@ -3648,6 +4288,23 @@
         if (disposed) return;
         activity.update(snapshot);
         activity.apply(scene.whales, activityTime, config.activity);
+      },
+      setDictation(snapshot, levelSource) {
+        if (disposed) return;
+        dictation = normalizeDictation(snapshot);
+        dictationLevel = typeof levelSource === "function" ? levelSource : () => 0;
+        applyDictation(scene.dictation);
+      },
+      setDictationAnchor(anchor) {
+        if (disposed) return;
+        const next = dictationAnchorOf(anchor);
+        if (next === null && dictationAnchor === null) return;
+        if (next !== null && dictationAnchor !== null && next.left === dictationAnchor.left && next.top === dictationAnchor.top && next.width === dictationAnchor.width && next.height === dictationAnchor.height) return;
+        dictationAnchor = next;
+        applyDictation(scene.dictation);
+      },
+      dictationLevel() {
+        return disposed ? 0 : dictationLevel();
       },
       resize(width, height) {
         if (disposed) return;
@@ -3674,13 +4331,23 @@
           wind: config.wind,
           atmosphere
         });
+        stepVoiceSea(voiceSea, elapsed, dictationLevel(), {
+          enabled: dictationEnabled && gatherActive(dictation),
+          x: dictationAnchor ? dictationAnchor.left + dictationAnchor.width / 2 : 0,
+          y: dictationAnchor ? dictationAnchor.top + dictationAnchor.height / 2 : 0,
+          width: scene.width,
+          height: scene.height
+        });
         return elapsed;
       },
       dispose() {
         disposed = true;
         resetWaterField(water);
         resetRainField(rain);
+        resetVoiceSeaField(voiceSea);
         scene = null;
+        dictationAnchor = null;
+        dictationLevel = () => 0;
       }
     };
   }
@@ -4442,7 +5109,7 @@
   var PALETTE_KEYS = Object.freeze(["color"]);
   var GLASS_KEYS = Object.freeze(["glass", "glassStrength", "readingEffect"]);
   var COMPOSER_KEYS = Object.freeze(["composerGlass", "composerAvoid"]);
-  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds", "rain", "rainIntensity", "activity", "pauseOnScroll"]);
+  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds", "rain", "rainIntensity", "activity", "dictationEcho", "pauseOnScroll"]);
   var anyChanged = (keys, previous, next) => keys.some((key) => previous[key] !== next[key]);
   var noChange = (changes) => !changes.scene && !changes.metrics && !changes.palette && !changes.glass && !changes.composer && !changes.live;
   function diffWhaleConfig(previous, next) {
@@ -4612,6 +5279,7 @@
     const ink = canvas.getContext("2d");
     if (!ink) return { update() {
     }, setActivity() {
+    }, setDictation() {
     }, dispose() {
     } };
     const config = normalizeLayerConfig(initialConfig);
@@ -4622,7 +5290,7 @@
     const reducedTransparency = window.matchMedia("(prefers-reduced-transparency: reduce)");
     const simulation = createWhaleSimulation(config, { seed: scenerySeed });
     let scene = simulation.scene;
-    const { water, atmosphere, rain } = simulation;
+    const { water, atmosphere, rain, voiceSea } = simulation;
     let sceneryPalette = createInkPalette(config.color);
     let poses = scene.whales.map(() => ({}));
     let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
@@ -4635,6 +5303,7 @@
     let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
     let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
     let panes = [], tone = null, readingLayout = null, foreground = null, sidebarForegrounds = [];
+    let composerAnchor = null;
     let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
     let readingTextDirty = true, readingRoots = [], scrolling = false, scrollTimer = 0;
     const originalOpacity = canvas.style?.opacity ?? "", originalTransition = canvas.style?.transition ?? "";
@@ -4782,6 +5451,8 @@
       if (!width || !height || !scene || disposed) return;
       if (demo) {
         applyReadingSnapshot(demoReadingSnapshot(demo, width, height));
+        composerAnchor = null;
+        simulation.setDictationAnchor(null);
         const card = demoCardRect();
         const groups = card && config.glass && config.readingEffect !== "none" ? [{
           clip: { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius },
@@ -4791,10 +5462,21 @@
         return;
       }
       const canvasRect = rectOf2(canvas);
-      if (!canvasRect) return;
+      if (!canvasRect) {
+        composerAnchor = null;
+        simulation.setDictationAnchor(null);
+        return;
+      }
       const scroller = pick(SCROLL_SELECTOR, canvasRect)?.element;
       const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
       const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
+      composerAnchor = composer ? {
+        left: composer.rect.left - canvasRect.left,
+        top: composer.rect.top - canvasRect.top,
+        width: composer.rect.width,
+        height: composer.rect.height
+      } : null;
+      simulation.setDictationAnchor(composerAnchor);
       const sidebars = collectRightbarSurfaces(canvasRect);
       sidebarForegrounds = sidebars.map((panel) => measureForeground(panel.element, canvasRect, canvas));
       readingRoots = [scroller, composer?.element, ...sidebars.map((panel) => panel.element)].filter(Boolean);
@@ -4854,6 +5536,7 @@
         dark: document.body.hasAttribute("data-ds-dark-theme")
       });
       if (config.ripples) drawWater(ink, water, scenery);
+      if (config.dictationEcho) drawVoiceSea(ink, voiceSea, scenery);
       const rainScenery = {
         ...scenery,
         dark: document.body.hasAttribute("data-ds-dark-theme"),
@@ -5207,6 +5890,7 @@
       readingLayout = null;
       foreground = null;
       sidebarForegrounds = [];
+      composerAnchor = null;
       canvas.width = canvas.height = 1;
     }
     function setActivity(snapshot) {
@@ -5214,7 +5898,12 @@
       simulation.setActivity(snapshot);
       if (!document.hidden && width && height) draw();
     }
-    return { update, setActivity, dispose };
+    function setDictation(snapshot, levelSource) {
+      if (disposed) return;
+      simulation.setDictation(snapshot, levelSource);
+      if (!document.hidden && width && height) draw();
+    }
+    return { update, setActivity, setDictation, dispose };
   }
 
   // src/settings.js
@@ -5243,14 +5932,20 @@
     const useForm = () => React.useSyncExternalStore(formSubscribe, formSnapshot, formSnapshot);
     const jobs = createJobsBridge();
     ctx.inject?.(["jobs"], (child) => child.effect(() => jobs.attach(child.jobs)));
-    function Canvas({ config, activity = EMPTY_ACTIVITY }) {
+    const dictation = createDictationBridge();
+    ctx.inject?.(["dictation"], (child) => child.effect(() => dictation.attach(child.dictation)));
+    if (!ctx.inject && ctx.get?.("dictation") === void 0) ctx.effect(() => dictation.attachFallback());
+    function Canvas({ config, activity = EMPTY_ACTIVITY, dictation: dictationState = null, dictationLevel = () => 0 }) {
       const ref = React.useRef(null);
       const configRef = React.useRef(config);
       const activityRef = React.useRef(activity);
+      const dictationRef = React.useRef(dictationState);
+      const levelRef = React.useRef(dictationLevel);
       const layer = React.useRef(null);
       React.useEffect(() => {
         const instance = createWhaleLayer(ref.current, configRef.current);
         instance.setActivity(activityRef.current);
+        instance.setDictation(dictationRef.current, levelRef.current);
         layer.current = instance;
         return () => {
           instance.dispose();
@@ -5265,6 +5960,11 @@
         activityRef.current = activity;
         layer.current?.setActivity(activity);
       }, [activity]);
+      React.useEffect(() => {
+        dictationRef.current = dictationState;
+        levelRef.current = dictationLevel;
+        layer.current?.setDictation(dictationState, dictationLevel);
+      }, [dictationState, dictationLevel]);
       return h("canvas", { ref, "aria-hidden": true, style: { display: "block", width: "100%", height: "100%" } });
     }
     function LivePreview({ draft }) {
@@ -5344,7 +6044,9 @@
       const nextActivity = React.useMemo(() => readActivitySnapshot(list, statuses, jobSnapshot), [list, statuses, jobSnapshot]);
       const activityKey = JSON.stringify(nextActivity);
       const activity = React.useMemo(() => nextActivity, [activityKey]);
+      const dictationSnapshot = React.useSyncExternalStore(dictation.subscribe, dictation.getSnapshot, dictation.getSnapshot);
       const scope = currentSessionId(list);
+      const dictationState = config.dictationEcho && (dictationSnapshot.sessionId === null || dictationSnapshot.sessionId === scope) ? dictationSnapshot : null;
       const visible = snapshot.status === "ready" && config.enabled && (panelId === null || panelId === "conversation");
       React.useEffect(() => {
         jobs.watch(visible && config.activity ? scope : null);
@@ -5360,7 +6062,7 @@
         "--ascii-whale-inset": `${config.leftInset}px`,
         pointerEvents: "none",
         overflow: "hidden"
-      } }, h(Canvas, { config, activity }));
+      } }, h(Canvas, { config, activity, dictation: dictationState, dictationLevel: dictation.level }));
     }
     function Settings() {
       const snapshot = useForm();
@@ -5368,6 +6070,7 @@
       const [editor, setEditor] = React.useState(() => snapshot.status === "ready" ? createConfigEditor(snapshot) : null);
       const [saving, setSaving] = React.useState(false);
       const [notice, setNotice] = React.useState("");
+      const dictationPresent = React.useSyncExternalStore(dictation.subscribePresence, dictation.hasProvider, dictation.hasProvider);
       const dirty = editor?.dirty ?? false;
       React.useEffect(() => {
         if (snapshot.status === "ready" && !dirty) setEditor(createConfigEditor(snapshot));
@@ -5512,6 +6215,7 @@
             )
           );
         }
+        const copy = key === "dictationEcho" && !dictationPresent ? "dictationEchoUnavailable" : `${key}Hint`;
         return h(
           "div",
           { className: `aw-row aw-row--${field.kind}`, key, "data-aw-field": key },
@@ -5519,14 +6223,14 @@
             "div",
             { className: "aw-copy" },
             h("div", { className: "aw-row-heading" }, title, output),
-            h("p", { id: hint }, t(`${key}Hint`))
+            h("p", { id: hint }, t(copy))
           ),
           control
         );
       }
       const groups = [
         { id: "appearance", fields: ["renderStyle", "fillMode", "text", "color", "opacity", "glyphSize"] },
-        { id: "school", fields: ["species", "count", "whaleSize", "speed", "activity", "spout"] },
+        { id: "school", fields: ["species", "count", "whaleSize", "speed", "activity", "dictationEcho", "spout"] },
         { id: "reading", fields: ["readingEffect", "glass", "glassStrength", "quietCenter", "composerAvoid"] },
         { id: "sea", fields: ["wind", "clouds", "ripples", "rain", "rainIntensity"] }
       ];
@@ -5797,6 +6501,9 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       rainbow: "Random color per whale",
       activity: "Follow task activity",
       activityHint: "Whales swim more actively while the current session and its subagents work. They slow down and show ! when waiting for a question, approval or plan review. A finished background task shows ✓; a failed one shows ×. Turn off for decoration only.",
+      dictationEcho: "Dictation echo",
+      dictationEchoHint: "With the hold-to-talk plugin installed, the school gathers just above the input box while you record, the sea follows your voice, and everyone disperses once the transcript is in. Only active while the master switch is on.",
+      dictationEchoUnavailable: "Install dsh-hold-to-dictate (hold-to-talk) to use this. Without it this switch does nothing.",
       quietCenter: "Quieter reading area",
       quietCenterHint: "Fades whale bodies in the center. The bottom input area always fades out.",
       leftInset: "Browser left inset",
@@ -5908,6 +6615,9 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       rainbow: "每条随机配色",
       activity: "跟随任务状态",
       activityHint: "当前会话与子代理工作时加强巡游；等待提问、审批或计划审阅时慢游并显示 !；后台任务完成显示 ✓，失败显示 ×。关闭后只作装饰。",
+      dictationEcho: "听写联动",
+      dictationEchoHint: "安装「按住说话」插件后，录音时鲸群会聚到输入框上缘外倾听，海面随说话声音起伏，转写完成后再散开。只在总开关开启时生效。",
+      dictationEchoUnavailable: "需要安装 dsh-hold-to-dictate（按住说话）插件；未安装时此开关不会产生效果。",
       quietCenter: "减淡阅读区域",
       quietCenterHint: "降低中央鲸体的浓度。底部输入区始终保持淡出。",
       leftInset: "浏览器左侧留白",

@@ -263,3 +263,15 @@ v1 建议**不加新配置项**：只受总开关 `enabled`、`pauseOnScroll`、
 - 宿主 cordis 语义与启动顺序事实来自本机安装构建解包（`.scratch/asar-all/`、`.scratch/current-api/`，app.asar 2026-10-23），不是上游书面文档；升级 DSH 后需重核。
 - 运动原型只验证接入机制与三个风险，不是性能、观感或最终参数证据；未改动任何 tracked 文件。
 - 原始逐行证据：`.scratch/research/bridge/findings.md`、`.scratch/research/motion/findings.md`（本地，未随仓库发布）。
+
+## 实施与验证（2026-10-25）
+
+规格实现落在 [docs/specs/dictation-echo.zh.md](../specs/dictation-echo.zh.md)：鲸群侧新增 `src/dictation.js`（聚集几何与客户端桥）、`src/voice-sea.js`（声浪场与绘制），状态经 `src/simulation.js`、`src/motion.js`、`src/engine.js`、`src/settings.js` 串起；生产者侧在 `dsh-hold-to-dictate` 的 `client.js` 提供 `dictation` 服务。开关落为 `FIELDS.dictationEcho`，默认开启，独立于任务跟随。
+
+验证结果：
+
+- `pnpm verify` 全部 388 项通过（含新增 `tests/dictation.test.js` 12 项、`tests/dictation-motion.test.js` 7 项、`tests/voice-sea.test.js` 17 项、引擎接线 1 项）；生成客户端与预览产物一致。
+- 真实 DSH（独立测试 profile：web shell + 官方语音输入 bundle + 本地两个插件）用 CDP 驱动按住输入框录音 25 秒：录音气泡正常，输入框上方聚集带的墨量从约 3.9k 像素升至约 16.8k，转写完成并散开后 9 秒回落到约 8.8k；控制台无错误。帧与报告在本地 `.scratch/echo-capture/`。
+- 独立预览页用 `__previewTest.dictation(state, level)` 对照静音与高音量：高音量时输入框周围出现额外的 `~`/`·`/`;` 声浪字形，静音时没有；done 后声浪停止并散开。
+- 未验证：真实桌面窗口（本轮测试跑在独立 web profile）、真实麦克风手势、hands-free、不同 DPR 与低端设备帧率；视口为 1440×900、场景为 8 头鲸。
+
