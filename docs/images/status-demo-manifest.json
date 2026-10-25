@@ -1,0 +1,427 @@
+{
+  "surface": "SIMULATED file fixture using formal client.js, not installed DSH",
+  "commit": "b6bf1111656315423f8d921fdd967a02a29d42eb",
+  "buildIdentity": "base b6bf111 · client cb15333003a6",
+  "sources": {
+    "client.js": "cb15333003a6293be2c20dc722bebd9d0c8486d3d0f550dbb4d6b9346bf2fa2a",
+    "src/settings.js": "351d777708d0af741d7f53a85950402c0029aa711591f90213bba3affcaf1205",
+    "locale/zh.json": "88c8617912152d0a574cb2d4d7d022dccb467665ed83ee142e1c8bab48e20ecd",
+    "locale/en.json": "f4797174b8d2b991683652c12e80c571f88fff371586151524a18eba3517c7f5",
+    "scripts/status-demo-scenario.mjs": "1cb6594c98c2c280ac5584cdd956179d4d58989eaeaeb2ec76195fc9d018ab35",
+    "scripts/status-demo-fixture.js": "ce92214a9e6d0f80f0dda6129c052bfd58b75f779193546b83576da62fe419f6",
+    "scripts/status-demo.mjs": "624e5efa416e5a40c5216169605df6cb874289fbfd51c67f50ebdaada475a317",
+    "scripts/measurement-cdp.mjs": "1267fe249a8da0e991307fbc59bd5cf0492d4d77db67e4000a827fb8711fd561",
+    "src/model.js": "51f772bd22aa2f5835660b5c5b533efb5d1d20d02ead75d7d82d40f9e4bbac6a"
+  },
+  "react": [
+    {
+      "name": "react",
+      "version": "18.3.1",
+      "url": "https://unpkg.com/react@18.3.1/umd/react.production.min.js",
+      "sha256": "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "url": "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js",
+      "sha256": "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"
+    }
+  ],
+  "theme": "light",
+  "reducedMotion": true,
+  "viewport": {
+    "width": 1280,
+    "height": 1000,
+    "dpr": 1
+  },
+  "installedHostRecording": "UNVERIFIED",
+  "screenReader": "UNMEASURED",
+  "performance": "UNMEASURED",
+  "frames": [
+    {
+      "filename": "status-zh-running.png",
+      "sha256": "0e601ba5599199fedc9a3f755a81be713351ccddf8c4261a0d4e91a168a44be1",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.85,
+        "color": "ocean",
+        "wind": false,
+        "clouds": false,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": false,
+        "readingEffect": "none",
+        "quietCenter": false,
+        "leftInset": 0
+      },
+      "locale": "zh",
+      "stage": "running",
+      "summary": "当前任务状态未单独分配鲸鱼的任务数 0演示会话 · 运行中构建演示 · 运行中检查演示 · 运行中"
+    },
+    {
+      "filename": "status-zh-waiting.png",
+      "sha256": "c339bb9004d58f36c64ab7273e5b9a7b5e170b46b5fa074338e5b7493b9efb37",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.85,
+        "color": "ocean",
+        "wind": false,
+        "clouds": false,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": false,
+        "readingEffect": "none",
+        "quietCenter": false,
+        "leftInset": 0
+      },
+      "locale": "zh",
+      "stage": "waiting",
+      "summary": "当前任务状态未单独分配鲸鱼的任务数 0演示会话 · 等待你处理构建演示 · 运行中检查演示 · 运行中"
+    },
+    {
+      "filename": "status-zh-completed.png",
+      "sha256": "114ea3f56d96e698ffe326d88e8b2cfa9267c34a1a9ceefb3313e5baf5d45d03",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.85,
+        "color": "ocean",
+        "wind": false,
+        "clouds": false,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": false,
+        "readingEffect": "none",
+        "quietCenter": false,
+        "leftInset": 0
+      },
+      "locale": "zh",
+      "stage": "completed",
+      "summary": "当前任务状态未单独分配鲸鱼的任务数 0演示会话 · 空闲或本轮停止检查演示 · 运行中构建演示 · 后台任务完成"
+    },
+    {
+      "filename": "status-zh-failed.png",
+      "sha256": "c05701cfea0678a38b4da9e4d89805908c14170112a1d1a8e83f282069bb2e43",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.85,
+        "color": "ocean",
+        "wind": false,
+        "clouds": false,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": false,
+        "readingEffect": "none",
+        "quietCenter": false,
+        "leftInset": 0
+      },
+      "locale": "zh",
+      "stage": "failed",
+      "summary": "当前任务状态未单独分配鲸鱼的任务数 0演示会话 · 空闲或本轮停止构建演示 · 后台任务完成检查演示 · 后台任务失败"
+    },
+    {
+      "filename": "settings-zh.png",
+      "sha256": "16140d032ae97ca625308f34ab4b2bdbb06ce31fa60681452d288f7d8cf04846",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.6,
+        "color": "ocean",
+        "wind": true,
+        "clouds": true,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": true,
+        "readingEffect": "frost",
+        "quietCenter": true,
+        "leftInset": 0
+      },
+      "locale": "zh",
+      "legend": "hidden until opened",
+      "advanced": "collapsed"
+    },
+    {
+      "filename": "settings-zh-legend.png",
+      "sha256": "6fc7508a401cc0cebd4d4eb713b5fefa4874f9ded11d52426653da575f59e6ed",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.55,
+        "opacity": 0.55,
+        "color": "ocean",
+        "wind": true,
+        "clouds": true,
+        "ripples": true,
+        "spout": false,
+        "rain": true,
+        "rainIntensity": 0.35,
+        "glass": true,
+        "readingEffect": "frost",
+        "quietCenter": true,
+        "leftInset": 0
+      },
+      "locale": "zh",
+      "preset": "rainy",
+      "legend": "explicitly opened"
+    },
+    {
+      "filename": "status-en-running.png",
+      "sha256": "1daa0473bf14403017865f0b7a5b81e12d417cdec3bfa26cf56f11c79aa2f887",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.85,
+        "color": "ocean",
+        "wind": false,
+        "clouds": false,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": false,
+        "readingEffect": "none",
+        "quietCenter": false,
+        "leftInset": 0
+      },
+      "locale": "en",
+      "stage": "running",
+      "summary": "Current task statesTasks without their own whale 0Demo session · RunningBuild demo · RunningCheck demo · Running"
+    },
+    {
+      "filename": "status-en-waiting.png",
+      "sha256": "e7023df093cae9efbb55a0d9610240787eaa639c1d0ce0568701ea0f1265e050",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.85,
+        "color": "ocean",
+        "wind": false,
+        "clouds": false,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": false,
+        "readingEffect": "none",
+        "quietCenter": false,
+        "leftInset": 0
+      },
+      "locale": "en",
+      "stage": "waiting",
+      "summary": "Current task statesTasks without their own whale 0Demo session · Waiting for youBuild demo · RunningCheck demo · Running"
+    },
+    {
+      "filename": "status-en-completed.png",
+      "sha256": "93a3a9d5f5a54e86411633466f616c554e7643d36cb47c177dc6dac0e8586551",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.85,
+        "color": "ocean",
+        "wind": false,
+        "clouds": false,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": false,
+        "readingEffect": "none",
+        "quietCenter": false,
+        "leftInset": 0
+      },
+      "locale": "en",
+      "stage": "completed",
+      "summary": "Current task statesTasks without their own whale 0Demo session · Idle or stopped this turnCheck demo · RunningBuild demo · Background task completed"
+    },
+    {
+      "filename": "status-en-failed.png",
+      "sha256": "d880de87168ea2d289b82568681951798ec5c5ee510e64499a70dbd13fda0435",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.85,
+        "color": "ocean",
+        "wind": false,
+        "clouds": false,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": false,
+        "readingEffect": "none",
+        "quietCenter": false,
+        "leftInset": 0
+      },
+      "locale": "en",
+      "stage": "failed",
+      "summary": "Current task statesTasks without their own whale 0Demo session · Idle or stopped this turnBuild demo · Background task completedCheck demo · Background task failed"
+    },
+    {
+      "filename": "settings-en.png",
+      "sha256": "21220f6357e35ab91a33688a44850787db0d1da04c8f9f26b7e664eabd13acc7",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.65,
+        "opacity": 0.6,
+        "color": "ocean",
+        "wind": true,
+        "clouds": true,
+        "ripples": true,
+        "spout": true,
+        "rain": false,
+        "rainIntensity": 0.45,
+        "glass": true,
+        "readingEffect": "frost",
+        "quietCenter": true,
+        "leftInset": 0
+      },
+      "locale": "en",
+      "legend": "hidden until opened",
+      "advanced": "collapsed"
+    },
+    {
+      "filename": "settings-en-legend.png",
+      "sha256": "e2bacc9f7227c39eea61e20180f5c082197553d1acebbcd03ad425339a1e4d9a",
+      "seed": 20261025,
+      "config": {
+        "enabled": true,
+        "activity": true,
+        "text": "ASCII Whales",
+        "count": 3,
+        "speed": 0.55,
+        "opacity": 0.55,
+        "color": "ocean",
+        "wind": true,
+        "clouds": true,
+        "ripples": true,
+        "spout": false,
+        "rain": true,
+        "rainIntensity": 0.35,
+        "glass": true,
+        "readingEffect": "frost",
+        "quietCenter": true,
+        "leftInset": 0
+      },
+      "locale": "en",
+      "preset": "rainy",
+      "legend": "explicitly opened"
+    }
+  ],
+  "interactions": [
+    {
+      "locale": "zh",
+      "cdpMouseEventsInHeadlessFixture": [
+        "save rainy draft",
+        "reload saved values",
+        "open legend"
+      ],
+      "cdpKeyboard": "Enter on programmatically focused legend close button",
+      "visibleWindowPointerAcceptance": "UNMEASURED",
+      "allVisibleFieldsExactlyOnce": true,
+      "hiddenLegacyFieldAbsent": true,
+      "scriptedSelectEvents": [
+        "rainy preset",
+        "night preset"
+      ],
+      "result": "passed on simulated fixture only"
+    },
+    {
+      "locale": "en",
+      "cdpMouseEventsInHeadlessFixture": [
+        "save rainy draft",
+        "reload saved values",
+        "open legend"
+      ],
+      "cdpKeyboard": "Enter on programmatically focused legend close button",
+      "visibleWindowPointerAcceptance": "UNMEASURED",
+      "allVisibleFieldsExactlyOnce": true,
+      "hiddenLegacyFieldAbsent": true,
+      "scriptedSelectEvents": [
+        "rainy preset",
+        "night preset"
+      ],
+      "result": "passed on simulated fixture only"
+    }
+  ],
+  "browser": "Chrome/155.0.8059.85",
+  "cleanup": {
+    "browserExited": true,
+    "pid": 30016
+  },
+  "media": [
+    {
+      "filename": "status-demo-zh.gif",
+      "sha256": "e38c3ab9420d813119f9f1fe15853cd7a03e7949497520abbfdeda8fe916154e",
+      "frames": 4,
+      "frameDurationMs": 1800,
+      "meaning": "SIMULATED discrete states, not recorded motion or real DSH"
+    },
+    {
+      "filename": "status-demo-en.gif",
+      "sha256": "2d29dc8fd57036724c4c92512cb51fe25c1b8f1d839739322d74be14112c29b9",
+      "frames": 4,
+      "frameDurationMs": 1800,
+      "meaning": "SIMULATED discrete states, not recorded motion or real DSH"
+    }
+  ],
+  "packaging": {
+    "script": "scripts/status-demo-media.py",
+    "sha256": "7f0e3c47f175071fce2714435f89539e135687dee9305d50caaba17fd2dbb97f"
+  }
+}
