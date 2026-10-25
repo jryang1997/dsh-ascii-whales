@@ -1,5 +1,6 @@
 import { FIELDS, normalizeConfig, configSignature } from './model.js';
 import { createConfigEditor } from './config-editor.js';
+import { PRESETS, matchPreset } from './presets.js';
 import { createWhaleLayer } from './engine.js';
 import { EMPTY_ACTIVITY, currentSessionId, readActivitySnapshot, createJobsBridge } from './activity.js';
 
@@ -263,10 +264,11 @@ export function registerWhales(ctx, React, dictionaries) {
           h('p', { id: hint }, t(`${key}Hint`))), control);
     }
     const groups = [
-      { id: 'appearance', fields: ['renderStyle', 'fillMode', 'text', 'color', 'opacity', 'glyphSize'] },
-      { id: 'school', fields: ['species', 'count', 'whaleSize', 'speed', 'activity', 'spout'] },
+      { id: 'appearance', fields: ['renderStyle', 'fillMode', 'color', 'opacity', 'glyphSize'] },
+      { id: 'school', fields: ['species', 'count', 'whaleSize', 'speed', 'spout'] },
       { id: 'reading', fields: ['readingEffect', 'glass', 'glassStrength', 'quietCenter', 'composerAvoid'] },
       { id: 'sea', fields: ['wind', 'clouds', 'ripples', 'rain', 'rainIntensity'] },
+      { id: 'layout', fields: ['leftInset', 'pauseOnScroll'] },
     ];
     return h('form', { ref: viewportRef, className: 'aw-settings', onSubmit: save },
       h('style', null, SETTINGS_CSS),
@@ -276,12 +278,22 @@ export function registerWhales(ctx, React, dictionaries) {
       !snapshot.writable && h('p', { role: 'status', className: 'aw-notice' }, t('readOnly')),
       h(LivePreview, { draft: editor.draft }),
       h('div', { className: 'aw-options', role: 'region', 'aria-label': t('settingsOptions'), tabIndex: 0 },
-      h('div', { className: 'aw-groups' }, ...groups.map(group => h('fieldset', { className: 'aw-group', key: group.id },
-        h('legend', null, t(`${group.id}Group`)),
-        h('p', { className: 'aw-group-note' }, t(`${group.id}Description`)),
-        ...group.fields.map(renderField)))),
+      h('div', { className: 'aw-primary aw-group' },
+        h('div', { className: 'aw-row' },
+          h('div', { className: 'aw-copy' }, h('label', { htmlFor: `${prefix}-preset` }, t('scenePreset')),
+            h('p', { id: `${prefix}-preset-hint` }, t('presetDescription'))),
+          h('select', { id: `${prefix}-preset`, className: 'aw-select', disabled, value: matchPreset(editor.draft),
+            'aria-describedby': `${prefix}-preset-hint`, onChange: event => {
+              setEditor(current => current.applyPreset(event.target.value));
+              setNotice('');
+            } }, h('option', { value: 'custom', disabled: true }, t('preset_custom')),
+          ...Object.keys(PRESETS).map(id => h('option', { key: id, value: id }, t(`preset_${id}`))))),
+        renderField('text'), renderField('activity')),
       h('details', { className: 'aw-advanced' }, h('summary', null, t('advancedGroup')),
-        h('div', { className: 'aw-advanced-body' }, renderField('leftInset'), renderField('pauseOnScroll'))),
+        h('div', { className: 'aw-advanced-body aw-groups' }, ...groups.map(group => h('fieldset', { className: 'aw-group', key: group.id },
+          h('legend', null, t(`${group.id}Group`)),
+          h('p', { className: 'aw-group-note' }, t(`${group.id}Description`)),
+          ...group.fields.map(renderField))))),
       notice && h('p', { className: 'aw-notice', role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice))),
       h('footer', { className: 'aw-actions' },
         h('div', { className: 'aw-save-state', role: 'status', 'aria-live': 'polite' }, t(dirty ? 'unsavedDraft' : 'savedDraft')),
@@ -383,13 +395,12 @@ const SETTINGS_CSS = `
 .aw-settings .aw-switch[aria-checked=true] .aw-switch-knob{transform:translateX(20px)}
 .aw-settings .aw-advanced{margin-top:20px;border:1px solid var(--aw-line);border-radius:16px;background:var(--aw-surface)}
 .aw-settings .aw-advanced summary{padding:16px 22px;font-size:13px;font-weight:550;cursor:pointer}
-.aw-settings .aw-advanced-body{padding:0 22px 5px}
-.aw-settings .aw-advanced .aw-row{flex-wrap:nowrap}
-.aw-settings .aw-advanced .aw-copy{flex:1 1 0}
+.aw-settings .aw-advanced-body{padding:0 12px 12px}
 .aw-settings .aw-pixel-input{display:flex;align-items:center;gap:8px;flex:0 0 116px;color:var(--aw-muted);font-size:12px}
 .aw-settings .aw-pixel-input input{min-width:0;width:84px;padding:8px;border:1px solid var(--aw-line);border-radius:8px;background:var(--aw-inset);font-variant-numeric:tabular-nums}
 .aw-settings .aw-actions{position:sticky;bottom:0;z-index:4;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;padding:14px 0;background:var(--aw-surface);border-top:1px solid var(--aw-line)}
 .aw-settings .aw-save-state{font-size:12px;line-height:1.4;color:var(--aw-muted)}
+.aw-settings .aw-primary{padding-bottom:0}
 .aw-settings .aw-action-buttons{display:flex;flex-wrap:wrap;gap:8px}
 .aw-settings .aw-action-buttons button{min-height:38px;padding:8px 14px;font-size:12px;font-weight:500;line-height:1.4;border:1px solid var(--aw-line);border-radius:10px;background:var(--aw-inset)}
 .aw-settings .aw-action-buttons .aw-save{color:#fff;border-color:var(--aw-accent);background:var(--aw-accent);padding-inline:22px}
@@ -439,7 +450,6 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
 .aw-settings .aw-preview{padding:8px 12px;margin-bottom:8px}
 .aw-settings .aw-preview-card canvas{height:clamp(56px,calc(var(--aw-height,500px) * .22),150px)}
 .aw-settings .aw-actions{gap:6px;padding-block:6px}
-.aw-settings .aw-save-state{display:none}
 .aw-settings .aw-action-buttons{margin-left:auto}
 }
 @container(max-width:760px){

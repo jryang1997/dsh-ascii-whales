@@ -1935,6 +1935,31 @@
     return clamp(vertical * horizontal * central, 0, 1);
   }
 
+  // src/presets.js
+  var PRESETS = Object.freeze({
+    default: Object.freeze({ count: 3, speed: 0.65, opacity: 0.6, color: "ocean", wind: true, clouds: true, ripples: true, spout: true, rain: false, rainIntensity: 0.45 }),
+    rainy: Object.freeze({ count: 3, speed: 0.55, opacity: 0.55, color: "ocean", wind: true, clouds: true, ripples: true, spout: false, rain: true, rainIntensity: 0.35 }),
+    minimal: Object.freeze({ count: 1, speed: 0.4, opacity: 0.35, color: "ocean", wind: false, clouds: false, ripples: false, spout: false, rain: false, rainIntensity: 0.45 }),
+    night: Object.freeze({ count: 3, speed: 0.5, opacity: 0.45, color: "indigo", wind: true, clouds: true, ripples: true, spout: true, rain: false, rainIntensity: 0.45 })
+  });
+  function applyPreset(draft, id) {
+    if (!Object.hasOwn(PRESETS, id)) throw new RangeError(`Unknown scene: ${id}`);
+    return { ...draft, ...PRESETS[id] };
+  }
+  function matchPreset(draft) {
+    const values = { ...draft };
+    for (const key of Object.keys(PRESETS.default)) {
+      if (FIELDS[key].kind !== "number" || values[key] === void 0) continue;
+      if (values[key] === "" || !Number.isFinite(Number(values[key]))) return "custom";
+      values[key] = Number(values[key]);
+    }
+    const config = normalizeConfig(values);
+    return Object.entries(PRESETS).find(([, scene]) => Object.entries(scene).every(([key, value]) => {
+      const field = FIELDS[key];
+      return field.kind === "number" ? Math.round((config[key] - field.min) / field.step) === Math.round((value - field.min) / field.step) : config[key] === value;
+    }))?.[0] ?? "custom";
+  }
+
   // src/config-editor.js
   var exclusiveConfig = { glass: "composerAvoid", composerAvoid: "glass" };
   function changeConfigDraft(draft, key, value) {
@@ -1950,6 +1975,9 @@
       dirty,
       change(key, value) {
         return configEditorState(base, changeConfigDraft(draft, key, value), revision);
+      },
+      applyPreset(id) {
+        return configEditorState(base, applyPreset(draft, id), revision);
       },
       reset() {
         return configEditorState(base, { ...DEFAULTS }, revision);
@@ -5525,10 +5553,11 @@
         );
       }
       const groups = [
-        { id: "appearance", fields: ["renderStyle", "fillMode", "text", "color", "opacity", "glyphSize"] },
-        { id: "school", fields: ["species", "count", "whaleSize", "speed", "activity", "spout"] },
+        { id: "appearance", fields: ["renderStyle", "fillMode", "color", "opacity", "glyphSize"] },
+        { id: "school", fields: ["species", "count", "whaleSize", "speed", "spout"] },
         { id: "reading", fields: ["readingEffect", "glass", "glassStrength", "quietCenter", "composerAvoid"] },
-        { id: "sea", fields: ["wind", "clouds", "ripples", "rain", "rainIntensity"] }
+        { id: "sea", fields: ["wind", "clouds", "ripples", "rain", "rainIntensity"] },
+        { id: "layout", fields: ["leftInset", "pauseOnScroll"] }
       ];
       return h(
         "form",
@@ -5545,18 +5574,49 @@
         h(
           "div",
           { className: "aw-options", role: "region", "aria-label": t("settingsOptions"), tabIndex: 0 },
-          h("div", { className: "aw-groups" }, ...groups.map((group) => h(
-            "fieldset",
-            { className: "aw-group", key: group.id },
-            h("legend", null, t(`${group.id}Group`)),
-            h("p", { className: "aw-group-note" }, t(`${group.id}Description`)),
-            ...group.fields.map(renderField)
-          ))),
+          h(
+            "div",
+            { className: "aw-primary aw-group" },
+            h(
+              "div",
+              { className: "aw-row" },
+              h(
+                "div",
+                { className: "aw-copy" },
+                h("label", { htmlFor: `${prefix}-preset` }, t("scenePreset")),
+                h("p", { id: `${prefix}-preset-hint` }, t("presetDescription"))
+              ),
+              h(
+                "select",
+                {
+                  id: `${prefix}-preset`,
+                  className: "aw-select",
+                  disabled,
+                  value: matchPreset(editor.draft),
+                  "aria-describedby": `${prefix}-preset-hint`,
+                  onChange: (event) => {
+                    setEditor((current) => current.applyPreset(event.target.value));
+                    setNotice("");
+                  }
+                },
+                h("option", { value: "custom", disabled: true }, t("preset_custom")),
+                ...Object.keys(PRESETS).map((id) => h("option", { key: id, value: id }, t(`preset_${id}`)))
+              )
+            ),
+            renderField("text"),
+            renderField("activity")
+          ),
           h(
             "details",
             { className: "aw-advanced" },
             h("summary", null, t("advancedGroup")),
-            h("div", { className: "aw-advanced-body" }, renderField("leftInset"), renderField("pauseOnScroll"))
+            h("div", { className: "aw-advanced-body aw-groups" }, ...groups.map((group) => h(
+              "fieldset",
+              { className: "aw-group", key: group.id },
+              h("legend", null, t(`${group.id}Group`)),
+              h("p", { className: "aw-group-note" }, t(`${group.id}Description`)),
+              ...group.fields.map(renderField)
+            )))
           ),
           notice && h("p", { className: "aw-notice", role: notice === "saved" ? "status" : "alert", "aria-live": "polite" }, t(notice))
         ),
@@ -5684,13 +5744,12 @@
 .aw-settings .aw-switch[aria-checked=true] .aw-switch-knob{transform:translateX(20px)}
 .aw-settings .aw-advanced{margin-top:20px;border:1px solid var(--aw-line);border-radius:16px;background:var(--aw-surface)}
 .aw-settings .aw-advanced summary{padding:16px 22px;font-size:13px;font-weight:550;cursor:pointer}
-.aw-settings .aw-advanced-body{padding:0 22px 5px}
-.aw-settings .aw-advanced .aw-row{flex-wrap:nowrap}
-.aw-settings .aw-advanced .aw-copy{flex:1 1 0}
+.aw-settings .aw-advanced-body{padding:0 12px 12px}
 .aw-settings .aw-pixel-input{display:flex;align-items:center;gap:8px;flex:0 0 116px;color:var(--aw-muted);font-size:12px}
 .aw-settings .aw-pixel-input input{min-width:0;width:84px;padding:8px;border:1px solid var(--aw-line);border-radius:8px;background:var(--aw-inset);font-variant-numeric:tabular-nums}
 .aw-settings .aw-actions{position:sticky;bottom:0;z-index:4;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;padding:14px 0;background:var(--aw-surface);border-top:1px solid var(--aw-line)}
 .aw-settings .aw-save-state{font-size:12px;line-height:1.4;color:var(--aw-muted)}
+.aw-settings .aw-primary{padding-bottom:0}
 .aw-settings .aw-action-buttons{display:flex;flex-wrap:wrap;gap:8px}
 .aw-settings .aw-action-buttons button{min-height:38px;padding:8px 14px;font-size:12px;font-weight:500;line-height:1.4;border:1px solid var(--aw-line);border-radius:10px;background:var(--aw-inset)}
 .aw-settings .aw-action-buttons .aw-save{color:#fff;border-color:var(--aw-accent);background:var(--aw-accent);padding-inline:22px}
@@ -5740,7 +5799,6 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
 .aw-settings .aw-preview{padding:8px 12px;margin-bottom:8px}
 .aw-settings .aw-preview-card canvas{height:clamp(56px,calc(var(--aw-height,500px) * .22),150px)}
 .aw-settings .aw-actions{gap:6px;padding-block:6px}
-.aw-settings .aw-save-state{display:none}
 .aw-settings .aw-action-buttons{margin-left:auto}
 }
 @container(max-width:760px){
@@ -5772,6 +5830,15 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       seaGroup: "Sea & weather",
       seaDescription: "Choose wind, clouds, swimming wakes and rain.",
       advancedGroup: "Advanced settings",
+      layoutGroup: "Layout & scrolling",
+      layoutDescription: "Adjust browser spacing and scrolling behavior.",
+      scenePreset: "Scene preset",
+      presetDescription: "Adjust count, speed, opacity, color and sea effects in the draft. Keeps your text and reading preferences. Save to apply. Default scene differs from restoring all defaults.",
+      preset_custom: "Custom",
+      preset_default: "Default",
+      preset_rainy: "Rainy",
+      preset_minimal: "Minimal",
+      preset_night: "Night voyage",
       unsavedDraft: "Unsaved changes, shown in the preview only",
       savedDraft: "Changes preview immediately. Save to apply to the background.",
       none: "Off",
@@ -5830,7 +5897,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       ripplesHint: "Swimming and gliding leave an ASCII wake that spreads and fades along the trail. Strong tail strokes add a brief splash. Submerged whales stop making new wakes.",
       save: "Save",
       saving: "Saving…",
-      reset: "Restore defaults",
+      reset: "Restore all defaults",
       discard: "Reload saved values",
       loading: "Loading whale settings…",
       unavailable: "Whale settings are unavailable.",
@@ -5883,6 +5950,15 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       seaGroup: "海面与天气",
       seaDescription: "按喜好开关风纹、云影、尾流和雨水。",
       advancedGroup: "高级设置",
+      layoutGroup: "布局与滚动",
+      layoutDescription: "调整浏览器留白与滚动暂退。",
+      scenePreset: "场景预设",
+      presetDescription: "一次调整鲸数、游速、浓度、配色和海面效果，仅改草稿。保留文字与阅读偏好，保存后应用。默认场景与恢复全部默认值不同。",
+      preset_custom: "自定义",
+      preset_default: "默认",
+      preset_rainy: "雨天",
+      preset_minimal: "极简",
+      preset_night: "夜航",
       unsavedDraft: "有未保存的调整，仅在预览中显示",
       savedDraft: "调整会即时预览，保存后应用到背景",
       none: "关闭",
@@ -5941,7 +6017,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       ripplesHint: "游过后留下逐渐展开、消散的 ASCII 尾流，滑行也有；用力拍尾时带少量碎水。潜入水下后停止生成新尾流。",
       save: "保存",
       saving: "保存中…",
-      reset: "恢复默认值",
+      reset: "恢复全部默认值",
       discard: "重新载入已保存值",
       loading: "正在读取蓝鲸设置…",
       unavailable: "蓝鲸设置暂不可用。",
