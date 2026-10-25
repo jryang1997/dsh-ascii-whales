@@ -1,7 +1,9 @@
 export const WORK_METRICS = Object.freeze({
-  wakeup: 'engine animation callback',
+  wakeup: 'continuous renderer callback, RAF or timer',
+  refreshWakeup: 'once-off event/layout RAF callback',
+  scrollWakeup: 'scroll quiet-interval timer callback',
   advance: 'simulation advance body',
-  motionStep: 'executed 1/60 second motion integration',
+  motionStep: 'executed physical integration tick (standard 1/60, economy 1/30 second)',
   waterUpdate: 'water effect update',
   atmosphereUpdate: 'atmosphere effect update',
   rainUpdate: 'rain update after valid delta/size guard',

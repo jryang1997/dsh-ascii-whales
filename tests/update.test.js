@@ -41,7 +41,7 @@ const baseline = () => normalizeConfig(DEFAULTS);
 // A different value for every field: used to prove that each option lands in
 // exactly one rebuild group and that the value fingerprint follows it.
 const ALTERNATIVES = Object.freeze({
-  enabled: false, count: 5, species: 'blue', renderStyle: 'cells', fillMode: 'ascii',
+  enabled: false, resourceMode: 'economy', count: 5, species: 'blue', renderStyle: 'cells', fillMode: 'ascii',
   text: '深海蓝鲸', speed: 1.1, opacity: 0.7, glyphSize: 13, whaleSize: 1.2,
   color: 'azure', activity: false, quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
   readingEffect: 'glow', composerGlass: true, composerAvoid: true, spout: false, ripples: false, wind: false, clouds: false,
@@ -54,7 +54,7 @@ const GROUP_OF = Object.freeze({
   palette: ['color'],
   glass: ['glass', 'glassStrength', 'readingEffect'],
   composer: ['composerGlass', 'composerAvoid'],
-  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'pauseOnScroll'],
+  live: ['resourceMode', 'speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'pauseOnScroll'],
 });
 const GROUPS = Object.keys(GROUP_OF);
 
@@ -531,7 +531,8 @@ test('speed 0 is a preview-only pause sentinel and never leaks into the settings
   const draws = stats.draws;
   for (let frame = 0; frame < 40; frame++) raf.step();
   assert.deepEqual(drawn.map(point => ({ x: point.x, y: point.y })), frozen, 'a paused layer must not move');
-  assert.ok(stats.draws > draws, 'a paused layer keeps its last static frame on screen');
+  assert.equal(stats.draws, draws, 'a paused layer retains its frame without repeating work');
+  assert.equal(raf.pending().length, 0, 'preview pause cancels continuous scheduling');
   // A paused layer also ignores scene edits positionally: the school stays put.
   layer.update({ ...config, speed: 0, text: '深海蓝鲸' });
   assert.deepEqual(drawn.map(point => ({ x: point.x, y: point.y })), frozen, 'pausing must survive a rebuild');

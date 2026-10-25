@@ -4,6 +4,7 @@ import { createWaterField, resetWaterField, stepWater } from './water.js';
 import { createAtmosphereField, resizeAtmosphereField, stepAtmosphere } from './atmosphere.js';
 import { createActivityTracker } from './activity.js';
 import { createRainField, resizeRainField, stepRain, resetRainField } from './rain.js';
+import { resourcePolicy } from './resource-policy.js';
 
 const sceneConfigKeys = Object.freeze(['count', 'text', 'species', 'whaleSize']);
 
@@ -22,7 +23,11 @@ export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null,
   const water = createWaterField();
   const atmosphere = createAtmosphereField({ seed });
   const rain = createRainField({ seed });
-  const activity = createActivityTracker({ onChange: onActivityChange });
+  let activityVersion = 0;
+  const activity = createActivityTracker({ onChange(value) {
+    activityVersion++;
+    onActivityChange?.(value);
+  } });
   return {
     get scene() { return scene; },
     water, atmosphere, rain,
@@ -36,6 +41,8 @@ export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null,
         resizeScene(scene, previous.width > 0 ? previous.width : 1600,
           previous.height > 0 ? previous.height : 900);
         adoptSceneState(previous, scene);
+        scene.time = previous.time;
+        scene.accumulator = previous.accumulator;
       }
       if (rebuild || config.ripples !== next.ripples) resetWaterField(water);
       config = { ...next };
@@ -43,9 +50,11 @@ export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null,
       return rebuild;
     },
     setActivity(snapshot) {
-      if (disposed) return;
+      if (disposed) return false;
+      const before = activityVersion;
       activity.update(snapshot);
       activity.apply(scene.whales, activityTime, config.activity);
+      return before !== activityVersion;
     },
     resize(width, height) {
       if (disposed) return;
@@ -60,9 +69,11 @@ export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null,
       const started = metrics?.begin();
       const before = scene.time;
       activity.apply(scene.whales, activityTime, config.activity);
-      stepScene(scene, delta, config.speed, metrics);
+      const policy = resourcePolicy(config.resourceMode);
+      stepScene(scene, delta, config.speed * policy.swimMultiplier, metrics, policy.motionTick);
       const elapsed = scene.time - before;
       activityTime += elapsed;
+      activity.apply(scene.whales, activityTime, config.activity);
       if (config.ripples) {
         const waterStarted = metrics?.begin();
         stepWater(water, scene, elapsed);
@@ -70,7 +81,7 @@ export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null,
       }
       stepAtmosphere(atmosphere, elapsed, metrics);
       stepRain(rain, elapsed, { enabled: config.rain, intensity: config.rainIntensity,
-        wind: config.wind, atmosphere, metrics });
+        wind: config.wind, atmosphere, metrics, integrationHz: policy.rainHz });
       metrics?.end('advance', started);
       return elapsed;
     },

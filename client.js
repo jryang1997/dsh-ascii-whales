@@ -772,7 +772,7 @@
     whale.rig.nodes.set(nodes);
     updateWhaleRig(whale);
   }
-  function motionConstrainStep(whale, x, y, heading, obstacles, width, height) {
+  function motionConstrainStep(whale, x, y, heading, obstacles, width, height, motionTick2) {
     if (!obstacles?.length) return false;
     const seamReach = whale.length * 0.6 + motionHullReach(whale);
     if (Math.min(x, width - x, y, height - y) > seamReach) return false;
@@ -852,10 +852,10 @@
       }
       sample(low);
     }
-    whale.vx = (whale.x - x) / motionTick;
-    whale.vy = (whale.y - y) / motionTick;
+    whale.vx = (whale.x - x) / motionTick2;
+    whale.vy = (whale.y - y) / motionTick2;
     whale.speed = Math.hypot(whale.vx, whale.vy);
-    whale.turn = (whale.heading - heading) / motionTick;
+    whale.turn = (whale.heading - heading) / motionTick2;
     return true;
   }
   function motionFoldWhale(whale, width, height) {
@@ -911,12 +911,12 @@
     const u = motionLimit((age - state.depthStartedAt) / state.depthDuration, 0, 1);
     whale.depth = state.depthFrom + (state.depthTarget - state.depthFrom) * u * u * (3 - 2 * u);
   }
-  function motionIntegrate(scene, speed) {
+  function motionIntegrate(scene, speed, motionTick2) {
     const whales = scene.whales, width = scene.width, height = scene.height;
     const size2 = motionLimit(motionFinite(scene.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling);
     for (let i = 0; i < whales.length; i++) {
       const whale = whales[i], previousLength = whale.length;
-      motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
+      motionCruiseDepth(whale, i, whale._motion.age + motionTick2 * speed);
       motionGeometry(whale, width, height, whales.length, size2);
       const nodes = whale.rig?.nodes, ratio = whale.length / previousLength;
       if (nodes && Number.isFinite(ratio) && ratio !== 1) {
@@ -971,7 +971,7 @@
       const anatomy = whaleSpecies(whale.species);
       const activityKind = whale.activity?.kind;
       const activityPace = activityKind === "running" ? 1.35 : activityKind === "waiting" ? 0.32 : activityKind === "idle" ? 0.62 : 1;
-      const travelTick = motionTick * speed;
+      const travelTick = motionTick2 * speed;
       state.age += travelTick;
       motionPrepareDive(whale, i, scene.diveSeed, anatomy, travelTick, activityKind === "waiting");
       const bearingHold = motionDiveBearingHold(state.dive, state.age);
@@ -1041,16 +1041,16 @@
       }
       const requestedTurn = motionLimit(steeringError * 1.1, -turnLimit, turnLimit);
       const turnResponse = 1.7 + (1 / 0.06 - 1.7) * bearingHold;
-      whale.turn += (requestedTurn - whale.turn) * (1 - Math.exp(-motionTick * turnResponse));
+      whale.turn += (requestedTurn - whale.turn) * (1 - Math.exp(-motionTick2 * turnResponse));
       whale.turn = motionLimit(whale.turn, -turnLimit, turnLimit);
-      whale.heading += whale.turn * motionTick;
+      whale.heading += whale.turn * motionTick2;
       const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - seamBrake) * (1 - 0.12 * Math.abs(whale.turn) / Math.max(0.01, turnLimit));
-      whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + seamBrake * 3.2)));
+      whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick2 * (0.8 + seamBrake * 3.2)));
       whale.vx = Math.cos(whale.heading) * whale.speed;
       whale.vy = Math.sin(whale.heading) * whale.speed;
-      whale.x += whale.vx * motionTick;
-      whale.y += whale.vy * motionTick;
-      if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height)) updateWhaleRig(whale);
+      whale.x += whale.vx * motionTick2;
+      whale.y += whale.vy * motionTick2;
+      if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height, motionTick2)) updateWhaleRig(whale);
       if (obstacles && obstacles.length) motionPushOut(whale, obstacles, width, height);
       motionFoldWhale(whale, width, height);
       const effort = whale.speed / Math.max(1, state.cruise * environmentSpeed);
@@ -1066,7 +1066,7 @@
       state.wave += travelTick * anatomy.beat * (0.7 + 0.3 * Math.min(1.4, Math.sqrt(effort))) * (0.08 + 0.92 * state.stroke);
       motionStepDive(whale);
     }
-    scene.time += motionTick;
+    scene.time += motionTick2;
   }
   function motionDiveBearingHold(dive, age) {
     if (Number.isFinite(dive.returnStartedAt)) return 1;
@@ -1268,7 +1268,7 @@
     const submergence = u < 0.65 ? 1 - 0.8 * diveSmoothstep(u / 0.65) : 0.2 * (1 - diveSmoothstep((u - 0.65) / 0.35));
     return { submergence, pitch, noseFirst: submergence > 0, depth, tailKick: 0, arch };
   }
-  function stepScene(scene, dt, speed = 1, metrics = null) {
+  function stepScene(scene, dt, speed = 1, metrics = null, integrationTick = motionTick) {
     if (!Number.isFinite(dt) || dt <= 0) return scene;
     speed = motionLimit(motionFinite(speed, 1), 0, 3);
     if (speed === 0) return scene;
@@ -1276,11 +1276,11 @@
       resizeScene(scene, scene.width || 1600, scene.height || 900);
     }
     scene.accumulator = motionFinite(scene.accumulator, 0) + Math.min(dt, 0.25);
-    while (scene.accumulator + 1e-10 >= motionTick) {
+    while (scene.accumulator + 1e-10 >= integrationTick) {
       const started = metrics?.begin();
-      motionIntegrate(scene, speed);
+      motionIntegrate(scene, speed, integrationTick);
       metrics?.end("motionStep", started);
-      scene.accumulator = Math.max(0, scene.accumulator - motionTick);
+      scene.accumulator = Math.max(0, scene.accumulator - integrationTick);
     }
     return scene;
   }
@@ -1398,6 +1398,7 @@
   // src/model.js
   var FIELDS = Object.freeze({
     enabled: { kind: "boolean", default: true },
+    resourceMode: { kind: "enum", values: ["standard", "economy"], default: "standard" },
     count: { kind: "number", min: 1, max: 8, step: 1, default: 3 },
     species: { kind: "enum", values: ["mixed", ...SPECIES_IDS], default: "mixed" },
     renderStyle: { kind: "enum", values: ["glyphs", "cells"], default: "glyphs" },
@@ -2012,6 +2013,27 @@
   function createConfigEditor(snapshot) {
     const base = normalizeConfig(snapshot.value);
     return configEditorState(base, { ...base }, snapshot.revision);
+  }
+
+  // src/resource-policy.js
+  var POLICIES = Object.freeze({
+    standard: Object.freeze({
+      scheduler: "raf",
+      drawIntervalMs: 1e3 / 30,
+      motionTick: 1 / 60,
+      rainHz: 60,
+      swimMultiplier: 1
+    }),
+    economy: Object.freeze({
+      scheduler: "timer",
+      drawIntervalMs: 1e3 / 15,
+      motionTick: 1 / 30,
+      rainHz: 15,
+      swimMultiplier: 0.75
+    })
+  });
+  function resourcePolicy(mode) {
+    return POLICIES[mode] || POLICIES.standard;
   }
 
   // src/glass.js
@@ -3293,7 +3315,7 @@
     }
     function apply(whales, time, enabled = true) {
       now = time;
-      if (!dirty && appliedWhales === whales && appliedEnabled === enabled && now < nextExpiry) return;
+      if (!dirty && appliedWhales === whales && appliedEnabled === enabled && now + 1e-9 < nextExpiry) return;
       dirty = false;
       appliedWhales = whales;
       appliedEnabled = enabled;
@@ -3309,7 +3331,7 @@
         publish([], [], [], enabled);
         return;
       }
-      for (const [key, entity] of terminal) if (entity.until <= now) terminal.delete(key);
+      for (const [key, entity] of terminal) if (entity.until <= now + 1e-9) terminal.delete(key);
       nextExpiry = Infinity;
       for (const entity of terminal.values()) nextExpiry = Math.min(nextExpiry, entity.until);
       const candidates = snapshot.entities.filter((entity) => entity.type !== "job" || !["completed", "failed"].includes(entity.kind));
@@ -3587,7 +3609,7 @@
       spawn(field, state, options, Math.max(0, age));
     }
   }
-  function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere, metrics = null } = {}) {
+  function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere, metrics = null, integrationHz = 60 } = {}) {
     const state = storage.get(field);
     if (!state || !(Number.isFinite(delta2) && delta2 > 0 && field.width > 0 && field.height > 0)) return field;
     const started = metrics?.begin();
@@ -3597,7 +3619,7 @@
       advance(field, state, delta2 - 2, options, target, false);
       metrics?.end("rainStep", stepStarted);
     }
-    const window2 = Math.min(delta2, 2), steps = Math.ceil(window2 * 60), dt = window2 / steps;
+    const window2 = Math.min(delta2, 2), steps = Math.max(1, Math.ceil(window2 * integrationHz - (integrationHz === 60 ? 0 : 1e-10))), dt = window2 / steps;
     for (let i = 0; i < steps; i++) {
       const stepStarted = metrics?.begin();
       advance(field, state, dt, options, target, true);
@@ -3731,7 +3753,11 @@
     const water = createWaterField();
     const atmosphere = createAtmosphereField({ seed });
     const rain = createRainField({ seed });
-    const activity = createActivityTracker({ onChange: onActivityChange });
+    let activityVersion = 0;
+    const activity = createActivityTracker({ onChange(value) {
+      activityVersion++;
+      onActivityChange?.(value);
+    } });
     return {
       get scene() {
         return scene;
@@ -3752,6 +3778,8 @@
             previous.height > 0 ? previous.height : 900
           );
           adoptSceneState(previous, scene);
+          scene.time = previous.time;
+          scene.accumulator = previous.accumulator;
         }
         if (rebuild || config.ripples !== next.ripples) resetWaterField(water);
         config = { ...next };
@@ -3759,9 +3787,11 @@
         return rebuild;
       },
       setActivity(snapshot) {
-        if (disposed) return;
+        if (disposed) return false;
+        const before = activityVersion;
         activity.update(snapshot);
         activity.apply(scene.whales, activityTime, config.activity);
+        return before !== activityVersion;
       },
       resize(width, height) {
         if (disposed) return;
@@ -3778,9 +3808,11 @@
         const started = metrics?.begin();
         const before = scene.time;
         activity.apply(scene.whales, activityTime, config.activity);
-        stepScene(scene, delta2, config.speed, metrics);
+        const policy = resourcePolicy(config.resourceMode);
+        stepScene(scene, delta2, config.speed * policy.swimMultiplier, metrics, policy.motionTick);
         const elapsed = scene.time - before;
         activityTime += elapsed;
+        activity.apply(scene.whales, activityTime, config.activity);
         if (config.ripples) {
           const waterStarted = metrics?.begin();
           stepWater(water, scene, elapsed);
@@ -3792,7 +3824,8 @@
           intensity: config.rainIntensity,
           wind: config.wind,
           atmosphere,
-          metrics
+          metrics,
+          integrationHz: policy.rainHz
         });
         metrics?.end("advance", started);
         return elapsed;
@@ -4563,7 +4596,7 @@
   var PALETTE_KEYS = Object.freeze(["color"]);
   var GLASS_KEYS = Object.freeze(["glass", "glassStrength", "readingEffect"]);
   var COMPOSER_KEYS = Object.freeze(["composerGlass", "composerAvoid"]);
-  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds", "rain", "rainIntensity", "activity", "pauseOnScroll"]);
+  var LIVE_KEYS = Object.freeze(["resourceMode", "enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds", "rain", "rainIntensity", "activity", "pauseOnScroll"]);
   var anyChanged = (keys, previous, next) => keys.some((key) => previous[key] !== next[key]);
   var noChange = (changes) => !changes.scene && !changes.metrics && !changes.palette && !changes.glass && !changes.composer && !changes.live;
   function diffWhaleConfig(previous, next) {
@@ -4757,13 +4790,14 @@
     let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
     let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
     let panes = [], tone = null, readingLayout = null, foreground = null, sidebarForegrounds = [];
-    let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+    let scheduled = null, refreshRaf = 0, refreshCause = null;
+    let previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
     let readingTextDirty = true, readingRoots = [], scrolling = false, scrollTimer = 0;
     const originalOpacity = canvas.style?.opacity ?? "", originalTransition = canvas.style?.transition ?? "";
     const SCROLL_IDLE_MS = 140;
     const spout = attachSpout(canvas, () => ({
       enabled: config.spout,
-      reduced: reduced.matches,
+      reduced: reduced.matches || config.speed === 0,
       hidden: document.hidden,
       opacity: config.opacity,
       quietCenter: config.quietCenter,
@@ -4948,7 +4982,7 @@
       });
     }
     function draw(cause = "sync") {
-      if (scrolling || !width || !height || !scene || !grid) return;
+      if (disposed || !config.enabled || document.hidden || scrolling || !width || !height || !scene || !grid) return;
       if (!metrics) return drawContent();
       const started = metrics.begin();
       drawContent();
@@ -5134,37 +5168,85 @@
         ink.fill();
       }
     }
+    function canAnimate() {
+      return !disposed && config.enabled && config.speed > 0 && !scrolling && !document.hidden && !reduced.matches && width > 0 && height > 0 && scene;
+    }
+    function cancelContinuous() {
+      if (scheduled?.kind === "raf") cancelAnimationFrame(scheduled.handle);
+      else if (scheduled?.kind === "timer") clearTimeout(scheduled.handle);
+      scheduled = null;
+      previous = null;
+    }
+    function cancelRefresh() {
+      cancelAnimationFrame(refreshRaf);
+      refreshRaf = 0;
+      refreshCause = null;
+    }
+    function scheduleContinuous() {
+      if (scheduled || !canAnimate()) return;
+      const policy = resourcePolicy(config.resourceMode);
+      if (policy.scheduler === "timer") {
+        if (previous === null) previous = performance.now();
+        scheduled = { kind: "timer", handle: setTimeout(() => frame(performance.now()), policy.drawIntervalMs) };
+      } else scheduled = { kind: "raf", handle: requestAnimationFrame(frame) };
+    }
     function frame(now) {
       const started = metrics?.begin();
+      const kind = scheduled?.kind;
+      scheduled = null;
       try {
-        runFrame(now);
+        if (!canAnimate()) return;
+        if (previous !== null) simulation.advance(Math.min(0.1, (now - previous) / 1e3));
+        previous = now;
+        if (now - lastPaint >= resourcePolicy(config.resourceMode).drawIntervalMs - 1e-7) {
+          draw("animation");
+          lastPaint = now;
+        }
+        scheduleContinuous();
       } finally {
-        metrics?.end("wakeup", started);
+        metrics?.end("wakeup", started, kind);
       }
     }
-    function runFrame(now) {
-      raf = 0;
-      if (disposed || scrolling || document.hidden || reduced.matches || !width || !height || !scene) return;
-      if (previous !== null) {
-        simulation.advance(Math.min(0.1, (now - previous) / 1e3));
+    function requestRefresh(cause, immediate = false) {
+      if (disposed || !config.enabled || scrolling || document.hidden || !width || !height) return;
+      refreshCause = cause;
+      if (refreshRaf) return;
+      if (immediate) {
+        draw(cause);
+        lastPaint = performance.now();
+        refreshCause = null;
       }
-      previous = now;
-      if (now - lastPaint >= 1e3 / 30) {
-        draw("animation");
-        lastPaint = now;
-      }
-      raf = requestAnimationFrame(frame);
+      refreshRaf = requestAnimationFrame(() => {
+        refreshRaf = 0;
+        const started = metrics?.begin();
+        const cause2 = refreshCause;
+        refreshCause = null;
+        try {
+          if (cause2) {
+            draw(cause2);
+            lastPaint = performance.now();
+          }
+        } finally {
+          metrics?.end("refreshWakeup", started, cause2);
+        }
+      });
     }
     function sync() {
-      cancelAnimationFrame(raf);
-      raf = 0;
-      previous = null;
+      cancelContinuous();
+      cancelRefresh();
+      if (document.hidden || !config.enabled) {
+        clearTimeout(scrollTimer);
+        scrollTimer = 0;
+        scrolling = false;
+        revealLayer();
+      }
       lastPaint = -Infinity;
       measuredAt = -Infinity;
       readingTextDirty = true;
-      if (!disposed && !scrolling && !document.hidden && width && height) {
+      observeScene(!disposed && config.enabled && !scrolling && !document.hidden);
+      if (!disposed && config.enabled && !scrolling && !document.hidden && width && height) {
         draw();
-        if (!reduced.matches) raf = requestAnimationFrame(frame);
+        scheduleContinuous();
       }
     }
     function update(nextConfig) {
@@ -5172,11 +5254,17 @@
       const next = normalizeLayerConfig(nextConfig);
       const changes = diffWhaleConfig(config, next);
       if (noChange(changes)) return;
+      const schedulerChanged = config.resourceMode !== next.resourceMode || config.enabled !== next.enabled || config.speed === 0 !== (next.speed === 0);
+      if (schedulerChanged) {
+        cancelContinuous();
+        cancelRefresh();
+      }
       const sceneRebuilt = simulation.update(next);
       Object.assign(config, next);
       if (config.readingEffect === "none") readingProtection.dispose();
       const wasPaused = scrolling && !config.pauseOnScroll;
       if (wasPaused) leaveScrollPause();
+      observeScene(config.enabled && !scrolling && !document.hidden);
       if (sceneRebuilt) {
         scene = simulation.scene;
         poses = scene.whales.map(() => ({}));
@@ -5193,15 +5281,20 @@
       if (changes.glass || changes.composer) {
         measuredAt = -Infinity;
         readingTextDirty = true;
-        if (!scrolling && width && height) measure();
+        if (config.enabled && !document.hidden && !scrolling && width && height) measure();
       }
       if (changes.palette) sceneryPalette = createInkPalette(config.color);
       if (viewport) resize();
       lastPaint = -Infinity;
       if (!scrolling && !document.hidden && width && height) {
-        if (!reduced.matches && !raf) raf = requestAnimationFrame(frame);
+        scheduleContinuous();
         draw("config");
         lastPaint = performance.now();
+      }
+      if (!config.enabled) {
+        cancelContinuous();
+        cancelRefresh();
+        leaveScrollPause();
       }
       if (wasPaused) revealLayer();
     }
@@ -5224,40 +5317,39 @@
       }
     }
     function onScroll(event) {
-      if (demo || disposed || document.hidden || event?.ctrlKey) return;
+      if (demo || disposed || !config.enabled || document.hidden || event?.ctrlKey) return;
       const target = event?.target;
       if (target && target !== document && target !== document.body && target !== document.documentElement && !readingRoots.some((root) => root === target || root.contains?.(target))) return;
       readingTextDirty = true;
       if (!config.pauseOnScroll) {
-        if (reduced.matches) onForegroundChange();
+        if (!canAnimate()) onForegroundChange();
         return;
       }
       measuredAt = -Infinity;
       if (!scrolling) {
         scrolling = true;
-        cancelAnimationFrame(raf);
-        cancelAnimationFrame(foregroundRaf);
-        raf = foregroundRaf = 0;
-        previous = null;
+        observeScene(false);
+        cancelContinuous();
+        cancelRefresh();
         if (canvas.style) {
           canvas.style.transition = "none";
           canvas.style.opacity = "0";
         }
       }
       clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(finishScroll, SCROLL_IDLE_MS);
+      scrollTimer = setTimeout(() => {
+        const started = metrics?.begin();
+        try {
+          finishScroll();
+        } finally {
+          metrics?.end("scrollWakeup", started);
+        }
+      }, SCROLL_IDLE_MS);
     }
     function onForegroundChange() {
       measuredAt = -Infinity;
       readingTextDirty = true;
-      if (disposed || scrolling || document.hidden || !reduced.matches || foregroundRaf) return;
-      foregroundRaf = requestAnimationFrame(() => {
-        foregroundRaf = 0;
-        if (!disposed && !document.hidden) {
-          draw("foreground");
-          lastPaint = performance.now();
-        }
-      });
+      requestRefresh("foreground");
     }
     function resize() {
       const rect = canvas.getBoundingClientRect();
@@ -5287,19 +5379,33 @@
     }
     const observer = new ResizeObserver(resize);
     const themeObserver = new MutationObserver(sync);
-    const foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+    let foregroundObserver = null, observing = false;
     const readingObserver = demo ? null : new MutationObserver((records) => {
       if (!records || records.some((record2) => record2.target !== canvas)) onForegroundChange();
     });
-    readingObserver?.observe(document.body, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["class", "style", "hidden"]
-    });
-    observer.observe(canvas);
-    themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+    function observeScene(active) {
+      if (observing === active) return;
+      observing = active;
+      if (active) {
+        foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+        readingObserver?.observe(document.body, {
+          childList: true,
+          characterData: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["class", "style", "hidden"]
+        });
+        observer.observe(canvas);
+        themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+      } else {
+        observer.disconnect();
+        foregroundObserver?.dispose();
+        foregroundObserver = null;
+        readingObserver?.disconnect();
+        themeObserver.disconnect();
+      }
+    }
+    observeScene(config.enabled && !document.hidden);
     document.addEventListener("visibilitychange", sync);
     reduced.addEventListener("change", sync);
     reducedTransparency.addEventListener("change", sync);
@@ -5315,15 +5421,10 @@
       spout.detach();
       simulation.dispose();
       disposed = true;
-      cancelAnimationFrame(raf);
-      cancelAnimationFrame(foregroundRaf);
-      foregroundRaf = 0;
-      raf = 0;
-      observer.disconnect();
-      foregroundObserver?.dispose();
-      readingObserver?.disconnect();
+      cancelContinuous();
+      cancelRefresh();
+      observeScene(false);
       readingProtection?.dispose();
-      themeObserver.disconnect();
       document.removeEventListener("visibilitychange", sync);
       reduced.removeEventListener("change", sync);
       reducedTransparency.removeEventListener("change", sync);
@@ -5358,8 +5459,7 @@
     }
     function setActivity(snapshot) {
       if (disposed) return;
-      simulation.setActivity(snapshot);
-      if (!document.hidden && width && height) draw("activity");
+      if (simulation.setActivity(snapshot)) requestRefresh("activity", true);
     }
     return { update, setActivity, dispose };
   }
@@ -5896,6 +5996,7 @@
                 ...Object.keys(PRESETS).map((id) => h("option", { key: id, value: id }, t(`preset_${id}`)))
               )
             ),
+            renderField("resourceMode"),
             renderField("text"),
             renderField("activity"),
             h("button", {
@@ -6157,6 +6258,10 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       countHint: "1 to 8 whales with different sizes and depths.",
       text: "Whale body text",
       textHint: "Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境 (the default phrase, “explore the uncharted”). Up to 40 characters.",
+      resourceMode: "Resource mode",
+      resourceModeHint: "Economy uses fewer animation updates and drifts at 75% of your saved swimming speed. Keeps scene settings and task updates. Reduced motion takes priority.",
+      standard: "Standard",
+      economy: "Economy",
       speed: "Swimming speed",
       speedHint: "0.3 to 2. Default 0.65. Scales cruising, turning and tail beats, with glides between strokes.",
       opacity: "Background opacity",
@@ -6297,6 +6402,10 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       countHint: "1 至 8 条，大小与远近各有不同。",
       text: "鱼身文字",
       textHint: "重复使用这些字组成鲸鱼；留空使用探索未至之境。忽略空白，最多 40 个字符。",
+      resourceMode: "资源档位",
+      resourceModeHint: "省资源档减少动画更新，以已保存游速的 75% 慢漂移。保留场景设置，任务提示及时更新。系统减少动态效果优先。",
+      standard: "标准",
+      economy: "省资源",
       speed: "游动速度",
       speedHint: "0.3 至 2，默认 0.65。巡游、转弯与摆尾同步放缓，摆尾之间有自然滑行。",
       opacity: "背景浓度",

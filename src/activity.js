@@ -109,7 +109,7 @@ export function createActivityTracker({ onChange } = {}) {
   }
   function apply(whales, time, enabled = true) {
     now = time;
-    if (!dirty && appliedWhales === whales && appliedEnabled === enabled && now < nextExpiry) return;
+    if (!dirty && appliedWhales === whales && appliedEnabled === enabled && now + 1e-9 < nextExpiry) return;
     dirty = false; appliedWhales = whales; appliedEnabled = enabled;
     if (!enabled || !scope) {
       for (const whale of whales) delete whale.activity;
@@ -118,7 +118,7 @@ export function createActivityTracker({ onChange } = {}) {
       publish([], [], [], enabled);
       return;
     }
-    for (const [key, entity] of terminal) if (entity.until <= now) terminal.delete(key);
+    for (const [key, entity] of terminal) if (entity.until <= now + 1e-9) terminal.delete(key);
     nextExpiry = Infinity;
     for (const entity of terminal.values()) nextExpiry = Math.min(nextExpiry, entity.until);
     const candidates = snapshot.entities.filter(entity => entity.type !== 'job' || !['completed', 'failed'].includes(entity.kind));

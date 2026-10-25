@@ -84,9 +84,9 @@ function attributes(text) {
   return Object.fromEntries([...text.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(match => [match[1], match[2] ?? '']));
 }
 
-function environment(html, initial, seed, reducedMotion) {
+export function environment(html = '', initial = {}, seed = 42, reducedMotion = false) {
   const viewport = { left: 0, top: 0, width: 800, height: 600 };
-  const controls = new Map(), samples = [], canvases = [], themeObservers = new Set(), media = new Map();
+  const controls = new Map(), samples = [], canvases = [], themeObservers = new Set(), resizeObservers = new Set(), media = new Map();
   const clock = { now: 1000, next: 1, queue: new Map(), timers: new Map() };
   let random = seed >>> 0;
   const math = Object.create(Math);
@@ -155,7 +155,7 @@ function environment(html, initial, seed, reducedMotion) {
     cancelAnimationFrame(id) { clock.queue.delete(id); },
     setTimeout(callback, delay) { const id = clock.next++; clock.timers.set(id, { callback, due: clock.now + delay }); return id; },
     clearTimeout(id) { clock.timers.delete(id); },
-    ResizeObserver: class { constructor(callback) { this.callback = callback; } observe() {} disconnect() {} },
+    ResizeObserver: class { constructor(callback) { this.callback = callback; } observe() { resizeObservers.add(this); } disconnect() { resizeObservers.delete(this); } },
     MutationObserver: class {
       constructor(callback) { this.callback = callback; }
       observe() { themeObservers.add(this); }
@@ -164,7 +164,26 @@ function environment(html, initial, seed, reducedMotion) {
     getComputedStyle: node => node.__style || transparent,
   };
   return {
-    globals, document, window, controls, canvases,
+    globals, document, window, controls, canvases, clock,
+    pending: () => ({ raf: clock.queue.size, timers: clock.timers.size }),
+    observersActive: () => ({ resize: resizeObservers.size, mutation: themeObservers.size }),
+    elapse(milliseconds, hz = 60) {
+      const target = clock.now + milliseconds;
+      let nextFrame = clock.now + 1000 / hz;
+      while (clock.now < target - 1e-7) {
+        const due = Math.min(...[...clock.timers.values()].map(timer => timer.due));
+        const next = Math.min(target, nextFrame, due);
+        clock.now = next;
+        for (const [id, timer] of [...clock.timers]) if (timer.due <= clock.now + 1e-7) {
+          clock.timers.delete(id); timer.callback();
+        }
+        if (nextFrame <= clock.now + 1e-7) {
+          nextFrame += 1000 / hz;
+          const callbacks = [...clock.queue.values()]; clock.queue.clear();
+          for (const callback of callbacks) callback(clock.now);
+        }
+      }
+    },
     advance(frames = 1) {
       for (let i = 0; i < frames; i++) {
         clock.now += 1000 / 60;

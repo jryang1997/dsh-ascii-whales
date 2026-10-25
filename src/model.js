@@ -6,6 +6,7 @@ export { resizeScene, stepScene, whalePose } from './motion.js';
 
 export const FIELDS = Object.freeze({
   enabled: { kind: 'boolean', default: true },
+  resourceMode: { kind: 'enum', values: ['standard', 'economy'], default: 'standard' },
   count: { kind: 'number', min: 1, max: 8, step: 1, default: 3 },
   species: { kind: 'enum', values: ['mixed', ...SPECIES_IDS], default: 'mixed' },
   renderStyle: { kind: 'enum', values: ['glyphs', 'cells'], default: 'glyphs' },

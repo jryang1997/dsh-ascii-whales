@@ -583,7 +583,7 @@ function motionContactTrial(whale, x, y, heading, nodes) {
 
 // On a seam, predict the real future rig before accepting any movement. Sliding
 // and a partial step must keep the centre, bearing and historical nodes together.
-function motionConstrainStep(whale, x, y, heading, obstacles, width, height) {
+function motionConstrainStep(whale, x, y, heading, obstacles, width, height, motionTick) {
   if (!obstacles?.length) return false;
   const seamReach = whale.length * 0.6 + motionHullReach(whale);
   if (Math.min(x, width - x, y, height - y) > seamReach) return false;
@@ -725,7 +725,7 @@ function motionCruiseDepth(whale, index, age) {
   whale.depth = state.depthFrom + (state.depthTarget - state.depthFrom) * u * u * (3 - 2 * u);
 }
 
-function motionIntegrate(scene, speed) {
+function motionIntegrate(scene, speed, motionTick) {
   const whales = scene.whales, width = scene.width, height = scene.height;
   const size = motionLimit(motionFinite(scene.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling);
   // Update every body's geometry before reciprocal avoidance. Rescale historical
@@ -889,7 +889,7 @@ function motionIntegrate(scene, speed) {
     whale.vy = Math.sin(whale.heading) * whale.speed;
     whale.x += whale.vx * motionTick;
     whale.y += whale.vy * motionTick;
-    if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height)) updateWhaleRig(whale);
+    if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height, motionTick)) updateWhaleRig(whale);
     if (obstacles && obstacles.length) motionPushOut(whale, obstacles, width, height);
     motionFoldWhale(whale, width, height);
     const effort = whale.speed / Math.max(1, state.cruise * environmentSpeed);
@@ -1118,7 +1118,7 @@ export function divePose(elapsed, timing) {
 }
 
 /** Integrate a capped frame in fixed ticks; no DOM or wall-clock dependency. */
-export function stepScene(scene, dt, speed = 1, metrics = null) {
+export function stepScene(scene, dt, speed = 1, metrics = null, integrationTick = motionTick) {
   if (!Number.isFinite(dt) || dt <= 0) return scene;
   speed = motionLimit(motionFinite(speed, 1), 0, 3);
   if (speed === 0) return scene;
@@ -1127,11 +1127,11 @@ export function stepScene(scene, dt, speed = 1, metrics = null) {
     resizeScene(scene, scene.width || 1600, scene.height || 900);
   }
   scene.accumulator = motionFinite(scene.accumulator, 0) + Math.min(dt, 0.25);
-  while (scene.accumulator + 1e-10 >= motionTick) {
+  while (scene.accumulator + 1e-10 >= integrationTick) {
     const started = metrics?.begin();
-    motionIntegrate(scene, speed);
+    motionIntegrate(scene, speed, integrationTick);
     metrics?.end('motionStep', started);
-    scene.accumulator = Math.max(0, scene.accumulator - motionTick);
+    scene.accumulator = Math.max(0, scene.accumulator - integrationTick);
   }
   return scene;
 }

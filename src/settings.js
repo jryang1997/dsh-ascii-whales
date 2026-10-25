@@ -349,7 +349,7 @@ export function registerWhales(ctx, React, dictionaries) {
               setNotice('');
             } }, h('option', { value: 'custom', disabled: true }, t('preset_custom')),
           ...Object.keys(PRESETS).map(id => h('option', { key: id, value: id }, t(`preset_${id}`))))),
-        renderField('text'), renderField('activity'),
+        renderField('resourceMode'), renderField('text'), renderField('activity'),
         h('button', { type: 'button', 'aria-expanded': showLegend,
           onClick: () => setShowLegend(value => !value) }, t('activityLegendOpen')),
         showLegend && h(Legend, { onClose: () => setShowLegend(false) })),

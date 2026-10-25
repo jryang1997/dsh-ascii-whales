@@ -186,6 +186,7 @@ test('shipped accessible text shares badge semantics, full names, overflow and b
     assert.match(pair.hostText(), /完整构建任务名称超过十八字仍然可查询而非被截断/);
     assert.match(pair.hostText(), /activityOverflow 1/);
     pair.setHostActivity({ rows: rows('completed') });
+    pair.advance(1);
     assert.ok(badges(pair).some(t => t.startsWith('✓ ')));
     pair.advance(8);
     assert.match(pair.hostText({ live: true }), /完整构建任务名称超过十八字仍然可查询而非被截断.*activityCompleted/);

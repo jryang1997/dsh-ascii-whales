@@ -34,7 +34,7 @@ test('settings put the live preview above grouped fields and expose every visibl
   const advanced = all.find(node => node.type === 'details');
   assert.ok(advanced);
   const foldedFields = nodes(advanced).filter(node => node.props['data-aw-field']).map(node => node.props['data-aw-field']);
-  const mainFields = ['enabled', 'text', 'activity'];
+  const mainFields = ['enabled', 'resourceMode', 'text', 'activity'];
   assert.deepEqual(foldedFields.sort(), Object.entries(FIELDS)
     .filter(([key, field]) => !field.hidden && !mainFields.includes(key)).map(([key]) => key).sort());
   for (const key of mainFields) assert.ok(fieldRow(root, key));

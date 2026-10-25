@@ -57,7 +57,9 @@ node scripts/measurement.mjs --smoke --warmup-ms 1000 --sample-ms 2000 --rounds 
 | --- | --- |
 | `wakeup` | 正式引擎每次持续动画回调，包括提前退出的回调。 |
 | `advance` | 仿真 `advance` 实际执行体，已经 dispose 的调用不计入。 |
-| `motionStep` | `motion.js` 的固定 1/60 秒积分循环，每执行一次积分计一次。绝不由经过时间推算。 |
+| `motionStep` | `motion.js` 的实际积分循环，标准档每步 1/60 秒，省资源档每步 1/30 秒。每执行一次积分计一次，绝不由经过时间推算。 |
+| `refreshWakeup` | 状态或布局的独立单次 RAF 回调，不计入持续 `wakeup`。 |
+| `scrollWakeup` | 滚动静默间隔的实际定时器回调，不计入持续 `wakeup`。 |
 | `waterUpdate` | 仿真实际调用 `stepWater` 的执行时间，包括零步长下的清理检查。 |
 | `atmosphereUpdate` | 大气时钟通过有效步长检查后实际更新的执行体。 |
 | `rainUpdate`、`rainStep` | 降雨有效更新执行体，以及其内部每次 `advance`。关闭落雨时原实现仍维护降雨时钟，其真实工作照计。 |
@@ -85,4 +87,4 @@ CPU 包含该浏览器的 browser、renderer、GPU 和 utility 进程，也包�
 
 缺少工作、页面隐藏、浏览器异常、计数倒退、时间表截断、事件缺失、配对内容不一致或持续时间严重偏离均返回非零状态。失败清单保留错误和已完成单元，不产生完整基线成功结论。CPU 等可选接口失败会留下明确未测字段与查询错误。检查 `manifest.status` 和 `manifest.cleanup.browserExited`，不能只看文件存在。
 
-省资源条件明确为 `not-implemented` 且 `compared=false`，不会填零，也不输出三条件成功。当前汇总固定不发布收益结论。正式收益判断还需重复采样、范围、负载与瓶颈证据。真实 DSH 静止阅读、滚动、GPU、能耗和跨功能验收由父任务分别补测。
+此基线入口的省资源比较仍标为 `not-implemented` 且 `compared=false`，指比较流程未接入省资源条件；运行时已提供独立档位。不会填零，也不输出三条件成功。当前汇总固定不发布收益结论。正式收益判断还需重复采样、范围、负载与瓶颈证据。真实 DSH 静止阅读、滚动、GPU、能耗和跨功能验收由父任务分别补测。

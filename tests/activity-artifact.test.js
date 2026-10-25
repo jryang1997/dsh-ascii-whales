@@ -18,6 +18,7 @@ test('the shipped overlay receives root pending-interaction updates without remo
     const original = pair.snapshots().host;
     assert.deepEqual(pair.watchedJobs(), ['main']);
     pair.setHostActivity({ statuses: new Map([['main', { running: true, pendingInteraction: { kind: 'approval' } }]]) });
+    pair.advance(1);
     assert.ok(text(pair).some(t => t === '! 主会话'));
     const after = pair.snapshots().host;
     assert.deepEqual(after.commands.filter(c => c.op === 'fillText' && c.args[0] !== '! 主会话'),
@@ -42,8 +43,10 @@ test('the shipped overlay shows a real job transition once, then removes its res
   try {
     assert.ok(!text(pair).some(t => t.includes('旧任务')));
     pair.setHostActivity({ rows: { main: [{ id: 'build', label: '构建', status: 'running' }] } });
+    pair.advance(1);
     assert.ok(text(pair).includes('···'));
     pair.setHostActivity({ rows: { main: [{ id: 'build', label: '构建', status: 'completed' }] } });
+    pair.advance(1);
     assert.ok(text(pair).includes('✓ 构建'));
     pair.advance(400);
     assert.ok(!text(pair).includes('✓ 构建'));
