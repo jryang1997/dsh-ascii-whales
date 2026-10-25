@@ -21,7 +21,7 @@ const list = { byId: {
 test('missing sources preserve known running facts without inventing idle or another current session', () => {
   const snapshot = readActivitySnapshot(list, undefined, undefined);
   assert.deepEqual(snapshot.entities.map(e => [e.key, e.kind]), [
-    ['session:main', 'running'], ['session:child', 'unavailable'],
+    ['session:main', 'running'], ['session:child', 'unavailable'], ['session:unrelated', 'running'],
   ]);
   assert.equal(snapshot.availability.liveStatus, 'unavailable');
   assert.equal(snapshot.availability.jobs, 'unavailable');

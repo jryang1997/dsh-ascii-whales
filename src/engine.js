@@ -793,12 +793,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   function sync() {
     cancelContinuous();
     cancelRefresh();
-    if (document.hidden || !config.enabled) {
-      clearTimeout(scrollTimer);
-      scrollTimer = 0;
-      scrolling = false;
-      revealLayer();
-    }
+    if (document.hidden || !config.enabled) leaveScrollPause();
     lastPaint = -Infinity;
     measuredAt = -Infinity;
     readingTextDirty = true;
@@ -836,8 +831,8 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     // abandoned quiet interval was the only thing that would have restored it.
     // Stop yielding here and reveal below, so the redraw in between happens
     // while hidden exactly like the ordinary resume path.
-    const wasPaused = scrolling && !config.pauseOnScroll;
-    if (wasPaused) leaveScrollPause();
+    const wasPaused = scrolling && (!config.pauseOnScroll || !config.enabled);
+    if (wasPaused) leaveScrollPause(false);
     observeScene(config.enabled && !scrolling && !document.hidden);
 
     if (sceneRebuilt) {
@@ -877,7 +872,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       lastPaint = performance.now();
     }
     if (!config.enabled) {
-      cancelContinuous(); cancelRefresh(); leaveScrollPause();
+      cancelContinuous(); cancelRefresh();
     }
     if (wasPaused) revealLayer();
   }
@@ -885,18 +880,19 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   function finishScroll() {
     scrollTimer = 0;
     if (disposed) return;
-    leaveScrollPause();
+    leaveScrollPause(false);
     // Repaint while hidden before showing the new mask. Reset the clock so the
     // pause never becomes a catch-up leap in the school or a dive.
     sync();
     revealLayer();
   }
 
-  /** Stop yielding to scrolling without touching the canvas presentation. */
-  function leaveScrollPause() {
+  /** Release scroll-owned presentation immediately or after the caller's repaint. */
+  function leaveScrollPause(reveal = true) {
     clearTimeout(scrollTimer);
     scrollTimer = 0;
     scrolling = false;
+    if (reveal) revealLayer();
   }
 
   /** Show the layer again, fading in unless the system asked for no motion. */

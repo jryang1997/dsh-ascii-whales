@@ -47,7 +47,7 @@ async function main() {
     startedAt: new Date().toISOString(), options, seed: 20261025, config, plan, registry: WORK_METRICS,
     resource: { status: 'pending', compared: false }, gpuUtilization: null, energy: null,
     missingEnvironment: ['physical display refresh rate', 'power mode unless operator supplied', 'attribution of other applications and GPU engines', 'actual DSH host build'],
-    reproduction: [process.execPath, 'scripts/measurement.mjs', ...process.argv.slice(2)], samples: [], statusProbes: [], failures, queryWarnings };
+    reproduction: [process.execPath, 'scripts/measurement.mjs', ...process.argv.slice(2)], samples: [], rendererStatusProbes: [], failures, queryWarnings };
   let chrome = null;
   const safeQuery = async (name, query) => {
     try { return await query(); } catch (error) { queryWarnings.push({ name, error: String(error) }); return null; }
@@ -100,14 +100,14 @@ async function main() {
         for (const reduced of [false, true]) {
           await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: reduced ? 'reduce' : 'no-preference' }] });
           for (const probeOptions of [{}, { burst: true }, { paused: true }]) {
-            const probe = await page.evaluate(`window.__measurement.statusProbe(${JSON.stringify(probeOptions)})`);
+            const probe = await page.evaluate(`window.__measurement.rendererStatusProbe(${JSON.stringify(probeOptions)})`);
             probes.push({ reduced, ...probe });
           }
         }
         await page.send('Emulation.setEmulatedMedia', { features: [] });
-        await save(out, `${id}-status-latency.json`, probes);
-        manifest.statusProbes.push({ condition: unit.condition, scenario: unit.scenario, round: unit.round, probes });
-        if (probes.some(probe => !Number.isFinite(probe.textMs) || probe.textMs > 250
+        await save(out, `${id}-renderer-status-probe.json`, probes);
+        manifest.rendererStatusProbes.push({ condition: unit.condition, scenario: unit.scenario, round: unit.round, probes });
+        if (probes.some(probe => !Number.isFinite(probe.mirrorTextMs) || probe.mirrorTextMs > 250
           || !Number.isFinite(probe.canvasMs) || probe.canvasMs > 250 || !probe.summary.includes('waiting'))) throw new Error(`Status endpoint budget failed ${id}`);
       }
       const warmup = await page.evaluate(`window.__measurement.runPhase(${JSON.stringify(unit.scenario)},${options.warmupMs})`, options.warmupMs + 30000);

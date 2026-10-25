@@ -136,6 +136,43 @@ test('scroll pause keeps text current and defers Canvas until the quiet interval
   } finally { f.close(); }
 });
 
+test('disabling a scroll-paused instance releases the pause and re-enables a visible layer', () => {
+  for (const resourceMode of ['standard', 'economy']) for (const reduced of [false, true]) {
+    for (const visibility of ['visible', 'hidden-before-disable', 'hidden-after-disable']) {
+      const f = fixture({ resourceMode, pauseOnScroll: true }, reduced);
+      try {
+        f.layer.setActivity(activity('running'));
+        f.layer.setActivity(activity('completed'));
+        f.document.dispatchEvent({ type: 'wheel' });
+        assert.equal(f.canvas.style.opacity, '0');
+        if (visibility === 'hidden-before-disable') {
+          f.document.hidden = true;
+          f.document.dispatchEvent({ type: 'visibilitychange' });
+        }
+        f.update({ enabled: false });
+        assert.equal(f.canvas.style.opacity, '', `${resourceMode}/${reduced}/${visibility} releases scroll opacity`);
+        assert.deepEqual(f.pending(), { raf: 0, timers: 0 });
+        assert.deepEqual(f.observersActive(), { resize: 0, mutation: 0 });
+        f.metrics.reset();
+        f.elapse(10000);
+        assert.equal(f.metrics.snapshot().counters.draw.count, 0);
+        assert.equal(f.metrics.snapshot().counters.motionStep.count, 0);
+        assert.equal(f.metrics.snapshot().counters.scrollWakeup.count, 0);
+        if (visibility === 'hidden-after-disable') f.document.hidden = true;
+        f.update({ enabled: true });
+        f.document.hidden = false;
+        f.document.dispatchEvent({ type: 'visibilitychange' });
+        assert.equal(f.canvas.style.opacity, '');
+        assert.ok(glyphs(f).includes('✓ build'), 'result clock did not consume disabled time');
+        assert.deepEqual(f.pending(), { raf: reduced || resourceMode === 'economy' ? 0 : 1,
+          timers: !reduced && resourceMode === 'economy' ? 1 : 0 });
+      } finally { f.close(); }
+      assert.deepEqual(f.pending(), { raf: 0, timers: 0 });
+      assert.deepEqual(f.observersActive(), { resize: 0, mutation: 0 });
+    }
+  }
+});
+
 test('economy owns a low frequency timer rather than display-rate RAF and performs fewer real steps', () => {
   for (const hz of [60, 120]) {
     const f = fixture({ resourceMode: 'economy', rain: true });

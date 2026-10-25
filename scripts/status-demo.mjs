@@ -18,7 +18,7 @@ const option = (name, fallback) => { const index = args.indexOf(name); return in
 const out = path.resolve(root, option('--out', '.scratch/status-demo'));
 const reactDir = option('--react-dir', path.join(out, 'vendor'));
 await mkdir(out, { recursive: true });
-await mkdir(reactDir, { recursive: true });
+if (!args.includes('--react-dir')) await mkdir(reactDir, { recursive: true });
 const hash = text => createHash('sha256').update(text).digest('hex');
 const reactSources = [];
 for (const name of ['react', 'react-dom']) {
@@ -27,7 +27,7 @@ for (const name of ['react', 'react-dom']) {
   const local = path.join(reactDir, filename);
   let source;
   try { source = await readFile(local, 'utf8'); } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+    if (error.code !== 'ENOENT' || args.includes('--react-dir')) throw error;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`React download failed ${response.status}`);
     source = await response.text();
@@ -43,7 +43,7 @@ const git = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8
 if (git.status !== 0) throw new Error('Cannot determine build commit');
 const commit = git.stdout.trim();
 const sources = {};
-for (const filename of ['client.js', 'src/settings.js', 'locale/zh.json', 'locale/en.json', 'scripts/status-demo-scenario.mjs', 'scripts/status-demo-fixture.js', 'scripts/status-demo.mjs', 'scripts/measurement-cdp.mjs', 'src/model.js']) {
+for (const filename of ['client.js', 'src/settings.js', 'locale/zh.json', 'locale/en.json', 'scripts/status-demo-scenario.mjs', 'scripts/status-demo-fixture.js', 'scripts/status-demo.mjs', 'scripts/react-status-probe.js', 'scripts/measurement-cdp.mjs', 'src/model.js', 'src/engine.js', 'src/activity.js', 'src/resource-policy.js']) {
   sources[filename] = hash(await readFile(path.join(root, filename)));
 }
 const buildIdentity = `base ${commit.slice(0, 7)} · client ${hash(client).slice(0, 12)}`;
@@ -124,6 +124,26 @@ try {
       allVisibleFieldsExactlyOnce: true, hiddenLegacyFieldAbsent: true,
       scriptedSelectEvents: ['rainy preset', 'night preset'], result: 'passed on simulated fixture only' });
   }
+  report.reactStatusLatency = { surface: 'Mounted React 18.3.1 with unmodified formal client.js and simulated host stores',
+    actualDSH: 'UNVERIFIED; parent observed 401', screenReader: 'UNMEASURED', benefitVerdict: 'inconclusive', probes: [] };
+  for (let round = 1; round <= 5; round++) {
+    for (const resourceMode of round % 2 ? ['standard', 'economy'] : ['economy', 'standard']) {
+      for (const reduced of [false, true]) for (const mode of ['normal', 'burst']) {
+        await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: reduced ? 'reduce' : 'no-preference' }] });
+        await page.evaluate("__demo.mount('en','overlay');__demo.advance('running')");
+        await pause(100);
+        await page.evaluate(`__demo.configure(${JSON.stringify({ resourceMode, speed: 0.65, count: 1, spout: false })})`);
+        await pause(100);
+        const probe = await page.evaluate(`__demo.probeStatus(${JSON.stringify({ burst: mode === 'burst' })})`);
+        report.reactStatusLatency.probes.push({ round, resourceMode, reduced, mode, ...probe });
+        assert.equal(probe.visibility, 'visible');
+        assert.ok(probe.canvasCommands > 0 && probe.waitingBadgeDrawn, JSON.stringify(probe));
+        assert.equal(probe.withinControlledBudget, true, JSON.stringify(probe));
+      }
+    }
+  }
+  report.reactStatusLatency.verdict = 'observed within 250 ms on this controlled fixture only; installed DSH and screen reader unverified';
+  await writeFile(path.join(out, 'react-status-latency.json'), `${JSON.stringify(report.reactStatusLatency, null, 2)}\n`);
   assert.deepEqual(page.events, []);
   await page.evaluate('__demo.dispose()');
 } finally {

@@ -108,13 +108,13 @@ window.__measurement = {
       { metrics: options.observe === false ? null : observedMetrics, seed: options.seed,
         onActivityChange(value) {
           document.querySelector('[data-task-summary]').textContent = value.entities.map(entity => `${entity.label} ${entity.kind}`).join('; ');
-          if (statusObservation) statusObservation.textMs = performance.now() - statusObservation.receivedAt;
+          if (statusObservation) statusObservation.mirrorTextMs = performance.now() - statusObservation.receivedAt;
         } }) : null;
     initMs = performance.now() - started;
     return { config, initMs, metrics: metrics.snapshot(), environment: environment(), initialContentHash: hashText(scroller.textContent) };
   },
   runPhase, snapshot, environment,
-  async statusProbe({ burst = false, paused = false } = {}) {
+  async rendererStatusProbe({ burst = false, paused = false } = {}) {
     if (!layer) return null;
     const saved = config;
     if (paused) layer.update({ ...config, speed: 0 });
@@ -122,13 +122,13 @@ window.__measurement = {
     layer.setActivity(activity('running'));
     await new Promise(resolve => requestAnimationFrame(resolve));
     metrics.reset();
-    statusObservation = { receivedAt: performance.now(), textMs: null, canvasMs: null };
+    statusObservation = { receivedAt: performance.now(), mirrorTextMs: null, canvasMs: null };
     layer.setActivity(activity('waiting'));
     if (burst) for (let i = 0; i < 50; i++) layer.setActivity(activity(i % 2 ? 'waiting' : 'running'));
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const result = { ...statusObservation, burst, paused, metrics: metrics.snapshot(),
       summary: document.querySelector('[data-task-summary]').textContent,
-      endpoint: 'fixture synchronous DOM text commit and actual renderer draw completion; not DSH React or screen reader' };
+      endpoint: 'synchronous DOM mirror write and actual renderer draw completion; not a mounted React commit or formal G2-04 acceptance' };
     statusObservation = null;
     layer.setActivity({ scope: 'measurement', entities: [] });
     if (paused) layer.update(saved);

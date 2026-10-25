@@ -25,7 +25,14 @@ test('shareable report emits only allowed aggregates and no local paths, task te
   assert.match(report.verdict, /inconclusive/);
   assert.match(formatPublicReport(report), /NOT actual DSH/);
   assert.equal(report.rounds[0].cpuSingleCorePercent, null);
-  assert.ok(report.statusLatency.every(group => group.bothWithinBudget === false));
+  assert.ok(report.rendererStatusProbe.every(group => group.withinProbeThreshold === false));
+  const mirror = publicMeasurementReport({ ...manifest, rendererStatusProbes: [{ condition: 'standard', probes: [
+    { reduced: false, mirrorTextMs: 0.1, canvasMs: 2 },
+  ] }] }, []);
+  assert.equal(mirror.rendererStatusProbe[0].withinProbeThreshold, true);
+  assert.equal(mirror.formalReactCommitLatency, 'unmeasured');
+  assert.equal(mirror.statusLatency, undefined);
+  assert.match(formatPublicReport(mirror), /synchronous.*mirror.*not.*React/i);
   const profiled = publicMeasurementReport({ ...manifest, kind: 'limiter-probe', options: { ...manifest.options, limiterProbe: true } }, samples);
   assert.equal(profiled.kind, 'limiter-probe');
   assert.deepEqual(profiled.groups, []);

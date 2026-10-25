@@ -14,7 +14,7 @@ export function currentSessionId(list) {
   return Object.values(list?.byId ?? {}).find(row => (row?.retainedBy?.mainView ?? 0) > 0)?.id ?? null;
 }
 
-/** The current session, its local descendants and visible jobs. */
+/** Current tree, other active sessions and only the current session's visible jobs. */
 export function readActivitySnapshot(list, statuses, jobs = emptyJobs) {
   const scope = currentSessionId(list);
   if (!scope) return EMPTY_ACTIVITY;
@@ -37,9 +37,9 @@ export function readActivitySnapshot(list, statuses, jobs = emptyJobs) {
   const entities = [];
   for (const [id, row] of rows) {
     if (!record(row) || typeof id !== 'string') continue;
-    if (!related.has(id)) continue;
     const status = statuses?.get?.(id);
     const kind = sessionKind(row, status);
+    if (!related.has(id) && kind !== 'running' && kind !== 'waiting') continue;
     entities.push({ key: `session:${id}`, type: row.origin === 'subagent' || row.parentId ? 'subagent' : 'session',
       label: String(row.displayTitle ?? row.title ?? '').trim(), kind, primary: id === scope,
       waitingAvailable: record(status) });
@@ -121,8 +121,12 @@ export function createActivityTracker({ onChange } = {}) {
     for (const [key, entity] of terminal) if (entity.until <= now + 1e-9) terminal.delete(key);
     nextExpiry = Infinity;
     for (const entity of terminal.values()) nextExpiry = Math.min(nextExpiry, entity.until);
-    const candidates = snapshot.entities.filter(entity => entity.type !== 'job' || !['completed', 'failed'].includes(entity.kind));
-    candidates.push(...terminal.values());
+    const current = new Map(snapshot.entities
+      .filter(entity => entity.type !== 'job' || !['completed', 'failed'].includes(entity.kind))
+      .map(entity => [entity.key, entity]));
+    // An observed result owns its identity until expiry or a new run clears it.
+    for (const entity of terminal.values()) current.set(entity.key, entity);
+    const candidates = [...current.values()];
     const primary = candidates.find(entity => entity.primary);
     const rest = candidates.filter(entity => !entity.primary).sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
     const chosen = primary ? [primary, ...rest.slice(0, Math.max(0, whales.length - 1))] : rest.slice(0, whales.length);

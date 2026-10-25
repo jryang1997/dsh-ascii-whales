@@ -1,16 +1,18 @@
 import { createDemoScenario } from './status-demo-scenario.mjs';
+import { probeReactStatus } from './react-status-probe.js';
 
 const React = window.React, ReactDOM = window.ReactDOM;
 let seed = 20261025;
 Math.random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
 const slots = new Map(), dictionaries = {}, cleanups = [];
-const store = initial => {
+let statusDelivered = null;
+const store = (initial, delivered) => {
   let value = initial;
   const listeners = new Set();
   return { getSnapshot: () => value, subscribe: callback => { listeners.add(callback); return () => listeners.delete(callback); },
-    set(next) { value = next; for (const callback of listeners) callback(); } };
+    set(next) { value = next; for (const callback of listeners) { delivered?.(); callback(); } } };
 };
-const language = store('en'), sessions = store({ byId: {} }), statuses = store(new Map()), jobs = store({ available: true, rows: { demo: [] } });
+const language = store('en'), sessions = store({ byId: {} }), statuses = store(new Map(), () => statusDelivered?.()), jobs = store({ available: true, rows: { demo: [] } });
 const initial = { enabled: true, activity: true, text: 'ASCII Whales', count: 3, speed: 0.65, opacity: 0.6,
   color: 'ocean', wind: true, clouds: true, ripples: true, spout: true, rain: false, rainIntensity: 0.45,
   glass: true, readingEffect: 'frost', quietCenter: true, leftInset: 0 };
@@ -52,6 +54,16 @@ window.__demo = {
     const next = scenario.advance(stage);
     sessions.set(next.sessions); statuses.set(next.statuses); jobs.set(next.jobs);
     document.getElementById('stage').textContent = stage;
+  },
+  configure(patch) {
+    const current = saved.getSnapshot();
+    saved.set({ ...current, revision: current.revision + 1, value: { ...current.value, ...patch } });
+  },
+  probeStatus(options) {
+    return probeReactStatus({ ...options,
+      publish(waiting) { statuses.set(new Map([['demo', { running: true, ...(waiting ? { pendingInteraction: { kind: 'question' } } : {}) }]])); },
+      observeDelivery(callback) { statusDelivered = callback; return () => { statusDelivered = null; }; },
+    });
   },
   saved: () => saved.getSnapshot(), writes: () => writes,
   dispose() { root?.unmount(); for (const cleanup of cleanups.reverse()) cleanup(); },

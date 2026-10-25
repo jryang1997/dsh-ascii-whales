@@ -3223,9 +3223,9 @@
     const entities = [];
     for (const [id, row] of rows) {
       if (!record(row) || typeof id !== "string") continue;
-      if (!related.has(id)) continue;
       const status = statuses?.get?.(id);
       const kind = sessionKind(row, status);
+      if (!related.has(id) && kind !== "running" && kind !== "waiting") continue;
       entities.push({
         key: `session:${id}`,
         type: row.origin === "subagent" || row.parentId ? "subagent" : "session",
@@ -3334,8 +3334,9 @@
       for (const [key, entity] of terminal) if (entity.until <= now + 1e-9) terminal.delete(key);
       nextExpiry = Infinity;
       for (const entity of terminal.values()) nextExpiry = Math.min(nextExpiry, entity.until);
-      const candidates = snapshot.entities.filter((entity) => entity.type !== "job" || !["completed", "failed"].includes(entity.kind));
-      candidates.push(...terminal.values());
+      const current = new Map(snapshot.entities.filter((entity) => entity.type !== "job" || !["completed", "failed"].includes(entity.kind)).map((entity) => [entity.key, entity]));
+      for (const entity of terminal.values()) current.set(entity.key, entity);
+      const candidates = [...current.values()];
       const primary = candidates.find((entity) => entity.primary);
       const rest = candidates.filter((entity) => !entity.primary).sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
       const chosen = primary ? [primary, ...rest.slice(0, Math.max(0, whales.length - 1))] : rest.slice(0, whales.length);
@@ -5234,12 +5235,7 @@
     function sync() {
       cancelContinuous();
       cancelRefresh();
-      if (document.hidden || !config.enabled) {
-        clearTimeout(scrollTimer);
-        scrollTimer = 0;
-        scrolling = false;
-        revealLayer();
-      }
+      if (document.hidden || !config.enabled) leaveScrollPause();
       lastPaint = -Infinity;
       measuredAt = -Infinity;
       readingTextDirty = true;
@@ -5262,8 +5258,8 @@
       const sceneRebuilt = simulation.update(next);
       Object.assign(config, next);
       if (config.readingEffect === "none") readingProtection.dispose();
-      const wasPaused = scrolling && !config.pauseOnScroll;
-      if (wasPaused) leaveScrollPause();
+      const wasPaused = scrolling && (!config.pauseOnScroll || !config.enabled);
+      if (wasPaused) leaveScrollPause(false);
       observeScene(config.enabled && !scrolling && !document.hidden);
       if (sceneRebuilt) {
         scene = simulation.scene;
@@ -5294,21 +5290,21 @@
       if (!config.enabled) {
         cancelContinuous();
         cancelRefresh();
-        leaveScrollPause();
       }
       if (wasPaused) revealLayer();
     }
     function finishScroll() {
       scrollTimer = 0;
       if (disposed) return;
-      leaveScrollPause();
+      leaveScrollPause(false);
       sync();
       revealLayer();
     }
-    function leaveScrollPause() {
+    function leaveScrollPause(reveal = true) {
       clearTimeout(scrollTimer);
       scrollTimer = 0;
       scrolling = false;
+      if (reveal) revealLayer();
     }
     function revealLayer() {
       if (canvas.style) {

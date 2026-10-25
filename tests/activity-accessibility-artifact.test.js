@@ -156,6 +156,47 @@ test('new waiting transitions coalesce, names do not replay, and scope changes c
   assert.deepEqual(pair.watchedJobs(), []);
 });
 
+test('one-whale results stay unique through unknown status, pauses, expiry and scope changes', () => {
+  for (const resourceMode of ['standard', 'economy']) {
+    const pair = createArtifactPair(artifacts, { count: 1, glass: false, resourceMode }, {
+      reducedMotion: true, activity: { list: list('main') },
+    });
+    const summary = () => pair.hostText({ summary: true });
+    try {
+      pair.setHostActivity({ rows: rows('running') });
+      pair.setHostActivity({ rows: rows('completed') });
+      pair.setHostActivity({ rows: rows('unknown') });
+      pair.advance(1);
+      assert.equal(summary().split('完整构建任务名称超过十八字仍然可查询而非被截断').length - 1, 1);
+      assert.match(summary(), /activityCompleted/);
+      assert.match(summary(), /activityOverflow 1/);
+      assert.ok(badges(pair).some(text => text.startsWith('✓ ') && text.endsWith('+1')));
+      pair.advance(500);
+      assert.match(summary(), /activityCompleted/, 'reduced motion freezes the deadline');
+      pair.setReducedMotion(false);
+      pair.setHidden(true);
+      pair.advance(500);
+      assert.match(summary(), /activityCompleted/, 'hidden time also freezes the deadline');
+      pair.setHidden(false);
+      pair.advance(350);
+      assert.match(summary(), /activityCompleted/);
+      pair.advance(25);
+      assert.doesNotMatch(summary(), /activityCompleted/);
+      assert.equal(summary().split('完整构建任务名称超过十八字仍然可查询而非被截断').length - 1, 1);
+      assert.match(summary(), /activityUnavailable/);
+      pair.setHostActivity({ rows: rows('running') });
+      pair.setHostActivity({ rows: rows('failed') });
+      pair.setHostActivity({ rows: rows('unknown') });
+      assert.match(summary(), /activityFailed/);
+      pair.setHostActivity({ rows: rows('running') });
+      assert.doesNotMatch(summary(), /activityFailed|activityCompleted/);
+      pair.setHostActivity({ rows: rows('completed') });
+      pair.setHostActivity({ list: list('other') });
+      assert.doesNotMatch(summary(), /activityCompleted|完整构建任务名称/);
+    } finally { pair.dispose(); }
+  }
+});
+
 test('hidden pages freeze result life while new events still update the accessible summary', () => {
   const pair = createArtifactPair(artifacts, { count: 1, glass: false }, {
     reducedMotion: true, activity: { list: list('main') },

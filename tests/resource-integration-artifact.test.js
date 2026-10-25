@@ -91,7 +91,7 @@ test('shipped mode changes keep job identity and the original six seconds withou
   assert.deepEqual(pair.watchedJobs(), []);
 });
 
-test('shipped economy summary and necessary Canvas both reflect burst events by 250ms, including reduced motion', () => {
+test('shipped economy summary and Canvas meet the logical 250ms fixture budget with simulated React and time', () => {
   for (const reducedMotion of [false, true]) {
     const pair = createArtifactPair(artifacts, { resourceMode: 'economy', glass: false }, { reducedMotion, activity: { list } });
     try {

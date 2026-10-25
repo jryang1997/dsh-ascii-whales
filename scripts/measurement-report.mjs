@@ -13,7 +13,7 @@ export function publicMeasurementReport(manifest, samples) {
   const summary = summarizeMeasurements(samples, options);
   const passed = manifest.status === 'passed' && summary.completeness.complete;
   return {
-    schemaVersion: 2, kind: options.limiterProbe ? 'limiter-probe' : options.smoke ? 'smoke' : options.conditions.includes('economy') ? 'full-comparison' : 'full-baseline',
+    schemaVersion: 3, kind: options.limiterProbe ? 'limiter-probe' : options.smoke ? 'smoke' : options.conditions.includes('economy') ? 'full-comparison' : 'full-baseline',
     surface: 'Controlled simulated Chrome file fixture. NOT actual DSH.',
     runStatus: passed ? 'passed' : 'failed-or-incomplete',
     verdict: 'inconclusive; no performance benefit or energy claim',
@@ -27,16 +27,17 @@ export function publicMeasurementReport(manifest, samples) {
     cpuComparable: summary.cpuComparable,
     cpuScope: 'Isolated Chrome browser tree including renderer, browser, GPU and utility CPU plus fixture and CDP overhead. Not plugin-exclusive CPU. Single-core percent; machine percent divides by logical processors.',
     groups: options.limiterProbe ? [] : summary.groups,
-    statusLatency: ['standard', 'economy'].flatMap(condition => [false, true].flatMap(reduced => ['normal', 'burst', 'paused'].map(mode => {
-      const probes = (manifest.statusProbes ?? []).filter(unit => unit.condition === condition).flatMap(unit => unit.probes)
+    rendererStatusProbe: ['standard', 'economy'].flatMap(condition => [false, true].flatMap(reduced => ['normal', 'burst', 'paused'].map(mode => {
+      const probes = (manifest.rendererStatusProbes ?? []).filter(unit => unit.condition === condition).flatMap(unit => unit.probes)
         .filter(probe => probe.reduced === reduced && (mode === 'burst' ? probe.burst : mode === 'paused' ? probe.paused : !probe.burst && !probe.paused));
       const values = endpoint => probes.map(probe => probe[endpoint]).filter(value => Number.isFinite(value) && value >= 0).sort((a, b) => a - b);
-      const text = values('textMs'), canvas = values('canvasMs');
-      return { condition, reduced, mode, probes: probes.length, textMeasured: text.length, canvasMeasured: canvas.length,
-        textRangeMs: text.length ? [text[0], text.at(-1)] : null, canvasRangeMs: canvas.length ? [canvas[0], canvas.at(-1)] : null,
-        bothWithinBudget: probes.length > 0 && text.length === probes.length && canvas.length === probes.length && text.at(-1) <= 250 && canvas.at(-1) <= 250 };
+      const text = values('mirrorTextMs'), canvas = values('canvasMs');
+      return { condition, reduced, mode, probes: probes.length, mirrorTextMeasured: text.length, canvasMeasured: canvas.length,
+        mirrorTextRangeMs: text.length ? [text[0], text.at(-1)] : null, canvasRangeMs: canvas.length ? [canvas[0], canvas.at(-1)] : null,
+        withinProbeThreshold: probes.length > 0 && text.length === probes.length && canvas.length === probes.length && text.at(-1) <= 250 && canvas.at(-1) <= 250 };
     }))),
-    statusEndpoint: 'Fixture DOM textContent commit and completed renderer draw, outside CPU sample; not installed DSH React or speech onset.',
+    rendererProbeEndpoint: 'Synchronous DOM mirror write and actual renderer draw completion. Not a React commit measurement or formal G2-04 acceptance.',
+    formalReactCommitLatency: 'unmeasured',
     rounds: (options.limiterProbe ? [] : samples).filter(sample => ['idle', 'append', 'scroll'].includes(sample.scenario) && options.conditions.includes(sample.condition)).map(sample => ({
       scenario: sample.scenario, condition: sample.condition, round: number(sample.round), order: number(sample.order), durationMs: number(sample.durationMs),
       cpuSingleCorePercent: number(sample.cpu?.singleCorePercent), cpuMachinePercent: number(sample.cpu?.machinePercent),
@@ -47,7 +48,8 @@ export function publicMeasurementReport(manifest, samples) {
     gpuUtilization: null, energy: null,
     evidence: { limiterProfile: 'unmeasured; separate unreported profiling run required', actualDSH: 'unmeasured', screenReader: 'unmeasured',
       physicalRefreshRate: 'unmeasured', powerMode: 'operator record retained locally; excluded from shareable report' },
-    limitations: ['Smoke validates execution only.', 'Counts, nested synchronous work durations and browser CPU measure different scopes.',
+    limitations: ['Renderer status probe times a synchronous DOM mirror, not a mounted React commit. Formal G2-04 remains unmeasured here.',
+      'Smoke validates execution only.', 'Counts, nested synchronous work durations and browser CPU measure different scopes.',
       'Full repeated runs and an independent limiter profile are required before any benefit verdict.', 'GPU process CPU does not measure GPU utilization.',
       'No power, battery or endurance measurement.', 'Raw environment, paths, task text, process IDs and inventory stay local.'],
   };

@@ -42,6 +42,28 @@ test('root snapshots prioritize real pending interactions and include unopened d
   assert.equal(readActivitySnapshot(undefined), EMPTY_ACTIVITY);
 });
 
+test('current tree includes idle and unknown descendants alongside independently active sessions only', () => {
+  const list = fixture();
+  Object.assign(list.byId, {
+    waiting: { id: 'waiting', running: false },
+    missing: { id: 'missing' },
+    idleChild: { id: 'idleChild', parentId: 'main' },
+  });
+  const statuses = new Map([['waiting', { pendingInteraction: { kind: 'question' } }],
+    ['idleChild', { running: false }]]);
+  const snapshot = readActivitySnapshot(list, statuses, { rows: { main: [], other: [{ id: 'private', status: 'running' }] } });
+  assert.deepEqual(snapshot.entities.map(e => [e.key, e.kind]), [
+    ['session:main', 'running'], ['session:child', 'running'], ['session:other', 'running'],
+    ['session:waiting', 'waiting'], ['session:idleChild', 'idle'], ['session:nested', 'unavailable'],
+  ]);
+  const tracker = createActivityTracker(), school = whales(6);
+  tracker.update(snapshot); tracker.apply(school, 0);
+  const bindings = school.map(w => w.activity.key);
+  assert.equal(bindings[0], 'session:main');
+  tracker.update({ ...snapshot, entities: [...snapshot.entities].reverse() }); tracker.apply(school, 1);
+  assert.deepEqual(school.map(w => w.activity.key), bindings);
+});
+
 test('entity seats survive list reorder, higher priority arrivals, count and scene changes', () => {
   const tracker = createActivityTracker(), school = whales(3);
   tracker.update(snapshot(entity('agent:a'), entity('agent:b'))); tracker.apply(school, 0);

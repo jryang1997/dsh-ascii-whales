@@ -8,6 +8,6 @@ node scripts/measurement.mjs --headless --conditions off,standard,economy --roun
 
 历史两条件基线用 `--conditions off,standard` 重新运行。旧构建基线只用于工具历史验证，不与当前 economy 计算收益。短冒烟必须带 `--smoke`，不能作为完整资源收益证据。
 
-测量使用固定模拟对话及正式渲染器，不是实际 DSH。报告分开记录逻辑、真实指针、视觉、读屏及性能证据。GPU 利用率与能耗保持未测。
+测量使用固定模拟对话及正式渲染器，不是实际 DSH。渲染器探针的文字是同步 DOM 镜像，没有经过 React，公开报告不会把它标为正式 G2-04 通过。真实 React 提交由[模拟状态演示入口](../scripts/status-demo.mjs)另行观测，复用本机已有 React UMD 文件，以 MutationObserver 检查正式摘要提交，并记录同一事件的实际 Canvas 命令完成。该证据仍属于模拟宿主。报告分开记录逻辑、真实指针、视觉、读屏及性能证据，GPU 利用率与能耗保持未测。
 
 [English method](./measurement.en.md)提供英文复跑说明。[中英文报告模板](./resource-report-template.md)及[交付状态](./resource-report-status.md)记录公开材料和尚未测量的验收。原始环境与浏览器 profile 只留本地，分享使用工具生成的白名单聚合报告。

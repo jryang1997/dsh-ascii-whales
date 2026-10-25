@@ -57,9 +57,9 @@ node scripts/measurement.mjs --smoke --headless --conditions off,standard,econom
 
 ## 分别验证状态终点
 
-正式采样外，对每个活动条件探测普通事件、50 次突发合并和暂停事件，并分别覆盖减少动态效果开关。原始探测保存事件送达、DOM 文本提交和正式 Canvas 绘制完成时间。文本与 Canvas 两个终点都必须在 250 毫秒内完成，不能只选较快的一端。
+正式采样外，渲染器探针对普通事件、50 次突发合并和暂停事件检查 250 毫秒诊断阈值，并分别覆盖减少动态效果开关。它保存事件送达、同步 DOM 镜像写入和正式 Canvas 绘制完成时间。镜像由 `onActivityChange` 直接写入，没有经过 React，不能据此判定 G2-04 通过。
 
-该文本终点是夹具 `onActivityChange` 的同步 `textContent` 提交，不能代替已安装 DSH 的 React 提交或读屏发声。正式产物测试另从宿主订阅输入检查摘要、Canvas、模式切换、任务身份、六秒截止时间、草稿冲突及图例偏好。滚动暂退、隐藏和卸载沿用真实调度夹具。真实 DSH、可见窗口指针、阅读保护观感和实际读屏仍分别验收。
+公开报告使用 `rendererStatusProbe`、`mirrorTextRangeMs` 和 `withinProbeThreshold`，`formalReactCommitLatency` 保持未测。正式产物逻辑测试使用模拟 React 适配器和可控时钟，覆盖宿主订阅、摘要、Canvas、模式切换、身份、六秒截止时间、草稿冲突及图例偏好。另由状态演示入口挂载真实 React 与未修改的正式构建，以 MutationObserver 观察实际摘要提交，并记录同一事件触发的 Canvas 命令完成。该隔离模拟宿主证据也不能替代实际 DSH、可见窗口指针、阅读保护观感或读屏。
 
 ## 保存环境和 CPU 口径
 
@@ -79,7 +79,7 @@ node scripts/measurement.mjs --limiter-probe --smoke --headless --conditions off
 
 ## 打开结果并准备分享
 
-本地输出包含 manifest、environment、每单元 initialization、warmup、sample、status-latency、PNG、Chrome 日志和 summary。schemaVersion 2 区分三条件协议。校验所有预期场景、条件、轮次，缺失组也明确列出。失败保留已完成样本与错误，不能把局部结果写成完整比较。
+本地输出包含 manifest、environment、每单元 initialization、warmup、sample、renderer-status-probe、PNG、Chrome 日志和 summary。原始三条件协议为 schemaVersion 2，公开报告 schemaVersion 3 明确区分同步镜像探针与真实 React 提交。校验所有预期场景、条件、轮次，缺失组也明确列出。失败保留已完成样本与错误，不能把局部结果写成完整比较。
 
 `report-public.json` 和 `report-public.md` 从原始允许指标生成每轮、组中位数和范围。白名单排除本地路径、原始文本、进程 PID、进程清单、用户电源说明和任意错误正文。分享前仍需审阅文件。其他原始文件和 Chrome profile 保持私有，不在公开文档中链接。
 
