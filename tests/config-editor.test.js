@@ -33,7 +33,9 @@ test('editing both entry points uses last-enabled-wins while legacy loading keep
 
 test('reading effect choices preview in the draft and save independently of content glass', async () => {
   assert.equal(normalizeConfig({ count: 5 }).readingEffect, 'frost', 'old configurations receive the new frosted default');
-  for (const mode of ['glow', 'blur', 'frost']) {
+  assert.equal(normalizeConfig({ readingEffect: 'invalid' }).readingEffect, 'frost');
+  assert.equal(normalizeConfig({ readingEffect: 'none' }).readingEffect, 'none');
+  for (const mode of ['none', 'glow', 'blur', 'frost']) {
     const form = memoryForm({ ...DEFAULTS, glass: false, readingEffect: 'glow' });
     const editor = createConfigEditor(form.getSnapshot()).change('readingEffect', mode);
     assert.equal(editor.draft.readingEffect, mode);

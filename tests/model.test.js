@@ -20,9 +20,15 @@ test('configuration preserves saved text and sizes, with readable new defaults a
   assert.equal(DEFAULTS.whaleSize, 1);
   assert.equal(DEFAULTS.composerGlass, false);
   assert.equal(DEFAULTS.composerAvoid, false);
-  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'activity', 'quietCenter', 'leftInset', 'readingEffect', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity']);
+  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'activity', 'quietCenter', 'leftInset', 'readingEffect', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'pauseOnScroll']);
   assert.equal(DEFAULTS.rain, false);
   assert.equal(DEFAULTS.rainIntensity, 0.45);
+  // The scroll pause is an opt-in reading guard: a stored config that never
+  // mentioned it keeps swimming while the page moves.
+  assert.equal(DEFAULTS.pauseOnScroll, false);
+  assert.equal(normalizeConfig({}).pauseOnScroll, false);
+  assert.equal(normalizeConfig({ pauseOnScroll: true }).pauseOnScroll, true);
+  assert.equal(normalizeConfig({ pauseOnScroll: 'yes' }).pauseOnScroll, false);
   assert.equal(normalizeConfig({ rainIntensity: -1 }).rainIntensity, 0);
   assert.equal(normalizeConfig({ rainIntensity: 9 }).rainIntensity, 1);
   assert.equal(normalizeConfig({ rainIntensity: NaN }).rainIntensity, 0.45);

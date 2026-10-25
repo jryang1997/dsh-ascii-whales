@@ -36,33 +36,33 @@ test('spout frames are fixed stamps with equal rows and a small allowed alphabet
   const expected = {
     blue: {
       basis: 'screen',
-      jet: { anchor: { row: 0, col: 1 }, rows: [' * '] },
-      bush: { anchor: { row: 1, col: 1 }, rows: [' o ', 'o*o', ' o '] },
-      droplets: { anchor: { row: 1, col: 1 }, rows: [' . ', '. .', ' . '] },
+      jet: { anchor: { row: 1, col: 2 }, rows: ['  *  ', '* * *', '  *  '] },
+      bush: { anchor: { row: 2, col: 2 }, rows: [' . . ', '. * .', '* * *', '. * .', ' . . '] },
+      droplets: { anchor: { row: 2, col: 2 }, rows: ['.   .', '  .  ', '. . .', '  .  ', '.   .'] },
     },
     humpback: {
       basis: 'screen',
-      jet: { anchor: { row: 0, col: 2 }, rows: [' *** '] },
-      bush: { anchor: { row: 1, col: 3 }, rows: [" 'o o' ", 'o  *  o', " 'o o' "] },
-      droplets: { anchor: { row: 1, col: 3 }, rows: ['.  .  .', ' .   . ', '   .   '] },
+      jet: { anchor: { row: 1, col: 4 }, rows: ['  .*.*.  ', '   ***   ', '  .*.*.  '] },
+      bush: { anchor: { row: 2, col: 4 }, rows: ['  .  *  .', ' . o  o .', '*   *   *', ' . o  o .', '  .  *  .'] },
+      droplets: { anchor: { row: 2, col: 4 }, rows: ['.   .   .', '  .   .  ', '.   .   .', '    .    ', '.   .   .'] },
     },
     bowhead: {
       basis: 'lateral',
-      jet: { anchor: { row: 1, col: 2 }, rows: ["  '  ", '  *  '] },
-      bush: { anchor: { row: 3, col: 4 }, rows: ['O       O', " '     ' ", "  '   '  ", '    *    '] },
-      droplets: { anchor: { row: 2, col: 4 }, rows: ['.       .', " '     ' ", '    .    '] },
+      jet: { anchor: { row: 1, col: 5 }, rows: ['  .     .  ', '     *     ', "  '     '  "] },
+      bush: { anchor: { row: 2, col: 5 }, rows: ['.    .    .', "  '     '  ", '    * *    ', "  '     '  ", '.    .    .'] },
+      droplets: { anchor: { row: 2, col: 5 }, rows: ['.         .', '  .     .  ', '     .     ', '  .     .  ', '.         .'] },
     },
     fin: {
       basis: 'screen', unverified: true,
       jet: { anchor: { row: 0, col: 1 }, rows: [' * '] },
-      bush: { anchor: { row: 1, col: 1 }, rows: [' . ', ' * ', ' . '] },
+      bush: { anchor: { row: 1, col: 1 }, rows: [' . ', '* *', ' . '] },
       droplets: { anchor: { row: 0, col: 1 }, rows: [' . '] },
     },
     sperm: {
       basis: 'body',
-      jet: { anchor: { row: 0, col: 0 }, rows: ['*  ', " ' ", '  o'] },
-      bush: { anchor: { row: 0, col: 0 }, rows: ['*   ', " '  ", '  o ', '   ~'] },
-      droplets: { anchor: { row: 0, col: 0 }, rows: ['*  ', ' . ', '  .'] },
+      jet: { anchor: { row: 0, col: 0 }, rows: ['* .', " ' ", '  o'] },
+      bush: { anchor: { row: 0, col: 0 }, rows: ['* ..', " '~ ", ' o. ', '  . '] },
+      droplets: { anchor: { row: 0, col: 0 }, rows: ['* .', ' . ', '  .'] },
     },
   };
   for (const species of SPECIES) for (const phase of PHASES) {
@@ -89,20 +89,20 @@ test('spout frames are fixed stamps with equal rows and a small allowed alphabet
   assert.equal(spoutFrame('blue', null), null);
 });
 
-test('spout age cuts jet, bush and droplets, and keeps 759 alive', () => {
+test('spout age cuts jet, bush and droplets, and keeps 1499 alive', () => {
   assert.deepEqual(spoutAge(0), { phase: 'jet', alpha: 1 });
-  assert.equal(spoutAge(159).phase, 'jet');
-  assert.equal(spoutAge(160).phase, 'bush');
-  assert.equal(spoutAge(160).alpha, 1);
-  assert.equal(spoutAge(200).phase, 'bush');
-  const mid = spoutAge(500);
+  assert.equal(spoutAge(219).phase, 'jet');
+  assert.equal(spoutAge(220).phase, 'bush');
+  assert.equal(spoutAge(220).alpha, 1);
+  assert.equal(spoutAge(500).phase, 'bush');
+  const mid = spoutAge(1100);
   assert.equal(mid.phase, 'droplets');
   assert.ok(mid.alpha < 1);
-  assert.ok(Math.abs(mid.alpha - (760 - 500) / 600) < 1e-12);
+  assert.ok(Math.abs(mid.alpha - (1500 - 1100) / 800) < 1e-12);
   assert.equal(spoutAge(5000), null);
-  assert.notEqual(spoutAge(759), null);
-  assert.equal(spoutAge(759).phase, 'droplets');
-  assert.equal(spoutAge(760), null);
+  assert.notEqual(spoutAge(1499), null);
+  assert.equal(spoutAge(1499).phase, 'droplets');
+  assert.equal(spoutAge(1500), null);
   assert.equal(spoutAge(-1), null);
   assert.equal(spoutAge(Number.NaN), null);
 });
@@ -191,21 +191,18 @@ test('a surfaced whale spouts from the blowhole on its own, then leaves the mist
   scene.whales[0]._motion.submergence = 0;
   now = 23000;
   layer.paint(drawn.ink, null);
-  assert.ok(drawn.calls.length > 0, 'a surfaced whale spouts once the clock is due');
-  assert.equal(drawn.calls[0].glyph, '*');
-  assert.equal(drawn.calls[0].x, projectedA.x);
-  assert.equal(drawn.calls[0].y, projectedA.y);
-  const anchorX = drawn.calls[0].x, anchorY = drawn.calls[0].y;
+  assert.ok(drawn.calls.length >= 4, 'a surfaced whale lets out a puff, not one mark');
+  const core = drawn.calls.find((call) => call.glyph === '*' && call.x === projectedA.x && call.y === projectedA.y);
+  assert.ok(core, 'the core sits on the blowhole');
+  const placed = drawn.calls.map((call) => [call.glyph, call.x, call.y]);
 
   poses = [poseB];
   now = 23100;
   drawn.calls.length = 0;
   layer.paint(drawn.ink, null);
-  assert.equal(drawn.calls.length, 1);
-  assert.equal(drawn.calls[0].x, anchorX, 'the mist stays where it was breathed');
-  assert.equal(drawn.calls[0].y, anchorY);
+  assert.deepEqual(drawn.calls.map((call) => [call.glyph, call.x, call.y]), placed, 'the mist stays where it was breathed');
 
-  now = 23000 + 760;
+  now = 23000 + 1500;
   drawn.calls.length = 0;
   layer.paint(drawn.ink, null);
   assert.equal(drawn.calls.length, 0, 'the mist is gone before another can start');

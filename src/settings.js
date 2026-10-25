@@ -23,12 +23,6 @@ function trackFill(ratio) {
   return `${(safe * 100).toFixed(1)}%`;
 }
 
-/** Index of the current option; a stale value falls back to the first option. */
-function optionIndex(field, value) {
-  const index = field.values.indexOf(value);
-  return index < 0 ? 0 : index;
-}
-
 export function registerWhales(ctx, React, dictionaries) {
   const h = React.createElement;
   const form = ctx.configForms.get('ascii-whale-background');
@@ -88,6 +82,8 @@ export function registerWhales(ctx, React, dictionaries) {
    * to measure, yet the glass and avoidance options need a card to act on.
    */
   function LivePreview({ draft }) {
+    const [paused, setPaused] = React.useState(false);
+    const pauseRef = React.useRef(false);
     const ref = React.useRef(null);
     const latest = React.useRef(draft);
     const layer = React.useRef(null);
@@ -118,16 +114,26 @@ export function registerWhales(ctx, React, dictionaries) {
     }, []);
     const apply = React.useCallback(() => {
       frame.current = 0;
-      layer.current?.update(previewConfigOf(latest.current));
+      const config = previewConfigOf(latest.current);
+      if (pauseRef.current) config.speed = 0;
+      layer.current?.update(config);
     }, []);
     const schedule = React.useCallback(() => {
       if (!frame.current) frame.current = requestAnimationFrame(apply);
     }, [apply]);
-    React.useEffect(() => { latest.current = draft; schedule(); }, [draft, schedule]);
-    return h('aside', { className: 'aw-preview' },
+    React.useEffect(() => {
+      latest.current = draft;
+      pauseRef.current = paused;
+      schedule();
+    }, [draft, paused, schedule]);
+    return h('section', { className: 'aw-preview', 'aria-label': t('stylePreview') },
+      h('div', { className: 'aw-preview-toolbar' },
+        h('div', null, h('h3', null, t('previewTitle')), h('p', null, t('previewSubtitle'))),
+        h('button', { type: 'button', className: 'aw-preview-pause', 'aria-pressed': paused,
+          onClick: () => setPaused(value => !value) }, t(paused ? 'previewPlay' : 'previewPause'))),
       h('div', { className: 'aw-preview-card' },
         h('canvas', { ref, role: 'img', 'aria-label': t('stylePreview') })),
-      h('p', null, t('stylePreviewNote')));
+      h('p', { className: 'aw-preview-note' }, t('stylePreviewNote')));
   }
 
   function Overlay(props) {
@@ -168,6 +174,20 @@ export function registerWhales(ctx, React, dictionaries) {
       if (snapshot.status === 'ready' && !dirty) setEditor(createConfigEditor(snapshot));
     }, [snapshot, dirty]);
     const prefix = React.useId();
+    const viewportRef = React.useRef(null);
+    React.useEffect(() => {
+      const root = viewportRef.current;
+      if (!root) return;
+      const fit = () => {
+        const top = Math.max(0, root.getBoundingClientRect().top);
+        root.style.setProperty('--aw-height', `${Math.max(200, window.innerHeight - top - 12)}px`);
+      };
+      fit();
+      window.addEventListener('resize', fit);
+      const observer = new ResizeObserver(fit);
+      if (root.parentElement) observer.observe(root.parentElement);
+      return () => { observer.disconnect(); window.removeEventListener('resize', fit); };
+    }, [snapshot.status, !!editor]);
     if (snapshot.status !== 'ready' || !editor) return h('p', { role: 'status' }, t(snapshot.status === 'loading' ? 'loading' : 'unavailable'));
     const disabled = !snapshot.writable || saving;
     // The editor owns draft rules and the revision-aware persistence protocol.
@@ -187,74 +207,88 @@ export function registerWhales(ctx, React, dictionaries) {
       } finally { setSaving(false); }
     }
     function discard() { setEditor(createConfigEditor(form.getSnapshot())); setNotice(''); }
-    // Two columns: the sticky live preview on the left, the scrolling fields on
-    // the right. The whole fields column (read-only notice, rows, actions and
-    // the save notice) moves as one block; only the preview stays put.
-    return h('form', { className: 'aw-settings', onSubmit: save },
+    function formatValue(key, field, value) {
+      if (key === 'opacity' || key === 'rainIntensity') return `${Math.round(Number(value) * 100)}%`;
+      if (key === 'whaleSize' || key === 'speed') return `${readout(field, value)}×`;
+      if (key === 'glyphSize' || key === 'leftInset') return `${readout(field, value)} px`;
+      return readout(field, value);
+    }
+    function renderField(key) {
+      const field = FIELDS[key], value = editor.draft[key];
+      const id = `${prefix}-${key}`, hint = `${id}-hint`, label = `${id}-label`;
+      const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii')
+        || (key === 'rainIntensity' && !editor.draft.rain)
+        || (key === 'glassStrength' && !editor.draft.glass && !['blur', 'frost'].includes(editor.draft.readingEffect));
+      const common = { id, disabled: off, 'aria-describedby': hint };
+      const title = field.kind === 'enum'
+        ? h('span', { id: label, className: 'aw-label' }, t(key))
+        : h('label', { id: label, htmlFor: id }, t(key));
+      let control, output = null;
+      if (field.kind === 'boolean') {
+        control = h('button', {
+          ...common, type: 'button', role: 'switch', 'aria-checked': value, 'aria-labelledby': label,
+          className: 'aw-switch', onClick: () => update(key, !value),
+        }, h('span', { className: 'aw-switch-knob', 'aria-hidden': true }));
+      } else if (field.kind === 'enum' && (key === 'species' || key === 'color')) {
+        control = h('select', { ...common, className: 'aw-select', 'aria-labelledby': label, value,
+          onChange: event => update(key, event.target.value) },
+        ...field.values.map(option => h('option', { key: option, value: option }, t(option))));
+      } else if (field.kind === 'enum') {
+        control = h('div', { id, role: 'group', className: 'aw-segments', 'aria-labelledby': label, 'aria-describedby': hint },
+          ...field.values.map(option => h('button', {
+            key: option, type: 'button', disabled: off, 'aria-pressed': value === option,
+            className: 'aw-segment', onClick: () => update(key, option),
+          }, t(option))));
+      } else if (field.kind === 'string') {
+        control = h('input', { ...common, className: 'aw-text', type: 'text', value, maxLength: field.max,
+          onChange: event => update(key, event.target.value) });
+      } else if (key === 'leftInset') {
+        control = h('div', { className: 'aw-pixel-input' }, h('input', { ...common, type: 'number', value,
+          min: field.min, max: field.max, step: field.step, inputMode: 'numeric',
+          onChange: event => update(key, event.target.value === '' ? '' : Number(event.target.value)) }),
+        h('span', { 'aria-hidden': true }, 'px'));
+      } else {
+        const number = value === '' || !Number.isFinite(Number(value)) ? field.default : Number(value);
+        output = h('output', { htmlFor: id, className: 'aw-readout' }, formatValue(key, field, value));
+        control = h('div', { className: 'aw-number' },
+          h('input', { ...common, type: 'range', className: 'aw-slider', min: field.min, max: field.max, step: field.step,
+            value: number, 'aria-valuetext': formatValue(key, field, number),
+            style: { '--aw-pct': trackFill((number - field.min) / (field.max - field.min || 1)) },
+            onChange: event => update(key, Number(event.target.value)) }),
+          h('div', { className: 'aw-scale', 'aria-hidden': true },
+            h('span', null, formatValue(key, field, field.min)), h('span', null, formatValue(key, field, field.max))));
+      }
+      return h('div', { className: `aw-row aw-row--${field.kind}`, key, 'data-aw-field': key },
+        h('div', { className: 'aw-copy' }, h('div', { className: 'aw-row-heading' }, title, output),
+          h('p', { id: hint }, t(`${key}Hint`))), control);
+    }
+    const groups = [
+      { id: 'appearance', fields: ['renderStyle', 'fillMode', 'text', 'color', 'opacity', 'glyphSize'] },
+      { id: 'school', fields: ['species', 'count', 'whaleSize', 'speed', 'activity', 'spout'] },
+      { id: 'reading', fields: ['readingEffect', 'glass', 'glassStrength', 'quietCenter', 'composerAvoid'] },
+      { id: 'sea', fields: ['wind', 'clouds', 'ripples', 'rain', 'rainIntensity'] },
+    ];
+    return h('form', { ref: viewportRef, className: 'aw-settings', onSubmit: save },
       h('style', null, SETTINGS_CSS),
-      h('h2', null, t('title')),
-      h('p', { className: 'aw-purpose' }, t('purpose')),
-      h('div', { className: 'aw-layout' },
-        h(LivePreview, { draft: editor.draft }),
-        h('div', { className: 'aw-fields' },
-          !snapshot.writable && h('p', { role: 'status' }, t('readOnly')),
-          // Hidden fields stay in FIELDS for Host schema compatibility (an old profile
-          // may still carry composerGlass) but must not render a row of their own.
-          ...Object.entries(FIELDS).filter(([, field]) => field.hidden !== true).map(([key, field]) => {
-            const id = `${prefix}-${key}`, hint = `${id}-hint`, value = editor.draft[key];
-            const off = disabled || (key === 'text' && editor.draft.fillMode === 'ascii')
-              || (key === 'rainIntensity' && !editor.draft.rain);
-            const common = { id, disabled: off, 'aria-describedby': hint };
-            let control;
-            if (field.kind === 'boolean') {
-              control = h('button', {
-                ...common, type: 'button', role: 'switch', 'aria-checked': value, 'aria-label': t(key),
-                className: 'aw-switch', onClick: () => update(key, !value),
-              }, h('span', { className: 'aw-switch-knob' }));
-            } else if (field.kind === 'enum') {
-              // Segmented slider: one native range over the option indexes, with the
-              // option names under the track. A native range keeps arrow keys, Home,
-              // End and screen-reader semantics without any custom key handling.
-              const index = optionIndex(field, value), current = field.values[index];
-              const last = field.values.length - 1;
-              control = h('div', { className: 'aw-control aw-segments', style: { '--aw-stops': String(field.values.length) } },
-                h('input', {
-                  ...common, type: 'range', className: 'aw-slider', min: 0, max: last, step: 1, value: index,
-                  'aria-valuetext': t(current), style: { '--aw-pct': trackFill(last ? index / last : 0) },
-                  onChange: event => update(key, field.values[Number(event.target.value)] ?? current),
-                }),
-                h('div', { className: 'aw-ticks' }, ...field.values.map((option, position) => h('button', {
-                  key: option, type: 'button', disabled: off, className: 'aw-tick', tabIndex: -1,
-                  'aria-pressed': position === index, onClick: () => update(key, option),
-                }, t(option)))));
-            } else if (field.kind === 'string') {
-              control = h('input', {
-                ...common, className: 'aw-text', type: 'text', value, maxLength: field.max,
-                onChange: event => update(key, event.target.value),
-              });
-            } else {
-              const number = value === '' || !Number.isFinite(Number(value)) ? field.default : Number(value);
-              control = h('div', { className: 'aw-control aw-number' },
-                h('div', { className: 'aw-number-head' },
-                  h('output', { htmlFor: id, className: 'aw-readout' }, key === 'rainIntensity'
-                    ? `${Math.round(number * 100)}%` : readout(field, value))),
-                h('input', {
-                  ...common, type: 'range', className: 'aw-slider', min: field.min, max: field.max, step: field.step,
-                  value: number, 'aria-valuetext': key === 'rainIntensity' ? `${Math.round(number * 100)}%` : undefined,
-                  style: { '--aw-pct': trackFill((number - field.min) / (field.max - field.min || 1)) },
-                  onChange: event => update(key, Number(event.target.value)),
-                }),
-                h('div', { className: 'aw-scale', 'aria-hidden': 'true' },
-                  h('span', null, readout(field, field.min)), h('span', null, readout(field, field.max))));
-            }
-            return h('div', { className: 'aw-row', key },
-              h('div', { className: 'aw-copy' }, h('label', { htmlFor: id }, t(key)), h('p', { id: hint }, t(`${key}Hint`))), control);
-          }),
-          h('div', { className: 'aw-actions' },
-            h('button', { type: 'submit', disabled: disabled || !dirty, className: 'aw-save' }, t(saving ? 'saving' : 'save')),
-            h('button', { type: 'button', disabled, onClick: () => { setEditor(e => e.reset()); setNotice(''); } }, t('reset')),
-            h('button', { type: 'button', disabled: saving, onClick: discard }, t('discard'))),
-          notice && h('p', { role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice)))));
+      h('header', { className: 'aw-header' },
+        h('div', null, h('h2', null, t('title')), h('p', { className: 'aw-purpose' }, t('purpose'))),
+        h('div', { className: 'aw-master' }, renderField('enabled'))),
+      !snapshot.writable && h('p', { role: 'status', className: 'aw-notice' }, t('readOnly')),
+      h(LivePreview, { draft: editor.draft }),
+      h('div', { className: 'aw-options', role: 'region', 'aria-label': t('settingsOptions'), tabIndex: 0 },
+      h('div', { className: 'aw-groups' }, ...groups.map(group => h('fieldset', { className: 'aw-group', key: group.id },
+        h('legend', null, t(`${group.id}Group`)),
+        h('p', { className: 'aw-group-note' }, t(`${group.id}Description`)),
+        ...group.fields.map(renderField)))),
+      h('details', { className: 'aw-advanced' }, h('summary', null, t('advancedGroup')),
+        h('div', { className: 'aw-advanced-body' }, renderField('leftInset'), renderField('pauseOnScroll'))),
+      notice && h('p', { className: 'aw-notice', role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice))),
+      h('footer', { className: 'aw-actions' },
+        h('div', { className: 'aw-save-state', role: 'status', 'aria-live': 'polite' }, t(dirty ? 'unsavedDraft' : 'savedDraft')),
+        h('div', { className: 'aw-action-buttons' },
+          h('button', { type: 'button', disabled, onClick: () => { setEditor(e => e.reset()); setNotice(''); } }, t('reset')),
+          h('button', { type: 'button', disabled: saving, onClick: discard }, t('discard')),
+          h('button', { type: 'submit', disabled: disabled || !dirty, className: 'aw-save' }, t(saving ? 'saving' : 'save')))));
   }
 
   // The sidebar owns navigation, labels, tooltips and collapsed-rail buttons.
@@ -268,7 +302,7 @@ export function registerWhales(ctx, React, dictionaries) {
 
   function SettingsPanel() {
     return h('div', { style: { flex: '1 1 0', minWidth: 0, minHeight: 0, height: '100%',
-      overflowY: 'auto', padding: '24px clamp(16px, 3vw, 40px)', boxSizing: 'border-box' } }, h(Settings));
+      overflow: 'hidden', padding: '16px clamp(16px, 3vw, 40px) 0', boxSizing: 'border-box' } }, h(Settings));
   }
 
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
@@ -286,79 +320,130 @@ export function registerWhales(ctx, React, dictionaries) {
 }
 
 const SETTINGS_CSS = `
-.aw-settings{color:var(--dsw-alias-label-primary);font:inherit;width:100%;max-width:1280px;min-width:0;container-type:inline-size;padding:4px 0 24px}
-.aw-settings h2{font-size:18px;font-weight:600;margin:0 0 8px}
-.aw-settings .aw-purpose{color:var(--dsw-alias-label-secondary);line-height:1.6;margin:0 0 20px}
-/* Two columns: a live preview that stays in view while the fields scroll. The
-   host plugin page is the scroll container and none of the ancestors between it
-   and this form clips, so sticky works. align-items:flex-start is load-bearing:
-   a stretched aside would fill the whole row and sticky would have nowhere to
-   travel inside its own column. */
-.aw-settings .aw-layout{display:flex;gap:24px;align-items:flex-start}
-.aw-settings .aw-preview{position:sticky;top:16px;flex:0 0 58%;min-width:0}
-.aw-settings .aw-preview-card{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;overflow:hidden;margin:0 0 8px;background:var(--dsw-alias-bg-layer-1)}
-.aw-settings .aw-preview-card canvas{display:block;width:100%;height:clamp(260px,48vh,480px)}
-.aw-settings .aw-preview p{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:0}
-.aw-settings .aw-fields{flex:1 1 0;min-width:0}
-.aw-settings .aw-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;padding:14px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.aw-settings .aw-copy{min-width:0;flex:1 1 200px}
-.aw-settings label{font-weight:500}
-.aw-settings .aw-copy p{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary);margin:5px 0 0}
-.aw-settings input,.aw-settings select,.aw-settings button{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:7px;padding:7px 10px}
-.aw-settings input[type=text]{box-sizing:border-box;flex:1 1 160px;width:100%;min-width:0;max-width:320px}
+.aw-settings{--aw-accent:#007aff;--aw-ink:var(--dsw-alias-label-primary,#1d2633);--aw-muted:var(--dsw-alias-label-secondary,#647184);--aw-surface:var(--dsw-alias-bg-layer-1,#fff);--aw-line:var(--dsw-alias-border-l1,#e3e7ed);--aw-rail:rgba(120,135,155,.22);--aw-inset:rgba(120,135,155,.09);color:var(--aw-ink);font:inherit;width:100%;max-width:1280px;min-width:0;margin-inline:auto;padding:8px 0 24px;container-type:inline-size;box-sizing:border-box}
+.aw-settings *{box-sizing:border-box}
+/* The form owns a bounded viewport; only options scroll, never the canvas. */
+.aw-settings{display:flex;flex-direction:column;height:var(--aw-height,calc(100dvh - 120px));overflow:hidden;min-height:200px;padding-bottom:0}
+.aw-settings .aw-header,.aw-settings .aw-preview,.aw-settings .aw-actions{flex-shrink:0}
+.aw-settings .aw-header{margin-bottom:12px}
+.aw-settings .aw-preview{margin-bottom:14px;padding:12px 16px}
+.aw-settings .aw-preview-card canvas{height:clamp(64px,calc(var(--aw-height,700px) * .28),300px)}
+.aw-settings .aw-preview-note{margin-top:6px}
+.aw-settings .aw-options{flex:1 1 0;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-gutter:stable;padding:3px 8px 8px 3px;scroll-padding-block:12px}
+.aw-settings .aw-actions{position:static;margin-top:0;padding-block:10px}
+.aw-settings .aw-header{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:24px}
+.aw-settings h2{font-size:24px;line-height:1.25;font-weight:650;letter-spacing:-.025em;margin:0 0 8px}
+.aw-settings .aw-purpose{font-size:13px;line-height:1.6;color:var(--aw-muted);margin:0;max-width:680px}
+.aw-settings .aw-master{flex:0 0 220px}
+.aw-settings .aw-master .aw-row{border:0;padding:0}
+.aw-settings .aw-master .aw-copy p{font-size:11px}
+.aw-settings input,.aw-settings select,.aw-settings button{font:inherit;color:var(--aw-ink)}
 .aw-settings button{cursor:pointer}
-.aw-settings :disabled{opacity:.5;cursor:default}
-.aw-settings :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}
-/* One flexible control column: it yields space first and never widens the row. */
-.aw-settings .aw-control{flex:1 1 160px;min-width:160px;max-width:320px;display:flex;flex-direction:column;gap:5px}
-.aw-settings .aw-switch{width:36px;height:22px;border-radius:12px;padding:2px;flex:0 0 auto}
-.aw-settings .aw-switch-knob{display:block;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-label-secondary)}
-.aw-settings .aw-switch[aria-checked=true]{background:var(--dsw-alias-brand-primary)}
-.aw-settings .aw-switch[aria-checked=true] .aw-switch-knob{transform:translateX(12px);background:var(--dsw-alias-bg-base)}
-/* Slider track and thumb. The rail uses a translucent grey so it reads on both
-   themes; the filled part takes the brand colour through --aw-pct. */
-.aw-settings input[type=range]{-webkit-appearance:none;appearance:none;display:block;width:100%;min-width:0;height:22px;margin:0;padding:0;background:none;border:0;border-radius:6px;cursor:pointer;accent-color:var(--dsw-alias-brand-primary)}
-.aw-settings input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:999px;background:rgba(120,140,160,.35);background:linear-gradient(to right,var(--dsw-alias-brand-primary) 0 var(--aw-pct,0%),rgba(120,140,160,.35) var(--aw-pct,0%) 100%)}
-.aw-settings input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;margin-top:-5px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);border:2px solid var(--dsw-alias-brand-primary);box-shadow:0 1px 2px rgba(0,0,0,.28)}
-.aw-settings input[type=range]::-moz-range-track{height:6px;border-radius:999px;background:rgba(120,140,160,.35)}
-.aw-settings input[type=range]::-moz-range-progress{height:6px;border-radius:999px;background:var(--dsw-alias-brand-primary)}
-.aw-settings input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);border:2px solid var(--dsw-alias-brand-primary)}
-.aw-settings input[type=range]:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
-.aw-settings .aw-number-head{display:flex;align-items:baseline;justify-content:flex-end;min-height:18px}
-.aw-settings .aw-readout{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.35;white-space:nowrap}
-.aw-settings .aw-scale{display:flex;justify-content:space-between;gap:10px;font-size:11px;line-height:1.4;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
-.aw-settings .aw-scale span{white-space:nowrap}
-/* Segmented slider: option names under the track double as jump buttons. */
-.aw-settings .aw-ticks{display:grid;grid-template-columns:repeat(var(--aw-stops,2),minmax(0,1fr));gap:2px}
-.aw-settings .aw-tick{font:inherit;font-size:11px;line-height:1.35;min-width:0;padding:3px 1px;border:0;border-radius:5px;background:none;color:var(--dsw-alias-label-secondary);text-align:center;overflow-wrap:normal;word-break:normal;hyphens:none;letter-spacing:-.01em}
-.aw-settings .aw-tick[aria-pressed=true]{color:var(--dsw-alias-label-primary);font-weight:600;background:rgba(120,145,170,.16);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 14%,transparent)}
-.aw-settings .aw-tick:disabled{cursor:default}
-body[data-ds-dark-theme] .aw-settings input[type=range]::-webkit-slider-runnable-track{background:rgba(160,180,200,.32);background:linear-gradient(to right,var(--dsw-alias-brand-primary) 0 var(--aw-pct,0%),rgba(160,180,200,.32) var(--aw-pct,0%) 100%)}
-body[data-ds-dark-theme] .aw-settings .aw-tick[aria-pressed=true]{background:rgba(120,160,200,.2);background:color-mix(in srgb,var(--dsw-alias-brand-primary) 24%,transparent)}
-@media(prefers-reduced-motion:no-preference){
-.aw-settings input[type=range]::-webkit-slider-thumb{transition:transform .12s ease}
-.aw-settings input[type=range]:active::-webkit-slider-thumb{transform:scale(1.08)}
-.aw-settings .aw-switch-knob{transition:transform .14s ease,background .14s ease}
-.aw-settings .aw-tick{transition:color .12s ease,background .12s ease}
+.aw-settings :disabled{opacity:.45;cursor:default}
+.aw-settings :focus-visible{outline:3px solid var(--aw-accent);outline-offset:3px}
+.aw-settings .aw-preview{display:block;min-width:0;margin:0 0 24px;padding:18px;border:1px solid var(--aw-line);border-radius:22px;background:var(--aw-surface);box-shadow:0 3px 16px rgba(25,45,65,.035)}
+.aw-settings .aw-preview-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}
+.aw-settings .aw-preview h3{font-size:15px;line-height:1.4;font-weight:600;margin:0 0 3px}
+.aw-settings .aw-preview-toolbar p{font-size:12px;line-height:1.4;color:var(--aw-muted);margin:0}
+.aw-settings .aw-preview-pause{flex-shrink:0;font-size:12px;font-weight:500;min-height:36px;padding:7px 14px;border:1px solid var(--aw-line);border-radius:999px;background:var(--aw-inset)}
+.aw-settings .aw-preview-card{overflow:hidden;isolation:isolate;border-radius:14px;background:var(--aw-surface);border:1px solid var(--aw-line)}
+.aw-settings .aw-preview-card canvas{display:block;width:100%;height:clamp(320px,50vh,560px)}
+.aw-settings .aw-preview-note{font-size:12px;line-height:1.6;color:var(--aw-muted);margin:12px 2px 0}
+.aw-settings .aw-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:20px}
+.aw-settings .aw-group{min-width:0;margin:0;padding:0 22px 10px;border:1px solid var(--aw-line);border-radius:20px;background:var(--aw-surface)}
+.aw-settings .aw-group legend{float:left;width:100%;padding:20px 0 0;font-size:17px;line-height:1.4;font-weight:650;letter-spacing:-.015em}
+.aw-settings .aw-group-note{clear:both;color:var(--aw-muted);font-size:12px;line-height:1.5;padding:5px 0 14px;margin:0;border-bottom:1px solid var(--aw-line)}
+.aw-settings .aw-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 18px;min-width:0;padding:15px 0;border-bottom:1px solid var(--aw-line)}
+.aw-settings .aw-row:last-child{border-bottom:0}
+.aw-settings .aw-copy{min-width:0;flex:1 1 100%}
+.aw-settings .aw-row--boolean{flex-wrap:nowrap;min-height:76px}
+.aw-settings .aw-row--boolean .aw-copy{flex:1 1 0}
+.aw-settings .aw-row-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.aw-settings label,.aw-settings .aw-label{font-size:13px;line-height:1.45;font-weight:550}
+.aw-settings .aw-copy p{font-size:12px;line-height:1.5;color:var(--aw-muted);margin:5px 0 0;overflow-wrap:break-word}
+.aw-settings .aw-readout{flex-shrink:0;font-size:12px;font-weight:600;line-height:1.4;font-variant-numeric:tabular-nums;color:var(--aw-accent);background:rgba(0,122,255,.07);border-radius:6px;padding:2px 7px;white-space:nowrap}
+.aw-settings .aw-text,.aw-settings .aw-select{width:100%;min-width:0;min-height:40px;padding:9px 12px;border:1px solid var(--aw-line);border-radius:10px;background:var(--aw-inset);font-size:13px;line-height:1.4}
+.aw-settings .aw-select{cursor:pointer;color-scheme:light}
+.aw-settings .aw-select option{color:#1d2633;background:#fff}
+.aw-settings .aw-segments{display:flex;flex:1 1 100%;min-width:0;padding:3px;gap:3px;border-radius:11px;background:var(--aw-inset)}
+.aw-settings .aw-segment{flex:1 1 0;min-width:0;min-height:36px;padding:7px 4px;background:transparent;border:1px solid transparent;border-radius:8px;font-size:12px;line-height:1.35;text-align:center;overflow-wrap:normal;word-break:normal;hyphens:none;letter-spacing:-.01em;color:var(--aw-muted)}
+.aw-settings .aw-segment[aria-pressed=true]{background:var(--aw-surface);color:var(--aw-ink);font-weight:600;border-color:var(--aw-line);box-shadow:0 1px 3px rgba(20,40,60,.08)}
+.aw-settings .aw-number{width:100%;min-width:0}
+.aw-settings input[type=range]{-webkit-appearance:none;appearance:none;display:block;width:100%;height:32px;margin:0;padding:0;background:transparent;border:0;border-radius:999px;cursor:pointer;accent-color:var(--aw-accent);touch-action:pan-y}
+.aw-settings input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:999px;background:linear-gradient(to right,var(--aw-accent) 0 var(--aw-pct,0%),var(--aw-rail) var(--aw-pct,0%) 100%)}
+.aw-settings input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;margin-top:-8.5px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.06);box-shadow:0 1px 4px rgba(20,35,50,.22),0 2px 8px rgba(20,35,50,.06)}
+.aw-settings input[type=range]::-moz-range-track{height:5px;border-radius:999px;background:var(--aw-rail)}
+.aw-settings input[type=range]::-moz-range-progress{height:5px;border-radius:999px;background:var(--aw-accent)}
+.aw-settings input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.06);box-shadow:0 1px 4px rgba(20,35,50,.22)}
+.aw-settings .aw-scale{display:flex;justify-content:space-between;gap:12px;font-size:10px;line-height:1.4;color:var(--aw-muted);font-variant-numeric:tabular-nums}
+.aw-settings .aw-switch{position:relative;flex:0 0 48px;width:48px;height:44px;min-height:44px;padding:0;border:0;border-radius:14px;background:transparent}
+.aw-settings .aw-switch::before{content:'';position:absolute;inset:8px 0;border-radius:999px;background:var(--aw-rail)}
+.aw-settings .aw-switch-knob{position:absolute;top:10px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.aw-settings .aw-switch[aria-checked=true]::before{background:var(--aw-accent)}
+.aw-settings .aw-switch[aria-checked=true] .aw-switch-knob{transform:translateX(20px)}
+.aw-settings .aw-advanced{margin-top:20px;border:1px solid var(--aw-line);border-radius:16px;background:var(--aw-surface)}
+.aw-settings .aw-advanced summary{padding:16px 22px;font-size:13px;font-weight:550;cursor:pointer}
+.aw-settings .aw-advanced-body{padding:0 22px 5px}
+.aw-settings .aw-advanced .aw-row{flex-wrap:nowrap}
+.aw-settings .aw-advanced .aw-copy{flex:1 1 0}
+.aw-settings .aw-pixel-input{display:flex;align-items:center;gap:8px;flex:0 0 116px;color:var(--aw-muted);font-size:12px}
+.aw-settings .aw-pixel-input input{min-width:0;width:84px;padding:8px;border:1px solid var(--aw-line);border-radius:8px;background:var(--aw-inset);font-variant-numeric:tabular-nums}
+.aw-settings .aw-actions{position:sticky;bottom:0;z-index:4;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;padding:14px 0;background:var(--aw-surface);border-top:1px solid var(--aw-line)}
+.aw-settings .aw-save-state{font-size:12px;line-height:1.4;color:var(--aw-muted)}
+.aw-settings .aw-action-buttons{display:flex;flex-wrap:wrap;gap:8px}
+.aw-settings .aw-action-buttons button{min-height:38px;padding:8px 14px;font-size:12px;font-weight:500;line-height:1.4;border:1px solid var(--aw-line);border-radius:10px;background:var(--aw-inset)}
+.aw-settings .aw-action-buttons .aw-save{color:#fff;border-color:var(--aw-accent);background:var(--aw-accent);padding-inline:22px}
+.aw-settings .aw-notice{font-size:13px;line-height:1.5;padding:12px 14px;border-radius:10px;background:var(--aw-inset)}
+body[data-ds-dark-theme] .aw-settings{--aw-accent:#0a84ff;--aw-inset:rgba(160,175,195,.10);--aw-rail:rgba(160,175,195,.27)}
+body[data-ds-dark-theme] .aw-settings .aw-select{color-scheme:dark}
+body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background:#242c36}
+@media(hover:hover) and (pointer:fine){
+.aw-settings .aw-segment:not(:disabled):hover{color:var(--aw-ink);background:var(--aw-surface)}
+.aw-settings .aw-action-buttons button:not(:disabled):hover,.aw-settings .aw-preview-pause:hover{filter:brightness(.96)}
 }
-/* The settings region can be narrow even on a wide screen with sidebars. */
+@media(prefers-reduced-motion:no-preference){
+.aw-settings .aw-switch-knob{transition:transform 160ms cubic-bezier(.23,1,.32,1)}
+.aw-settings .aw-switch::before{transition:background-color 160ms ease}
+}
+@media(max-height:600px){.aw-settings .aw-actions{position:static}}
+@media(prefers-contrast:more){.aw-settings{--aw-line:currentColor}.aw-settings .aw-copy p,.aw-settings .aw-scale{color:var(--aw-ink)}}
 @container(max-width:760px){
-.aw-settings .aw-layout{display:block}
-.aw-settings .aw-preview{position:static;flex:none}
-.aw-settings .aw-preview-card canvas{height:280px}
+.aw-settings .aw-header{align-items:flex-start;flex-direction:column;gap:16px}
+.aw-settings .aw-master{flex:auto;width:100%}
+.aw-settings .aw-groups{grid-template-columns:minmax(0,1fr);gap:16px}
+.aw-settings .aw-preview-card canvas{height:clamp(280px,45vh,420px)}
 }
 @container(max-width:440px){
-.aw-settings .aw-row{gap:8px 12px;align-items:flex-start}
-.aw-settings .aw-copy{flex:1 1 100%}
-.aw-settings .aw-control,.aw-settings input[type=text]{flex:1 1 100%;max-width:none}
-.aw-settings .aw-number-head{justify-content:flex-start}
-.aw-settings .aw-tick{font-size:10px}
+.aw-settings .aw-preview{padding:12px;border-radius:16px}
+.aw-settings .aw-preview-card canvas{height:280px}
+.aw-settings .aw-group{padding-inline:16px}
+.aw-settings .aw-actions{align-items:flex-start}
+.aw-settings .aw-action-buttons{width:100%}
+.aw-settings .aw-action-buttons button{flex:1 1 auto;padding-inline:10px}
+.aw-settings .aw-segment{font-size:11px;padding-inline:3px}
+.aw-settings .aw-preview-toolbar{gap:8px}
+.aw-settings .aw-preview-pause{padding-inline:10px}
+.aw-settings .aw-advanced .aw-row{flex-wrap:wrap}
+.aw-settings .aw-advanced .aw-copy{flex-basis:100%}
 }
-@media(max-width:540px){
-.aw-settings .aw-row{gap:8px 12px;align-items:flex-start}
-.aw-settings .aw-copy{flex:1 1 100%}
-.aw-settings .aw-control,.aw-settings input[type=text]{flex:1 1 100%;max-width:none}
-.aw-settings .aw-number-head{justify-content:flex-start}
-.aw-settings .aw-tick{font-size:10px}
+.aw-settings .aw-header{margin-bottom:12px}
+.aw-settings .aw-preview{margin-bottom:14px;padding:12px 16px}
+.aw-settings .aw-preview-card canvas{height:clamp(64px,calc(var(--aw-height,700px) * .28),300px)}
+.aw-settings .aw-preview-note{margin-top:6px}
+.aw-settings .aw-actions{position:static;margin-top:0;padding-block:10px}
+@media(max-height:760px){
+.aw-settings .aw-purpose,.aw-settings .aw-preview-note,.aw-settings .aw-preview-toolbar p{display:none}
+.aw-settings .aw-header h2{font-size:19px;margin:0}
+.aw-settings .aw-master .aw-copy p{display:none}
+.aw-settings .aw-preview-toolbar{margin-bottom:6px}
+.aw-settings .aw-preview{padding:8px 12px;margin-bottom:8px}
+.aw-settings .aw-preview-card canvas{height:clamp(56px,calc(var(--aw-height,500px) * .22),150px)}
+.aw-settings .aw-actions{gap:6px;padding-block:6px}
+.aw-settings .aw-save-state{display:none}
+.aw-settings .aw-action-buttons{margin-left:auto}
+}
+@container(max-width:760px){
+.aw-settings .aw-header{flex-direction:row;align-items:center;gap:12px}
+.aw-settings .aw-master{width:auto;flex:0 1 190px}
 }
 `;

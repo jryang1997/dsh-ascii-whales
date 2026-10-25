@@ -499,7 +499,7 @@ export function adoptSceneState(previous, next) {
   for (const whale of next.whales || []) {
     const source = sources.get(whale.id);
     if (!source || source === whale) continue;
-    for (const key of ['x', 'y', 'heading', 'turn', 'speed', 'vx', 'vy']) {
+    for (const key of ['x', 'y', 'heading', 'turn', 'speed', 'vx', 'vy', 'depth']) {
       if (Number.isFinite(source[key])) whale[key] = source[key];
     }
     if (source._motion) {
@@ -518,6 +518,8 @@ export function adoptSceneState(previous, next) {
       whale._motion.cruise *= nextAnatomy.cruise / previousAnatomy.cruise;
       whale._motion.agility *= nextAnatomy.turnRate / previousAnatomy.turnRate;
     }
+    motionGeometry(whale, next.width, next.height, next.whales.length,
+      motionLimit(motionFinite(next.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling));
     // The spine is normalized by the body length, so after a size change one
     // stale frame would show the old silhouette. Allocate a correctly shaped
     // rig, keep the old nodes when they fit, and re-anchor them to the new length
@@ -695,8 +697,51 @@ function motionBodyContact(a, b, horizon, width, height) {
   return { distance: Math.sqrt(bestSquared), x: bestX, y: bestY };
 }
 
+// Cruise depth owns an independent random stream, so adding vertical motion
+// cannot change route choices or the separate dive scheduler. All fields are
+// scalars: scene adoption can copy them without sharing mutable state.
+function motionCruiseDepth(whale, index, age) {
+  const state = whale._motion;
+  if (!Number.isFinite(state.cruiseBase)) {
+    state.cruiseBase = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5);
+    state.depthSeed = (motionSeed(whale, index) ^ 0x3c6ef372) >>> 0;
+    state.depthFrom = state.cruiseBase;
+    state.depthTarget = state.cruiseBase;
+    state.depthStartedAt = state.age;
+    state.depthDuration = 0;
+    state.depthDirection = 1;
+  }
+  if (age >= state.depthStartedAt + state.depthDuration) {
+    state.depthFrom = state.depthTarget;
+    state.depthSeed = (Math.imul(state.depthSeed, 1664525) + 1013904223) >>> 0;
+    const excursion = 0.14 + state.depthSeed / 4294967296 * 0.10;
+    state.depthDirection *= -1;
+    state.depthTarget = motionLimit(state.cruiseBase + state.depthDirection * excursion, 0.10, 2.5);
+    state.depthStartedAt += state.depthDuration;
+    state.depthSeed = (Math.imul(state.depthSeed, 1664525) + 1013904223) >>> 0;
+    state.depthDuration = 20 + state.depthSeed / 4294967296 * 18;
+  }
+  const u = motionLimit((age - state.depthStartedAt) / state.depthDuration, 0, 1);
+  whale.depth = state.depthFrom + (state.depthTarget - state.depthFrom) * u * u * (3 - 2 * u);
+}
+
 function motionIntegrate(scene, speed) {
   const whales = scene.whales, width = scene.width, height = scene.height;
+  const size = motionLimit(motionFinite(scene.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling);
+  // Update every body's geometry before reciprocal avoidance. Rescale historical
+  // nodes about the centre without advancing their steering history twice.
+  for (let i = 0; i < whales.length; i++) {
+    const whale = whales[i], previousLength = whale.length;
+    motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
+    motionGeometry(whale, width, height, whales.length, size);
+    const nodes = whale.rig?.nodes, ratio = whale.length / previousLength;
+    if (nodes && Number.isFinite(ratio) && ratio !== 1) {
+      for (let j = 0; j < nodes.length; j += 2) {
+        nodes[j] = whale.x + (nodes[j] - whale.x) * ratio;
+        nodes[j + 1] = whale.y + (nodes[j + 1] - whale.y) * ratio;
+      }
+    }
+  }
   const environmentSpeed = Math.min(1, Math.min(width, height) / 650);
   const obstacles = motionPeriodicObstacles(scene.obstacles, width, height);
   const forces = whales.map(() => ({ x: 0, y: 0, caution: 0 }));
@@ -1097,8 +1142,7 @@ export function whalePose(whale, elapsed, width, height, speed, out = {}) {
   if (state) motionEnsureDive(state);
   const age = state ? state.age : motionFinite(elapsed, 0) * motionFinite(speed, 1);
   const heading = motionFinite(whale.heading, 0), turn = motionFinite(whale.turn, 0);
-  const depth = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5)
-    + Math.sin(age * 0.07 + phase) * 0.025;
+  const depth = motionLimit(motionFinite(whale.depth, 0.5), 0, 2.5);
   const focal = motionLimit(width * 0.95, 520, 1800);
   const yaw = 0, pitch = Math.PI / 2, roll = heading;
   const cy = 1, sy = 0, cp = 0, sp = 1;

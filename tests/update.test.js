@@ -16,7 +16,7 @@ const ALTERNATIVES = Object.freeze({
   text: '深海蓝鲸', speed: 1.1, opacity: 0.7, glyphSize: 13, whaleSize: 1.2,
   color: 'azure', activity: false, quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
   readingEffect: 'glow', composerGlass: true, composerAvoid: true, spout: false, ripples: false, wind: false, clouds: false,
-  rain: true, rainIntensity: 0.8,
+  rain: true, rainIntensity: 0.8, pauseOnScroll: true,
 });
 
 const GROUP_OF = Object.freeze({
@@ -25,7 +25,7 @@ const GROUP_OF = Object.freeze({
   palette: ['color'],
   glass: ['glass', 'glassStrength', 'readingEffect'],
   composer: ['composerGlass', 'composerAvoid'],
-  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity'],
+  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'pauseOnScroll'],
 });
 const GROUPS = Object.keys(GROUP_OF);
 
