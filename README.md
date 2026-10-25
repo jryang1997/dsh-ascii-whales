@@ -48,7 +48,7 @@ dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
 2. 在 DSH 插件管理器中安装该文件。
 3. 打开 **插件 → 文字蓝鲸**，调整选项后点击 **保存**。
 
-目前发布的安装包为 [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0)。0.10.0 之后的变化见[更新日志](./CHANGELOG.md)。本页动图来自真实 DSH 页面录屏：巡游是桌面窗口，下潜、拍尾和落雨使用 0.14.0 之后的源码构建，深色主题，鲸鱼为「纯字符 + 自定义文字 + 每条随机配色」。
+目前发布的安装包为 [v0.15.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.15.0)。0.10.0 之后的变化见[更新日志](./CHANGELOG.md)。本页动图来自真实 DSH 页面录屏：巡游是桌面窗口，下潜、拍尾和落雨使用 0.14.0 之后的源码构建，深色主题，鲸鱼为「纯字符 + 自定义文字 + 每条随机配色」。
 
 ## 能做什么
 
