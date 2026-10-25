@@ -17,6 +17,10 @@ export const FIELDS = Object.freeze({
   whaleSize: { kind: 'number', min: 0.55, max: 1.55, step: 0.05, default: 1 },
   color: { kind: 'enum', values: ['ocean', 'azure', 'indigo', 'rainbow'], default: 'ocean' },
   activity: { kind: 'boolean', default: true },
+  // Hold-to-talk decoration. On by default because it only does anything while
+  // the dictation plugin is installed and its bridge is live; that is what makes
+  // the easter egg discoverable, and the switch is still one click away.
+  dictationEcho: { kind: 'boolean', default: true },
   quietCenter: { kind: 'boolean', default: true },
   leftInset: { kind: 'number', min: 0, max: 500, step: 1, default: 280 },
   readingEffect: { kind: 'enum', values: ['none', 'glow', 'blur', 'frost'], default: 'frost' },

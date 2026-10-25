@@ -20,7 +20,7 @@ test('configuration preserves saved text and sizes, with readable new defaults a
   assert.equal(DEFAULTS.whaleSize, 1);
   assert.equal(DEFAULTS.composerGlass, false);
   assert.equal(DEFAULTS.composerAvoid, false);
-  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'activity', 'quietCenter', 'leftInset', 'readingEffect', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'pauseOnScroll']);
+  assert.deepEqual(Object.keys(FIELDS), ['enabled', 'count', 'species', 'renderStyle', 'fillMode', 'text', 'speed', 'opacity', 'glyphSize', 'whaleSize', 'color', 'activity', 'dictationEcho', 'quietCenter', 'leftInset', 'readingEffect', 'glass', 'glassStrength', 'composerGlass', 'composerAvoid', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'pauseOnScroll']);
   assert.equal(DEFAULTS.rain, false);
   assert.equal(DEFAULTS.rainIntensity, 0.45);
   // The scroll pause is an opt-in reading guard: a stored config that never

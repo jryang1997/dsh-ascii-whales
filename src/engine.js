@@ -5,6 +5,7 @@ import { createWhaleSimulation, sceneConfigChanged } from './simulation.js';
 import { glassRoundedPath, glassRoundedSubpath, glassClipExterior, glassTone, glassSeaFactor, glassSeaBuffer } from './glass.js';
 import { attachSpout } from './spout.js';
 import { drawWater } from './water.js';
+import { drawVoiceSea } from './voice-sea.js';
 import { drawRain } from './rain.js';
 import { createInkPalette } from './shading.js';
 import { drawAtmosphere, shadeAtmosphere } from './atmosphere.js';
@@ -57,7 +58,7 @@ const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength', 'readingEffect']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'pauseOnScroll']);
+const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -272,7 +273,7 @@ function normalizeLayerConfig(value) {
  */
 export function createWhaleLayer(canvas, initialConfig, options = {}) {
   const ink = canvas.getContext('2d');
-  if (!ink) return { update() {}, setActivity() {}, dispose() {} };
+  if (!ink) return { update() {}, setActivity() {}, setDictation() {}, dispose() {} };
   const config = normalizeLayerConfig(initialConfig);
   // Optional preview injection: `demoCard` places one card by canvas ratios
   // (0..1) with a pixel radius. With it, measure() never reads the DOM — the
@@ -286,7 +287,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
   const simulation = createWhaleSimulation(config, { seed: scenerySeed });
   let scene = simulation.scene;
-  const { water, atmosphere, rain } = simulation;
+  const { water, atmosphere, rain, voiceSea } = simulation;
   let sceneryPalette = createInkPalette(config.color);
   let poses = scene.whales.map(() => ({}));
   let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
@@ -304,6 +305,9 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
   let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
   let panes = [], tone = null, readingLayout = null, foreground = null, sidebarForegrounds = [];
+  // Canvas-relative composer card used by the dictation gather. Measured on the
+  // existing 120 ms budget; never read from the animation frame.
+  let composerAnchor = null;
   let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
   let readingTextDirty = true, readingRoots = [], scrolling = false, scrollTimer = 0;
   const originalOpacity = canvas.style?.opacity ?? '', originalTransition = canvas.style?.transition ?? '';
@@ -472,6 +476,8 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     if (!width || !height || !scene || disposed) return;
     if (demo) {
       applyReadingSnapshot(demoReadingSnapshot(demo, width, height));
+      composerAnchor = null;
+      simulation.setDictationAnchor(null);
       const card = demoCardRect();
       const groups = card && config.glass && config.readingEffect !== 'none'
         ? [{ clip: { x: card.left, y: card.top, width: card.width, height: card.height, radius: card.radius },
@@ -480,10 +486,15 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       return;
     }
     const canvasRect = rectOf(canvas);
-    if (!canvasRect) return;
+    if (!canvasRect) { composerAnchor = null; simulation.setDictationAnchor(null); return; }
     const scroller = pick(SCROLL_SELECTOR, canvasRect)?.element;
     const cardHit = pick(COMPOSER_CARD_SELECTOR, canvasRect);
     const composer = cardHit || pick(COMPOSER_SEAT_SELECTOR, canvasRect);
+    // The gather band only needs the card rectangle; the reading layout below
+    // owns the glass/avoidance policy and is free to skip measuring it.
+    composerAnchor = composer ? { left: composer.rect.left - canvasRect.left,
+      top: composer.rect.top - canvasRect.top, width: composer.rect.width, height: composer.rect.height } : null;
+    simulation.setDictationAnchor(composerAnchor);
     const sidebars = collectRightbarSurfaces(canvasRect);
     sidebarForegrounds = sidebars.map(panel => measureForeground(panel.element, canvasRect, canvas));
     readingRoots = [scroller, composer?.element, ...sidebars.map(panel => panel.element)].filter(Boolean);
@@ -531,6 +542,8 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     drawAtmosphere(ink, atmosphere, { ...scenery, wind: config.wind, clouds: config.clouds,
       dark: document.body.hasAttribute('data-ds-dark-theme') });
     if (config.ripples) drawWater(ink, water, scenery);
+    // The voice swell is not part of the swimming wakes: its own switch decides.
+    if (config.dictationEcho) drawVoiceSea(ink, voiceSea, scenery);
     const rainScenery = { ...scenery, dark: document.body.hasAttribute('data-ds-dark-theme'),
       reduced: reduced.matches,
       opacity: config.opacity * (reduced.matches ? (config.rain ? config.rainIntensity : 0) : 1) };
@@ -955,6 +968,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     readingLayout = null;
     foreground = null;
     sidebarForegrounds = [];
+    composerAnchor = null;
     canvas.width = canvas.height = 1;
   }
   function setActivity(snapshot) {
@@ -962,7 +976,12 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     simulation.setActivity(snapshot);
     if (!document.hidden && width && height) draw();
   }
-  return { update, setActivity, dispose };
+  function setDictation(snapshot, levelSource) {
+    if (disposed) return;
+    simulation.setDictation(snapshot, levelSource);
+    if (!document.hidden && width && height) draw();
+  }
+  return { update, setActivity, setDictation, dispose };
 }
 
 /** Backwards-compatible entry point: mounts a layer and returns its disposer. */
