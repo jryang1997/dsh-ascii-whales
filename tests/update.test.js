@@ -5,8 +5,37 @@ import { adoptSceneState } from '../src/motion.js';
 import { createWhaleLayer, diffWhaleConfig, mountWhales } from '../src/engine.js';
 import { whaleSpecies } from '../src/species.js';
 import { createWhaleSimulation } from '../src/simulation.js';
+import { createWorkMetrics } from '../src/work-metrics.js';
 
 const close = (a, b, epsilon = 1e-9) => assert.ok(Math.abs(a - b) <= epsilon, `${a} differs from ${b}`);
+
+test('optional observation preserves seeded renderer output, reading masks and lifecycle', () => {
+  function render(observe) {
+    const env = harness();
+    env.install();
+    const metrics = createWorkMetrics();
+    const layer = createWhaleLayer(env.canvas(), { ...DEFAULTS, spout: false }, { seed: 42, metrics: observe ? metrics : null });
+    try {
+      for (let frame = 0; frame < 90; frame++) env.raf.step();
+      layer.setActivity({ entities: [] });
+      layer.update({ ...DEFAULTS, spout: false, opacity: 0.5 });
+      const result = { drawn: structuredClone(env.drawn), stats: { ...env.stats }, pending: env.raf.pending() };
+      layer.dispose();
+      const before = metrics.snapshot();
+      env.raf.step();
+      assert.deepEqual(metrics.snapshot(), before, 'disposed layers do no observed work');
+      return { result, sample: before };
+    } finally { layer.dispose(); env.restore(); }
+  }
+  const observed = render(true), control = render(false);
+  assert.deepEqual(observed.result, control.result);
+  assert.equal(observed.sample.counters.wakeup.count, 90);
+  assert.equal(observed.sample.counters.motionStep.count, 89);
+  assert.ok(observed.sample.counters.layout.count > 0);
+  for (const cause of ['sync', 'animation', 'activity', 'config']) assert.ok(observed.sample.timeline.some(event => event.name === 'draw' && event.cause === cause), cause);
+  assert.equal(control.sample.counters.wakeup.count, 0);
+});
+
 const baseline = () => normalizeConfig(DEFAULTS);
 
 // A different value for every field: used to prove that each option lands in

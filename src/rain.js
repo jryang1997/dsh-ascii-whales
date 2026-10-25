@@ -135,14 +135,24 @@ function advance(field, state, dt, options, target, emit) {
 }
 
 /** Retarget rain without replacing live drops; disabled rain drains naturally. */
-export function stepRain(field, delta, { enabled = false, intensity = 0.45, wind = true, atmosphere } = {}) {
+export function stepRain(field, delta, { enabled = false, intensity = 0.45, wind = true, atmosphere, metrics = null } = {}) {
   const state = storage.get(field);
   if (!state || !(Number.isFinite(delta) && delta > 0 && field.width > 0 && field.height > 0)) return field;
+  const started = metrics?.begin();
   const target = enabled ? clamp(finite(intensity, 0.45)) : 0, options = { wind, atmosphere };
   // Only the last two seconds of a suspended tab can contribute visible history.
-  if (delta > 2) advance(field, state, delta - 2, options, target, false);
+  if (delta > 2) {
+    const stepStarted = metrics?.begin();
+    advance(field, state, delta - 2, options, target, false);
+    metrics?.end('rainStep', stepStarted);
+  }
   const window = Math.min(delta, 2), steps = Math.ceil(window * 60), dt = window / steps;
-  for (let i = 0; i < steps; i++) advance(field, state, dt, options, target, true);
+  for (let i = 0; i < steps; i++) {
+    const stepStarted = metrics?.begin();
+    advance(field, state, dt, options, target, true);
+    metrics?.end('rainStep', stepStarted);
+  }
+  metrics?.end('rainUpdate', started);
   return field;
 }
 

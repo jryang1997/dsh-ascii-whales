@@ -1268,7 +1268,7 @@
     const submergence = u < 0.65 ? 1 - 0.8 * diveSmoothstep(u / 0.65) : 0.2 * (1 - diveSmoothstep((u - 0.65) / 0.35));
     return { submergence, pitch, noseFirst: submergence > 0, depth, tailKick: 0, arch };
   }
-  function stepScene(scene, dt, speed = 1) {
+  function stepScene(scene, dt, speed = 1, metrics = null) {
     if (!Number.isFinite(dt) || dt <= 0) return scene;
     speed = motionLimit(motionFinite(speed, 1), 0, 3);
     if (speed === 0) return scene;
@@ -1277,7 +1277,9 @@
     }
     scene.accumulator = motionFinite(scene.accumulator, 0) + Math.min(dt, 0.25);
     while (scene.accumulator + 1e-10 >= motionTick) {
+      const started = metrics?.begin();
       motionIntegrate(scene, speed);
+      metrics?.end("motionStep", started);
       scene.accumulator = Math.max(0, scene.accumulator - motionTick);
     }
     return scene;
@@ -2878,8 +2880,12 @@
     field.height = Math.max(0, atmosFinite(height, 0));
     return field;
   }
-  function stepAtmosphere(field, delta2) {
-    if (field && Number.isFinite(delta2) && delta2 > 0) field.time += delta2;
+  function stepAtmosphere(field, delta2, metrics = null) {
+    if (field && Number.isFinite(delta2) && delta2 > 0) {
+      const started = metrics?.begin();
+      field.time += delta2;
+      metrics?.end("atmosphereUpdate", started);
+    }
     return field;
   }
   function atmosphereWindAt(field, x = 0, y = 0, out = {}) {
@@ -3483,13 +3489,23 @@
       spawn(field, state, options, Math.max(0, age));
     }
   }
-  function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere } = {}) {
+  function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere, metrics = null } = {}) {
     const state = storage.get(field);
     if (!state || !(Number.isFinite(delta2) && delta2 > 0 && field.width > 0 && field.height > 0)) return field;
+    const started = metrics?.begin();
     const target = enabled ? clamp3(finite2(intensity, 0.45)) : 0, options = { wind, atmosphere };
-    if (delta2 > 2) advance(field, state, delta2 - 2, options, target, false);
+    if (delta2 > 2) {
+      const stepStarted = metrics?.begin();
+      advance(field, state, delta2 - 2, options, target, false);
+      metrics?.end("rainStep", stepStarted);
+    }
     const window2 = Math.min(delta2, 2), steps = Math.ceil(window2 * 60), dt = window2 / steps;
-    for (let i = 0; i < steps; i++) advance(field, state, dt, options, target, true);
+    for (let i = 0; i < steps; i++) {
+      const stepStarted = metrics?.begin();
+      advance(field, state, dt, options, target, true);
+      metrics?.end("rainStep", stepStarted);
+    }
+    metrics?.end("rainUpdate", started);
     return field;
   }
   function maskAt(segments, count, fade, width, height, thickness) {
@@ -3608,7 +3624,7 @@
   function sceneConfigChanged(previous = {}, next = {}) {
     return sceneConfigKeys.some((key) => previous[key] !== next[key]);
   }
-  function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
+  function createWhaleSimulation(initialConfig, { seed = 0, metrics = null } = {}) {
     let disposed = false;
     let activityTime = 0;
     let config = { ...initialConfig };
@@ -3661,19 +3677,26 @@
       },
       advance(delta2) {
         if (disposed) return 0;
+        const started = metrics?.begin();
         const before = scene.time;
         activity.apply(scene.whales, activityTime, config.activity);
-        stepScene(scene, delta2, config.speed);
+        stepScene(scene, delta2, config.speed, metrics);
         const elapsed = scene.time - before;
         activityTime += elapsed;
-        if (config.ripples) stepWater(water, scene, elapsed);
-        stepAtmosphere(atmosphere, elapsed);
+        if (config.ripples) {
+          const waterStarted = metrics?.begin();
+          stepWater(water, scene, elapsed);
+          metrics?.end("waterUpdate", waterStarted);
+        }
+        stepAtmosphere(atmosphere, elapsed, metrics);
         stepRain(rain, elapsed, {
           enabled: config.rain,
           intensity: config.rainIntensity,
           wind: config.wind,
-          atmosphere
+          atmosphere,
+          metrics
         });
+        metrics?.end("advance", started);
         return elapsed;
       },
       dispose() {
@@ -4617,10 +4640,11 @@
     const config = normalizeLayerConfig(initialConfig);
     const demo = options.demoCard || null;
     const readingProtection = createReadingProtection();
-    const scenerySeed = Math.floor(Math.random() * 4294967296) >>> 0;
+    const metrics = options.metrics || null;
+    const scenerySeed = options.seed ?? Math.floor(Math.random() * 4294967296) >>> 0;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reducedTransparency = window.matchMedia("(prefers-reduced-transparency: reduce)");
-    const simulation = createWhaleSimulation(config, { seed: scenerySeed });
+    const simulation = createWhaleSimulation(config, { seed: scenerySeed, metrics });
     let scene = simulation.scene;
     const { water, atmosphere, rain } = simulation;
     let sceneryPalette = createInkPalette(config.color);
@@ -4628,7 +4652,7 @@
     let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
     let painter = createWhalePainter(scene, config);
     ink.font = painter.font;
-    let metrics = measureGlyphs();
+    let glyphMetrics = measureGlyphs();
     let width = 0, height = 0, ratio = 1, grid = null;
     let offsetX = 0, offsetY = 0;
     const viewport = options.viewport;
@@ -4773,6 +4797,15 @@
       applySceneObstacles();
     }
     function measure() {
+      if (!metrics) return measureContent();
+      const started = metrics.begin();
+      try {
+        return measureContent();
+      } finally {
+        metrics.end("layout", started, demo ? "demo" : "dom");
+      }
+    }
+    function measureContent() {
       measuredAt = performance.now();
       panes = [];
       tone = null;
@@ -4816,8 +4849,14 @@
         composer: composer ? composer.rect : null
       });
     }
-    function draw() {
+    function draw(cause = "sync") {
       if (scrolling || !width || !height || !scene || !grid) return;
+      if (!metrics) return drawContent();
+      const started = metrics.begin();
+      drawContent();
+      metrics.end("draw", started, cause);
+    }
+    function drawContent() {
       if (performance.now() - measuredAt > MEASURE_INTERVAL) measure();
       if (viewport) {
         ink.setTransform(1, 0, 0, 1, 0, 0);
@@ -4863,7 +4902,9 @@
       drawRain(ink, rain, { ...rainScenery, phase: "surface" });
       paintGlyphs(ink, fade);
       drawRain(ink, rain, { ...rainScenery, phase: "fall" });
+      const spoutStarted = metrics?.begin();
       spout.paint(ink, fade);
+      metrics?.end("spoutUpdate", spoutStarted);
       if (config.activity) drawActivityBadges(ink, scene.whales, width, height, {
         dark: document.body.hasAttribute("data-ds-dark-theme"),
         opacity: config.opacity,
@@ -4996,6 +5037,14 @@
       }
     }
     function frame(now) {
+      const started = metrics?.begin();
+      try {
+        runFrame(now);
+      } finally {
+        metrics?.end("wakeup", started);
+      }
+    }
+    function runFrame(now) {
       raf = 0;
       if (disposed || scrolling || document.hidden || reduced.matches || !width || !height || !scene) return;
       if (previous !== null) {
@@ -5003,7 +5052,7 @@
       }
       previous = now;
       if (now - lastPaint >= 1e3 / 30) {
-        draw();
+        draw("animation");
         lastPaint = now;
       }
       raf = requestAnimationFrame(frame);
@@ -5038,8 +5087,8 @@
       }
       if (sceneRebuilt || changes.metrics) {
         painter = createWhalePainter(scene, config);
-        metrics = measureGlyphs();
-        if (width && height) grid = createDepthGrid(width, height, config.glyphSize, metrics);
+        glyphMetrics = measureGlyphs();
+        if (width && height) grid = createDepthGrid(width, height, config.glyphSize, glyphMetrics);
       } else if (changes.palette) {
         painter = createWhalePainter(scene, config);
       }
@@ -5053,7 +5102,7 @@
       lastPaint = -Infinity;
       if (!scrolling && !document.hidden && width && height) {
         if (!reduced.matches && !raf) raf = requestAnimationFrame(frame);
-        draw();
+        draw("config");
         lastPaint = performance.now();
       }
       if (wasPaused) revealLayer();
@@ -5107,7 +5156,7 @@
       foregroundRaf = requestAnimationFrame(() => {
         foregroundRaf = 0;
         if (!disposed && !document.hidden) {
-          draw();
+          draw("foreground");
           lastPaint = performance.now();
         }
       });
@@ -5133,7 +5182,7 @@
       canvas.width = pixels.width;
       canvas.height = pixels.height;
       ink.setTransform(ratio, 0, 0, ratio, offsetX, offsetY);
-      grid = createDepthGrid(width, height, config.glyphSize, metrics);
+      grid = createDepthGrid(width, height, config.glyphSize, glyphMetrics);
       simulation.resize(width, height);
       measuredAt = -Infinity;
       sync();
@@ -5212,7 +5261,7 @@
     function setActivity(snapshot) {
       if (disposed) return;
       simulation.setActivity(snapshot);
-      if (!document.hidden && width && height) draw();
+      if (!document.hidden && width && height) draw("activity");
     }
     return { update, setActivity, dispose };
   }
