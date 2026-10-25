@@ -13,7 +13,7 @@ export function sceneConfigChanged(previous = {}, next = {}) {
 }
 
 /** Owns the simulation clock, replacement ordering and surface effect history. */
-export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
+export function createWhaleSimulation(initialConfig, { seed = 0, onActivityChange } = {}) {
   let disposed = false;
   let activityTime = 0;
   let config = { ...initialConfig };
@@ -22,7 +22,7 @@ export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
   const water = createWaterField();
   const atmosphere = createAtmosphereField({ seed });
   const rain = createRainField({ seed });
-  const activity = createActivityTracker();
+  const activity = createActivityTracker({ onChange: onActivityChange });
   return {
     get scene() { return scene; },
     water, atmosphere, rain,

@@ -104,6 +104,25 @@
     "humpback": "Humpback",
     "sperm": "Sperm",
     "fin": "Fin",
-    "bowhead": "Bowhead"
+    "bowhead": "Bowhead",
+    "activityLegend": "Task state legend",
+    "activityLegendOpen": "Show task state legend",
+    "activityLegendClose": "Close legend",
+    "activityLegendNote": "Idle does not mean success. Results appear only after an observed background task finishes or fails. Cancelled, stopped and missing tasks do not imply success. Whales do not replace the host task history or answer for you.",
+    "activitySummary": "Current task states",
+    "activityAnnouncements": "New task updates",
+    "activityRunning": "Running",
+    "activityWaiting": "Waiting for you",
+    "activityIdle": "Idle or stopped this turn",
+    "activityCompleted": "Background task completed",
+    "activityFailed": "Background task failed",
+    "activityUnavailable": "State unavailable",
+    "activityScopeUnavailable": "Current session state is unavailable.",
+    "activityWaitingUnavailable": "Waiting information is unavailable.",
+    "activityJobsUnavailable": "Background task states are unavailable.",
+    "activityOverflow": "Tasks without their own whale",
+    "activitySession": "Session",
+    "activitySubagent": "Subagent",
+    "activityJob": "Background task"
   }
 }

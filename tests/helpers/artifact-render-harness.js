@@ -188,33 +188,57 @@ function environment(html, initial, seed, reducedMotion) {
 // passive effects, dependency-aware effects/memo and external-store updates.
 function reactAdapter(env) {
   const fibers = new Map();
-  let current = null, cursor = 0, pending = [], root = null, active = true;
+  let current = null, cursor = 0, pending = [], root = null, active = true, rendering = false, requested = false;
+  let visited, text = [], elements = [];
+  const cleanup = fiber => { for (const state of fiber.hooks) state.cleanup?.(); };
   const hook = create => { const index = cursor++; return current.hooks[index] ??= create(); };
-  function renderNode(vnode, path) {
-    if (vnode == null || typeof vnode !== 'object') return;
+  function renderNode(vnode, path, ancestors = []) {
+    if (vnode == null || typeof vnode === 'boolean') return;
+    if (typeof vnode !== 'object') { text.push({ text: String(vnode), ancestors }); return; }
+    visited.add(path);
     let fiber = fibers.get(path);
-    if (!fiber || fiber.type !== vnode.type) { fiber = { type: vnode.type, hooks: [] }; fibers.set(path, fiber); }
+    if (fiber && fiber.type !== vnode.type) { cleanup(fiber); fiber = null; }
+    if (!fiber) { fiber = { type: vnode.type, hooks: [] }; fibers.set(path, fiber); }
     if (typeof vnode.type === 'function') {
       const saved = current, savedCursor = cursor;
       current = fiber; cursor = 0;
       const child = vnode.type(vnode.props);
       current = saved; cursor = savedCursor;
-      renderNode(child, `${path}.render`);
+      renderNode(child, `${path}.render`, ancestors);
     } else {
+      if (vnode.type === 'style') return;
       fiber.node ??= env.document.createElement(vnode.type);
       if (vnode.type === 'canvas') env.liveCanvas = fiber.node;
       if (vnode.props.ref) vnode.props.ref.current = fiber.node;
-      for (const [index, child] of vnode.props.children.entries()) renderNode(child, `${path}.${index}`);
+      elements.push({ type: vnode.type, props: vnode.props, ancestors });
+      for (const [index, child] of vnode.props.children.entries()) {
+        renderNode(child, `${path}.${child?.props?.key ?? index}`, [...ancestors, vnode.props]);
+      }
     }
   }
   function render() {
     if (!active) return;
-    pending = [];
-    renderNode(root, 'root');
-    for (const effect of pending) { effect.cleanup?.(); effect.cleanup = effect.run(); }
+    if (rendering) { requested = true; return; }
+    rendering = true;
+    do {
+      requested = false; pending = []; visited = new Set(); text = []; elements = [];
+      renderNode(root, 'root');
+      for (const [path, fiber] of fibers) if (!visited.has(path)) { cleanup(fiber); fibers.delete(path); }
+      for (const effect of pending) { effect.cleanup?.(); effect.cleanup = effect.run(); }
+    } while (requested);
+    rendering = false;
   }
   const React = {
-    createElement(type, props, ...children) { return { type, props: { ...props, children } }; },
+    createElement(type, props, ...children) { return { type, props: { ...props, children: children.flat(Infinity) } }; },
+    useState(initial) {
+      const state = hook(() => ({ value: typeof initial === 'function' ? initial() : initial }));
+      return [state.value, value => {
+        const next = typeof value === 'function' ? value(state.value) : value;
+        if (!Object.is(next, state.value)) { state.value = next; render(); }
+      }];
+    },
+    useCallback(callback, deps) { return React.useMemo(() => callback, deps); },
+    useId() { return hook(() => `id-${fibers.size}-${cursor}`).toString(); },
     useRef(initial) { return hook(() => ({ current: initial })); },
     useMemo(factory, deps) {
       const state = hook(() => ({}));
@@ -232,6 +256,8 @@ function reactAdapter(env) {
   };
   return {
     React,
+    text: () => text,
+    elements: () => elements,
     mount(view, props) { root = React.createElement(view, props); render(); },
     dispose() {
       active = false;
@@ -256,6 +282,12 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
   const expectedInitial = readConfig();
   for (const [key, value] of Object.entries(initial)) if (key in expectedInitial) expectedInitial[key] = value;
   const host = environment(previewHtml, initial, seed, reducedMotion);
+  const storage = options.storage ?? new Map();
+  host.window.location = { origin: options.origin ?? 'http://fixture.invalid' };
+  Object.defineProperty(host.window, 'localStorage', { get() {
+    if (options.storageFailure) throw new Error('Storage denied');
+    return { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
+  } });
   let snapshot = { status: 'ready', writable: true, revision: 1, value: expectedInitial };
   const subscribers = new Set(), slots = new Map();
   const adapter = reactAdapter(host);
@@ -281,10 +313,10 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
   }).apply({
     configForms: { get() { return { getSnapshot: () => snapshot,
       subscribe(callback) { subscribers.add(callback); return () => subscribers.delete(callback); } }; } },
-    locale: { register() {}, bind: () => key => key },
+    locale: { register() {}, bind: () => key => key, subscribe: () => () => {}, getSnapshot: () => 'en' },
     effect,
     inject(names, callback) {
-      if (!options.activity || names[0] !== 'jobs') return;
+      if (!options.activity || options.activity.jobsUnavailable || names[0] !== 'jobs') return;
       callback({ effect, jobs: { state: activityJobs, watchRows(id) {
         watchedJobs.set(id, (watchedJobs.get(id) ?? 0) + 1);
         return () => { const refs = watchedJobs.get(id) - 1; if (refs) watchedJobs.set(id, refs); else watchedJobs.delete(id); };
@@ -295,12 +327,27 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
   const overlay = slots.get('shell.overlay');
   if (!overlay) throw new Error('Client did not register the public overlay slot');
   adapter.mount(overlay, { usePanelInfo: selector => selector({ activePanelId: 'conversation' }),
-    ...(options.activity ? { useSessions: useSource(activityList), useSessionStatus: useSource(activityStatuses) } : {}) });
+    ...(options.activity ? { useSessions: useSource(activityList),
+      ...(!options.activity.statusUnavailable ? { useSessionStatus: useSource(activityStatuses) } : {}) } : {}) });
   const live = preview.controls.get('live');
   const hostLive = host.liveCanvas;
   return {
     snapshots() { return { host: host.snapshot(hostLive), preview: preview.snapshot(live) }; },
     config: readConfig,
+    hostText({ live = false, summary = false } = {}) {
+      return adapter.text().filter(row => !row.ancestors.some(p => p['aria-hidden'] === true)
+        && (!live || row.ancestors.some(p => p['aria-live'] === 'polite'))
+        && (!summary || row.ancestors.some(p => p['aria-label'] === 'activitySummary')))
+        .map(row => row.text).join(' ').replace(/\s+/g, ' ').trim();
+    },
+    hostElements: () => adapter.elements(),
+    click(label) {
+      const element = adapter.elements().find(row => row.type === 'button' && row.props.children.includes(label));
+      if (!element) throw new Error(`No button ${label}`);
+      element.props.onClick();
+    },
+    setHidden(value) { host.document.hidden = value; host.document.dispatchEvent({ type: 'visibilitychange' }); },
+    setReducedMotion(value) { host.setReducedMotion(value); },
     configs() { return { host: copy(snapshot.value), preview: readConfig() }; },
     advance(frames) { host.advance(frames); preview.advance(frames); },
     update(patch) {

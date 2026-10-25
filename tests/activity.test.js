@@ -118,21 +118,23 @@ test('job reminder deadlines survive body reconstruction after a long-running sc
 });
 
 test('the optional jobs bridge shares one roster, releases on session changes and follows no output', () => {
-  let value = { rows: {} }, listener, subscriptions = 0, releases = 0, notifications = 0;
+  let value = { rows: {} }, listener, subscriptions = 0, releases = 0, notified;
   const watched = [];
   const service = { state: { getSnapshot: () => value,
     subscribe(callback) { listener = callback; subscriptions++; return () => subscriptions--; } },
     watchRows(id) { watched.push(id); return () => releases++; } };
   const jobs = createJobsBridge();
-  const unsubscribe = jobs.subscribe(() => notifications++);
-  jobs.watch('main'); const detach = jobs.attach(service);
+  const unsubscribe = jobs.subscribe(() => { notified = jobs.getSnapshot(); });
+  const detach = jobs.attach(service);
+  assert.equal(subscriptions, 0, 'an unwatched jobs service has no active subscription');
+  jobs.watch('main');
   jobs.watch('main'); assert.deepEqual(watched, ['main']);
   value = { rows: { main: [{ id: 'build', status: 'running' }] } }; listener();
-  assert.equal(jobs.getSnapshot(), value);
+  assert.equal(jobs.getSnapshot(), value); assert.equal(notified, value);
   jobs.watch('other'); assert.deepEqual(watched, ['main', 'other']); assert.equal(releases, 1);
-  jobs.watch(null); assert.equal(releases, 2);
-  detach(); assert.equal(subscriptions, 0); assert.deepEqual(jobs.getSnapshot(), { rows: {} });
-  assert.equal(notifications, 3); unsubscribe();
+  jobs.watch(null); assert.equal(releases, 2); assert.equal(subscriptions, 0);
+  detach(); assert.equal(subscriptions, 0); assert.deepEqual(jobs.getSnapshot(), { rows: {}, available: false });
+  unsubscribe();
 });
 
 test('state changes retain the real simulation and resume bindings after config rebuilds', () => {

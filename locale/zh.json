@@ -104,6 +104,25 @@
     "humpback": "座头鲸",
     "sperm": "抹香鲸",
     "fin": "长须鲸",
-    "bowhead": "弓头鲸"
+    "bowhead": "弓头鲸",
+    "activityLegend": "任务状态图例",
+    "activityLegendOpen": "查看任务状态图例",
+    "activityLegendClose": "关闭图例",
+    "activityLegendNote": "空闲不等于成功。只有已观察到运行的后台任务转为完成或失败时才显示结果。取消、停止和消失不表示成功。鲸群不替代宿主任务记录，也不会代你回答或审批。",
+    "activitySummary": "当前任务状态",
+    "activityAnnouncements": "任务新变化",
+    "activityRunning": "运行中",
+    "activityWaiting": "等待你处理",
+    "activityIdle": "空闲或本轮停止",
+    "activityCompleted": "后台任务完成",
+    "activityFailed": "后台任务失败",
+    "activityUnavailable": "状态不可用",
+    "activityScopeUnavailable": "当前会话状态不可用。",
+    "activityWaitingUnavailable": "等待信息不可用。",
+    "activityJobsUnavailable": "后台任务状态不可用。",
+    "activityOverflow": "未单独分配鲸鱼的任务数",
+    "activitySession": "会话",
+    "activitySubagent": "子代理",
+    "activityJob": "后台任务"
   }
 }
