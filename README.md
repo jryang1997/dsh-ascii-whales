@@ -187,7 +187,7 @@ dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
 <details>
 <summary>查看设置页</summary>
 
-<p><img src="./docs/images/settings.png" width="480" alt="文字蓝鲸的滑杆、选项和保存按钮"></p>
+<p><img src="./docs/images/settings.png" width="960" alt="文字蓝鲸设置页：效果预览、外观与文字、鲸群与游动分组，以及底部保存按钮"></p>
 
 </details>
 

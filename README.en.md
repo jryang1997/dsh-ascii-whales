@@ -131,7 +131,7 @@ For the input box, you can show blurred whale silhouettes or have the whales swi
 
 </details>
 
-Screenshots use the Chinese UI and come from the standalone preview or simulated environments. The settings page itself follows the DSH UI language; its English and Simplified Chinese strings ship with the plugin. See [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
+Screenshots use the Chinese UI and come from the standalone preview or simulated environments; the settings screenshot below is the English UI. The settings page follows the DSH UI language, and both English and Simplified Chinese strings ship with the plugin. See [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
 
 ## Settings
 
@@ -184,7 +184,7 @@ The desktop app follows the sidebar width automatically. In a regular browser, a
 <details>
 <summary>View the settings page</summary>
 
-<p><img src="./docs/images/settings.png" width="480" alt="Glyph whales sliders, options, and Save button in the Chinese UI"></p>
+<p><img src="./docs/images/settings-en.png" width="960" alt="Glyph whales settings page in English: scene preview, Appearance and Whales groups, and the Save bar"></p>
 
 </details>
 
