@@ -54,7 +54,10 @@ test('English interface text contains no untranslated Chinese', () => {
 test('the translated README keeps the same sections and figures', () => {
   const readme = name => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
   const headings = text => [...text.matchAll(/^(#{1,3})\s+\S/gmu)].map(match => match[1].length);
-  const figures = text => [...text.matchAll(/docs\/images\/[a-z0-9-]+\.(?:gif|png)/gu)].map(match => match[0]).sort();
+  // The activity clip is rendered once per audience, so its localized file
+  // name is the one figure that legitimately differs between the two READMEs.
+  const figures = text => [...text.matchAll(/docs\/images\/[a-z0-9-]+\.(?:gif|png)/gu)]
+    .map(match => match[0].replace('activity-en.gif', 'activity.gif')).sort();
   const zhReadme = readme('README.md');
   const enReadme = readme('README.en.md');
   assert.deepEqual(headings(enReadme), headings(zhReadme), 'README section levels differ');

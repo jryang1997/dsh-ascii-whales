@@ -48,7 +48,7 @@ Or install the release tarball through the plugin manager:
 2. Install the file through the DSH plugin manager.
 3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
-The current published package is [v0.15.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.15.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). All clips on this page are recordings of real DSH pages: the cruise clip is the desktop window, while the dive, fluke and rain clips use a source build after 0.14.0 with the dark theme, glyphs, custom text and a random color per whale.
+The current published package is [v0.15.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.15.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). All clips on this page use the light theme with the sidebar hidden: the cruise and rain clips are real DSH page recordings, while the dive, fluke and task-activity clips render a single whale with the same renderer so the motion stays readable (glyphs, custom text and a random color per whale).
 
 ## Features
 
@@ -65,24 +65,24 @@ The current published package is [v0.15.0](https://github.com/jryang1997/dsh-asc
 ## Motion
 
 <p align="center">
-  <img src="./docs/images/dive.gif" width="960" alt="Real DSH dark page with whales swimming; one dives and returns nose first">
+  <img src="./docs/images/dive.gif" width="960" alt="Single-whale close-up: a humpback lifts its fluke, goes under and returns nose first">
 </p>
 
-<p align="center"><sub>Each whale picks its own moment to dive: the nose goes under first and the tail disappears last, then the nose returns first. Recorded from a real DSH page.</sub></p>
+<p align="center"><sub>One whale rendered on its own: the fluke lifts and disappears last, the whale keeps its course underwater, and the nose returns first.</sub></p>
 
 <p align="center">
-  <img src="./docs/images/tail.gif" width="960" alt="Real DSH dark page with whales beating their flukes and leaving a wake">
+  <img src="./docs/images/tail.gif" width="960" alt="Single-whale close-up: a humpback beats its flukes and leaves a widening wake">
 </p>
 
-<p align="center"><sub>Both fluke lobes beat up and down while the whale swims forward, leaving a widening wake. Glyphs, custom text and a random color per whale.</sub></p>
+<p align="center"><sub>One whale rendered on its own: both fluke lobes beat up and down, and the wake widens behind it. Glyphs and custom text.</sub></p>
 
 ## Rain
 
 <p align="center">
-  <img src="./docs/images/rain.gif" width="960" alt="Real DSH dark page with fine rain drifting in the wind over swimming whales">
+  <img src="./docs/images/rain.gif" width="960" alt="Real DSH light page with the sidebar hidden: fine rain drifting over swimming whales">
 </p>
 
-<p align="center"><sub>Streaks follow the slowly turning breeze and leave small splashes and short ripples where they land. The switch and intensity update in place.</sub></p>
+<p align="center"><sub>A real DSH light page with the sidebar hidden: streaks follow the slowly turning breeze and leave small splashes and short ripples where they land.</sub></p>
 
 Rain is off by default, with intensity from 0 to 1 and a default of 0.45. Streaks follow a slowly changing sea breeze and change length and speed by layer; turning the sea wind off returns them to vertical rain. Landing splashes and spreading ripples are separate from the swimming wake switch. Rain uses the same reading, media and glass protection, and pauses when the page is hidden, the effect is paused or the system asks for reduced motion.
 
@@ -170,6 +170,12 @@ Follow task activity is on by default. The first whale represents the current se
 | Observed job completion / failure | `✓` / `×` and the job name for six seconds of playback |
 
 When there are more active tasks than whales, the first whale summarizes the extra count and the most urgent reminder. Disabling the switch restores decorative swimming. Reduced motion keeps the pose still while state changes update static badges. The plugin only reads published DSH state. It does not answer questions, approve operations or follow job output. Historical job results do not produce new badges when the background opens.
+
+<p align="center">
+  <img src="./docs/images/activity-en.gif" width="960" alt="Single-whale close-up: the badges ···, ! approval, ✓ build and × test appear in turn above the whale">
+</p>
+
+<p align="center"><sub>One whale rendered on its own: <code>···</code> while working, <code>!</code> while waiting for approval, <code>✓</code> on completion and <code>×</code> on failure; task names come from DSH.</sub></p>
 
 Custom text supports Chinese characters, English, emoji, and combined glyphs. Whitespace is ignored. The input limit is 40 UTF-16 code units, so some emoji use more than one unit. Switching to ASCII preserves your saved custom text.
 

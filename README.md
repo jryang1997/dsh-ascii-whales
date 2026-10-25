@@ -48,7 +48,7 @@ dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
 2. 在 DSH 插件管理器中安装该文件。
 3. 打开 **插件 → 文字蓝鲸**，调整选项后点击 **保存**。
 
-目前发布的安装包为 [v0.15.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.15.0)。0.10.0 之后的变化见[更新日志](./CHANGELOG.md)。本页动图来自真实 DSH 页面录屏：巡游是桌面窗口，下潜、拍尾和落雨使用 0.14.0 之后的源码构建，深色主题，鲸鱼为「纯字符 + 自定义文字 + 每条随机配色」。
+目前发布的安装包为 [v0.15.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.15.0)。0.10.0 之后的变化见[更新日志](./CHANGELOG.md)。本页动图统一使用白色主题并隐藏侧栏：巡游与落雨是真实 DSH 页面录屏；下潜、拍尾与任务状态用同一套渲染器单独渲染单条鲸鱼，便于看清动作，鲸鱼为「纯字符 + 自定义文字 + 每条随机配色」。
 
 ## 能做什么
 
@@ -66,24 +66,24 @@ dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
 ## 动作
 
 <p align="center">
-  <img src="./docs/images/dive.gif" width="960" alt="真实 DSH 深色页面里，鲸群游动，有的鲸沉下去再从鼻端浮出">
+  <img src="./docs/images/dive.gif" width="960" alt="单鲸特写：座头鲸抬起尾鳍、沉入水下，再从鼻端浮出">
 </p>
 
-<p align="center"><sub>鲸群各自挑时候下潜：吻端先入水，尾鳍最后消失，过几秒从鼻端先回来。这是真实 DSH 页面录屏。</sub></p>
+<p align="center"><sub>一条鲸单独渲染的下潜：尾鳍先抬起、最后消失，水下沿原航线继续游，过几秒鼻端先回来。</sub></p>
 
 <p align="center">
-  <img src="./docs/images/tail.gif" width="960" alt="真实 DSH 深色页面里，鲸鱼摆尾向前游，身后留下水纹">
+  <img src="./docs/images/tail.gif" width="960" alt="单鲸特写：座头鲸摆尾向前游，身后留下水纹">
 </p>
 
-<p align="center"><sub>向前游时两片尾叶一起上下拍，身后留下逐渐展开的水纹。鲸群使用纯字符、自定义文字和每条随机配色。</sub></p>
+<p align="center"><sub>一条鲸单独渲染的摆尾：两片尾叶上下拍动，身后水纹逐渐展开。鲸鱼使用纯字符与自定义文字。</sub></p>
 
 ## 海上落雨
 
 <p align="center">
-  <img src="./docs/images/rain.gif" width="960" alt="真实 DSH 深色页面里，细雨随风斜落，鲸群在雨丝间游动">
+  <img src="./docs/images/rain.gif" width="960" alt="真实 DSH 浅色页面（隐藏侧栏）：细雨随风斜落，鲸群在雨丝间游动">
 </p>
 
-<p align="center"><sub>雨丝随风向缓慢偏转；落到海面时带出碎水和短暂涟漪。开关与雨量都在设置里原地调整。</sub></p>
+<p align="center"><sub>真实 DSH 浅色页面，隐藏侧栏：雨丝随风向缓慢偏转，落到海面时带出碎水和短暂涟漪。</sub></p>
 
 「海上落雨」默认关闭，雨量从 0 到 1，默认 0.45。雨丝跟随缓慢变化的海面风场，前后层长短与速度不同；关掉海面风纹后会慢慢回到直雨。雨滴落点带出碎水与扩散断纹，和鲸鱼游动尾流是两个独立开关。降雨沿用阅读区、媒体与毛玻璃保护；页面隐藏、暂停或系统要求减少动态时不继续推进。
 
@@ -173,6 +173,12 @@ dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
 | 已观察到的后台任务完成 / 失败 | 显示 `✓` / `×` 与任务名称，继续播放六秒后消失 |
 
 鲸鱼不足时，第一头汇总额外活跃任务的数量，并显示其中最紧急的提醒。关闭联动后恢复装饰游动。系统减少动态效果时不推进动作，状态变化仍会更新静态提示。此功能只读取 DSH 已发布的状态，不回答问题、不批准操作，也不读取后台输出。首次打开时已有的历史任务结果不会弹出提示。
+
+<p align="center">
+  <img src="./docs/images/activity.gif" width="960" alt="单鲸特写：鲸鱼上方依次出现 ···、! 等待审批、✓ 构建完成、× 测试失败">
+</p>
+
+<p align="center"><sub>一条鲸单独渲染的状态提示：巡游中 <code>···</code>，等待审批 <code>!</code>，任务完成 <code>✓</code>，失败 <code>×</code>；任务名称来自 DSH。</sub></p>
 
 鱼身文字支持中文、英文、emoji 和组合字形，空白会被忽略。输入上限为 40 个 UTF-16 代码单元，部分 emoji 会占用多个单位。切换到 ASCII 不会改写已保存的自定义文字。
 
