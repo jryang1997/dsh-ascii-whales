@@ -48,12 +48,8 @@
     "README.en.md",
     "CHANGELOG.md",
     "GLOSSARY.md",
-    "scripts/",
-    "preview/",
-    "tests/",
-    "docs/research/",
-    ".node-version",
-    "pnpm-workspace.yaml"
+    "docs/images/",
+    "docs/research/"
   ],
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.5"
@@ -62,11 +58,11 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "preview": "node scripts/preview.mjs",
-    "test": "node scripts/project-check.mjs test",
-    "check": "node scripts/project-check.mjs check",
-    "verify": "node scripts/project-check.mjs verify",
-    "review:snapshot": "node scripts/review-snapshot.mjs",
-    "agent:probe": "node scripts/read-probe.mjs"
+    "test": "dsh-plugin-kit test",
+    "check": "dsh-plugin-kit check",
+    "verify": "dsh-plugin-kit verify",
+    "review:snapshot": "dsh-plugin-kit review",
+    "agent:probe": "dsh-plugin-kit probe AGENTS.md src/engine.js"
   },
   "dsh": {
     "bundle": {
@@ -83,6 +79,93 @@
     }
   },
   "devDependencies": {
+    "@jryang1997/dsh-plugin-kit": "file:../dsh-plugin-kit",
     "esbuild": "0.28.2"
+  },
+  "dshPluginKit": {
+    "version": 1,
+    "dshRulesVersion": "installed-2026-10-23",
+    "sources": {
+      "mode": "json"
+    },
+    "tests": {
+      "include": [
+        "*.test.js",
+        "*.test.mjs"
+      ],
+      "runner": "auto"
+    },
+    "artifacts": [
+      {
+        "file": "client.js",
+        "produce": "scripts/build.mjs"
+      },
+      {
+        "file": "preview/whale-preview.html",
+        "produce": "scripts/preview.mjs"
+      }
+    ],
+    "pack": {
+      "forbid": [
+        "tests/",
+        "scripts/",
+        "preview/",
+        ".github/",
+        ".node-version",
+        "pnpm-workspace.yaml",
+        "docs/specs/",
+        "docs/agents/",
+        ".scratch/",
+        ".agents/"
+      ],
+      "require": [
+        "index.js",
+        "client.js",
+        "cordis.patch.yml",
+        "locale/en.json",
+        "locale/zh.json",
+        "docs/images/"
+      ]
+    },
+    "icon": {
+      "declaration": "exports",
+      "budgetBytes": 262144
+    },
+    "locale": {
+      "required": [
+        "en",
+        "zh"
+      ],
+      "metadata": [
+        "title",
+        "description"
+      ]
+    },
+    "readme": {
+      "files": [
+        "README.md",
+        "README.en.md"
+      ],
+      "parity": [
+        "headings",
+        "figures"
+      ]
+    },
+    "screenshots": {
+      "manifest": "screenshots.json",
+      "strict": false
+    },
+    "versionSites": [
+      {
+        "file": "CHANGELOG.md",
+        "pattern": "当前版本 \\*\\*([0-9.]+)\\*\\*"
+      }
+    ],
+    "review": {
+      "generated": [
+        "client.js",
+        "preview/whale-preview.html"
+      ]
+    }
   }
 }

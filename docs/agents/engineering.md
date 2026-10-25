@@ -6,9 +6,9 @@
 执行 `pnpm install --frozen-lockfile` 安装依赖。项目只维护 pnpm 锁文件。
 esbuild 从对应平台的 optional dependency 取得二进制，安装策略不运行它的 postinstall。
 
-日常验证运行 `pnpm verify`。它检查根目录入口以及 `src/`、`tests/`、`scripts/`、`preview/` 中的 JS/MJS 语法，再检查已生成插件和预览的一致性，最后运行 `tests/` 下的全部 `*.test.js`。
-测试发现只递归进入 `tests/`，跳过隐藏目录与 `node_modules/`；不会扫描仓库中的 `.scratch/`、`.agents/`、参考项目或依赖。新增测试放入 `tests/` 即可被执行，`tests/helpers/` 的适配器参与语法检查。
-`pnpm check` 仅查语法，`pnpm test` 仅运行测试。
+日常验证运行 `pnpm verify`，由 devDependency `@jryang1997/dsh-plugin-kit` 执行，配置在 `package.json` 的 `dshPluginKit` 键：先做清单、locale、README、版本与语法五项静态检查，再以 `--check` 比较两份生成产物（不重建）、检查真实 `npm pack` 的发布内容与 `docs/images/` 引用、校验 `screenshots.json`，最后发现并运行测试。
+测试发现覆盖根目录与 `src/`、`tests/`、`scripts/`、`preview/` 的 `*.test.js`/`*.test.mjs`，跳过隐藏目录与 `node_modules/`；不会扫描仓库中的 `.scratch/`、`.agents/`、参考项目或依赖。新增测试放入这些目录即可被执行，`tests/helpers/` 的适配器参与语法检查。
+`pnpm check` 跑上述静态检查，`pnpm test` 只运行测试。kit 当前以本地 `file:../dsh-plugin-kit` 接入；仓库与 tag 发布后应改为固定 git 依赖，CI 才能安装。若 CI 在 kit 发布前运行，`pnpm install --frozen-lockfile` 会因路径不存在而失败，这是已知待授权项。
 
 修改浏览器实现后，先运行 `pnpm build` 和 `pnpm preview` 更新 `client.js` 与 `preview/whale-preview.html`，再运行 `pnpm verify`。构建入口位于 `scripts/build.mjs` 和 `scripts/preview.mjs`。
 验证命令本身不重建产物：发现过期就失败，使漏提交生成文件在本地与 CI 都能被发现。
@@ -16,7 +16,7 @@ GitHub Actions 在 Windows 与 Linux 使用锁定依赖运行同一条验证命�
 
 ## 准备审查
 
-运行 `pnpm --silent review:snapshot --base <ref>`，取得 JSON 审查清单。
+运行 `pnpm --silent review:snapshot --base <ref>`，取得 JSON 审查清单（委托给 kit 的 `review` 命令）。
 工具固定基线及 merge-base，列出相关提交、已跟踪改动和所有未忽略的新增文件，并记录当前文件散列；删除文件也保留条目。
 清单只写到 stdout，按需要把输出保存在系统临时目录，供两个审查代理共用。不要把凭证文件放入清单。
 
@@ -31,8 +31,8 @@ GitHub Actions 在 Windows 与 Linux 使用锁定依赖运行同一条验证命�
 得到成功回报后再在同一执行路径批量派任务。回报应区分直接读取成功、调用方转述与未核实信息。
 读取拒绝时保留工具错误，暂停依赖该读取的任务；查明对应权限或执行路径配置后再继续，不换 shell 绕过拒绝。
 
-`pnpm --silent agent:probe` 可补查文件存在性、命令进程的读取能力和 SHA-256，不输出正文。
-显式文件及其他仓库使用方式见 `pnpm --silent agent:probe --help`。
+`pnpm --silent agent:probe` 可补查文件存在性、命令进程的读取能力和 SHA-256，不输出正文（委托给 kit 的 `probe` 命令，默认查 `AGENTS.md` 与 `src/engine.js`）。
+显式文件及其他仓库使用方式见 `pnpm --silent agent:probe -- --root <dir> <paths...>`。
 该命令只证明运行它的进程可以读取文件，不能替代子代理原生工具的读取预检，也不修复权限。
 
 ## 浏览器验收

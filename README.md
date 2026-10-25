@@ -196,7 +196,7 @@ dsh plugin --profile web add github:jryang1997/dsh-ascii-whales
 ```text
 src/             实现源码
 tests/           测试与 helpers/ 适配器
-scripts/         构建、验证和审查工具
+scripts/         构建与预览生成入口（验证工具由 devDependency 提供）
 preview/         独立预览入口与生成页面
 docs/research/   研究与设计记录
 docs/images/     截图和动图
@@ -216,7 +216,9 @@ pnpm verify
 
 修改浏览器源码后，先用 `pnpm build` 和 `pnpm preview` 更新两个生成产物，再运行 `pnpm verify`。验证只检查、不重建，过期产物会直接失败。测试只递归发现 `tests/` 下的 `*.test.js`，排除隐藏目录与 `node_modules/`；不会扫描仓库中的临时备份、参考项目或 worktree 副本。GitHub Actions 在 Windows 与 Linux 执行同一验证入口。
 
-`pnpm check` 仅查语法，`pnpm test` 仅跑测试。`pnpm --silent review:snapshot --base <ref>` 输出包含新增文件的 JSON 审查清单；`pnpm --silent agent:probe` 探测当前命令进程能否读取入口文件。派单前的原生工具读取预检、审查范围与浏览器证据要求见 [工程说明](./docs/agents/engineering.md)。
+验证、打包与审查共用本地开发依赖 [@jryang1997/dsh-plugin-kit](../dsh-plugin-kit)（`dshPluginKit` 配置在 [package.json](./package.json)）：`pnpm check` 跑清单、locale、README、版本与语法检查，`pnpm test` 发现并运行测试，`pnpm verify` 依次检查静态项、生成物、发布包、截图清单和测试。`pnpm --silent review:snapshot --base <ref>` 输出包含新增文件的 JSON 审查清单；`pnpm --silent agent:probe` 探测当前命令进程能否读取入口文件。派单前的原生工具读取预检、审查范围与浏览器证据要求见 [工程说明](./docs/agents/engineering.md)。
+
+发布包只包含运行文件、`locale/`、图标、README/CHANGELOG 与 `docs/images/`、`docs/research/`；`tests/`、`scripts/`、`preview/`、`.node-version` 等开发路径由打包检查拒绝。当前 kit 以本地 `file:` 依赖接入，等仓库与 tag 可用后改为固定 git 依赖。
 
 打包使用 `pnpm --config.ignore-scripts=true pack`。
 
@@ -234,6 +236,8 @@ pnpm verify
 | [engine.js](./src/engine.js) | Canvas 绘制与原地更新 |
 | [reading-layout.js](./src/reading-layout.js) | 真实对话与演示卡片共用的玻璃、遮罩和避让规则 |
 | [activity.js](./src/activity.js) | DSH 状态读取、任务身份绑定、后台订阅与状态徽记 |
+| [dictation.js](./src/dictation.js) | 听写状态桥、聚集带与槽位几何、呼吸与缓动 |
+| [voice-sea.js](./src/voice-sea.js) | 声音驱动的海面声浪场与绘制 |
 | [rain.js](./src/rain.js) | 随风雨丝、雨量过渡与落点水纹 |
 | [simulation.js](./src/simulation.js) | 鲸群状态接续、尺寸变化以及动作与海面效果的推进顺序 |
 | [config-editor.js](./src/config-editor.js) | 草稿互斥、校验、差量保存和版本冲突处理 |

@@ -12,6 +12,9 @@ importers:
         specifier: 3.18.5
         version: 3.18.5
     devDependencies:
+      '@jryang1997/dsh-plugin-kit':
+        specifier: file:../dsh-plugin-kit
+        version: file:../dsh-plugin-kit
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -180,6 +183,11 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@jryang1997/dsh-plugin-kit@file:../dsh-plugin-kit':
+    resolution: {directory: ../dsh-plugin-kit, type: directory}
+    engines: {node: '>=20.19'}
+    hasBin: true
+
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -274,6 +282,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@jryang1997/dsh-plugin-kit@file:../dsh-plugin-kit': {}
 
   '@standard-schema/spec@1.1.0': {}
 

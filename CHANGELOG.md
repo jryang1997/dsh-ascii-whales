@@ -2,6 +2,12 @@
 
 当前版本 **0.14.0**。实现机制、根因与验证边界见 [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md)；上游渲染机制核对见 [ASCII-RENDER-NOTES.md](./docs/research/ASCII-RENDER-NOTES.md)。
 
+## 未发布：共享脚手架接入
+
+- 验证、打包与审查改用本地 devDependency @jryang1997/dsh-plugin-kit（零依赖，配置在 package.json 的 dshPluginKit 键）。删除重复的 scripts/project-check.mjs、review-snapshot.mjs、read-probe.mjs 及两份工具测试；对应行为由 kit 的 fixture 测试覆盖。
+- 发布包改为精简运行时内容：只含运行文件、locale/、图标、README/CHANGELOG、docs/images/ 与 docs/research/；tests/、scripts/、preview/、.node-version 不再发布，README 图片随包发出。pnpm verify 现在会真实执行 npm pack --dry-run 并拒绝开发目录泄漏与缺失图片。
+- 已知待授权项：kit 目前是本地 file:../dsh-plugin-kit 依赖；GitHub 仓库与固定 tag 就绪前，CI 的 pnpm install --frozen-lockfile 会失败，发布后再固化为 git 依赖。
+
 ## 未发布：听写联动
 
 - 新增「听写联动」开关，放在设置页「鲸群与游动」组，默认开启，与「跟随任务状态」互不绑定；未安装 `dsh-hold-to-dictate` 时开关可见但不产生效果，并提示需要该插件。
