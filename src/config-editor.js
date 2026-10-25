@@ -1,4 +1,5 @@
 import { FIELDS, DEFAULTS, normalizeConfig } from './model.js';
+import { applyPreset } from './presets.js';
 
 const exclusiveConfig = { glass: 'composerAvoid', composerAvoid: 'glass' };
 
@@ -16,6 +17,7 @@ function configEditorState(base, draft, revision) {
   const editor = {
     draft: Object.freeze({ ...draft }), dirty,
     change(key, value) { return configEditorState(base, changeConfigDraft(draft, key, value), revision); },
+    applyPreset(id) { return configEditorState(base, applyPreset(draft, id), revision); },
     reset() { return configEditorState(base, { ...DEFAULTS }, revision); },
     async save(form) {
       const values = { ...draft };
