@@ -28,15 +28,25 @@ export function createActivityAnnouncer({ announce, schedule = setTimeout, cance
   return { update, dispose() { clear(); scope = null; } };
 }
 
-export function createLegendPreference(scope, storage = () => window.localStorage) {
-  const key = scope ? `ascii-whales.legend.v1:${scope}` : null;
-  let seen = false;
-  try { seen = key !== null && storage()?.getItem(key) === 'seen'; } catch {}
+export function createLegendPreference(form) {
+  let dismissed = false;
   return {
-    get seen() { return seen; },
-    dismiss() {
-      seen = true;
-      try { if (key !== null) storage()?.setItem(key, 'seen'); } catch {}
+    get seen() {
+      if (dismissed) return true;
+      try {
+        const snapshot = form.getSnapshot();
+        return snapshot.status === 'ready' && snapshot.value?.legendSeen === true;
+      } catch { return false; }
+    },
+    async dismiss() {
+      dismissed = true;
+      try {
+        const snapshot = form.getSnapshot();
+        if (snapshot.status !== 'ready' || !snapshot.writable) return false;
+        if (snapshot.value?.legendSeen === true) return true;
+        if (typeof form.set === 'function') return await form.set('legendSeen', true);
+        return await form.mutate([{ op: 'set', path: ['legendSeen'], value: true }], snapshot.revision);
+      } catch { return false; }
     },
   };
 }

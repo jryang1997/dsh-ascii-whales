@@ -49,6 +49,22 @@ test('old configurations keep their scene values and migration while default sce
   assert.equal(legacy.applyPreset('minimal').draft.composerGlass, false);
 });
 
+test('a preference-only revision change rebases visual save without resetting or saving unrelated draft fields', async () => {
+  const form = memoryForm({ ...DEFAULTS, legendSeen: false });
+  const editor = createConfigEditor(form.getSnapshot()).change('text', 'Unsaved').applyPreset('rainy');
+  await form.mutate([{ op: 'set', path: ['legendSeen'], value: true }], 1);
+  assert.equal(form.getSnapshot().value.text, DEFAULTS.text);
+  const result = await editor.save(form);
+  assert.equal(result.notice, 'saved');
+  assert.equal(result.editor.draft.text, 'Unsaved');
+  assert.equal(result.editor.draft.rain, true);
+  assert.equal(form.getSnapshot().value.legendSeen, true);
+  assert.equal(form.writes[1].revision, 2);
+  assert.ok(form.writes[1].ops.every(op => op.path[0] !== 'legendSeen'));
+  await result.editor.reset().save(form);
+  assert.equal(form.getSnapshot().value.legendSeen, true);
+});
+
 function memoryForm(value = {}, revision = 1) {
   let snapshot = { status: 'ready', writable: true, value, revision };
   const writes = [];

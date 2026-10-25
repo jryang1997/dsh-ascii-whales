@@ -34,6 +34,19 @@ test('missing sources preserve known running facts without inventing idle or ano
   assert.deepEqual(unknown.entities, []);
 });
 
+test('attached job rosters with absent session keys are unknown while explicit empty and detached remain distinct', () => {
+  const statuses = new Map([['main', { running: true, pendingInteraction: { kind: 'question' } }]]);
+  const absent = readActivitySnapshot(list, statuses, { rows: {} });
+  assert.equal(absent.availability.jobs, 'unknown');
+  assert.equal(absent.entities[0].kind, 'waiting');
+  assert.equal(absent.availability.liveStatus, 'available');
+  assert.equal(readActivitySnapshot(list, statuses, { rows: { main: [] } }).availability.jobs, 'available');
+  assert.equal(readActivitySnapshot(list, statuses, { rows: {}, available: false }).availability.jobs, 'unavailable');
+  for (const rows of [{ other: [] }, { main: null }, { main: {} }]) {
+    assert.equal(readActivitySnapshot(list, statuses, { rows }).availability.jobs, 'unknown');
+  }
+});
+
 const session = { key: 'session:main', type: 'session', primary: true, label: 'Main', kind: 'idle' };
 const job = (kind, label = 'Build') => ({ key: 'job:build', type: 'job', label, kind });
 const snapshot = (...entities) => ({ scope: 'main', entities: [session, ...entities] });

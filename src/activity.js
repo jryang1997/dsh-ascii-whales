@@ -1,7 +1,8 @@
 /** Read only the DSH root stores, never conversation text or DOM heuristics. */
 const unavailable = Object.freeze({ currentSession: 'unavailable', liveStatus: 'unavailable', jobs: 'unavailable' });
 export const EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]), availability: unavailable });
-const emptyJobs = Object.freeze({ rows: Object.freeze({}), available: false });
+const unknownJobs = Object.freeze({ rows: Object.freeze({}) });
+const emptyJobs = Object.freeze({ ...unknownJobs, available: false });
 const rank = entity => entity.kind === 'waiting' ? 0 : entity.kind === 'failed' ? 1
   : entity.kind === 'completed' ? 2 : entity.kind === 'running' ? 3 : 4;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -43,8 +44,11 @@ export function readActivitySnapshot(list, statuses, jobs = emptyJobs) {
       label: String(row.displayTitle ?? row.title ?? '').trim(), kind, primary: id === scope,
       waitingAvailable: record(status) });
   }
+  const jobRows = record(jobs?.rows) && Object.hasOwn(jobs.rows, scope) && Array.isArray(jobs.rows[scope])
+    ? jobs.rows[scope] : null;
+  const jobsAvailability = jobs?.available === false ? 'unavailable' : jobRows ? 'available' : 'unknown';
   const seen = new Set();
-  for (const job of jobs?.available === false ? [] : jobs?.rows?.[scope] ?? []) {
+  for (const job of jobsAvailability === 'available' ? jobRows : []) {
     if (!record(job) || (typeof job.id !== 'string' && typeof job.id !== 'number')) continue;
     const key = `job:${job.id}`;
     if (seen.has(key)) continue;
@@ -56,7 +60,7 @@ export function readActivitySnapshot(list, statuses, jobs = emptyJobs) {
   }
   return { scope, entities, availability: { currentSession: 'available',
     liveStatus: typeof statuses?.get === 'function' ? 'available' : 'unavailable',
-    jobs: jobs && jobs.available !== false && record(jobs.rows) ? 'available' : 'unavailable' } };
+    jobs: jobsAvailability } };
 }
 
 /** Stable seats by identity. A newly observed terminal job is history, not a new celebration. */
@@ -150,7 +154,7 @@ export function createJobsBridge() {
   let service = null, scope = null, release = null, unsubscribe = null, snapshot = emptyJobs;
   const listeners = new Set();
   const publish = () => {
-    snapshot = scope && service ? service.state.getSnapshot() ?? emptyJobs : emptyJobs;
+    snapshot = scope && service ? service.state.getSnapshot() ?? unknownJobs : emptyJobs;
     for (const listener of listeners) listener();
   };
   function connect() {

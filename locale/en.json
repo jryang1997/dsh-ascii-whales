@@ -129,6 +129,7 @@
     "activityScopeUnavailable": "Current session state is unavailable.",
     "activityWaitingUnavailable": "Waiting information is unavailable.",
     "activityJobsUnavailable": "Background task states are unavailable.",
+    "activityJobsUnknown": "Current background tasks are unknown.",
     "activityOverflow": "Tasks without their own whale",
     "activitySession": "Session",
     "activitySubagent": "Subagent",

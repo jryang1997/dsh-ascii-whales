@@ -1995,7 +1995,10 @@
         const ops = Object.keys(FIELDS).filter((key) => values[key] !== base[key]).map((key) => ({ op: "set", path: [key], value: values[key] }));
         if (!ops.length) return { editor, notice: "" };
         try {
-          if (await form.mutate(ops, revision)) {
+          const latest = form.getSnapshot();
+          const saved = normalizeConfig(latest.value);
+          const unchanged = latest.status === "ready" && Object.keys(FIELDS).every((key) => saved[key] === base[key]);
+          if (await form.mutate(ops, unchanged ? latest.revision : revision)) {
             return { editor: createConfigEditor(form.getSnapshot()), notice: "saved" };
           }
           return { editor, notice: "conflict" };
@@ -3168,7 +3171,8 @@
   // src/activity.js
   var unavailable = Object.freeze({ currentSession: "unavailable", liveStatus: "unavailable", jobs: "unavailable" });
   var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]), availability: unavailable });
-  var emptyJobs = Object.freeze({ rows: Object.freeze({}), available: false });
+  var unknownJobs = Object.freeze({ rows: Object.freeze({}) });
+  var emptyJobs = Object.freeze({ ...unknownJobs, available: false });
   var rank = (entity) => entity.kind === "waiting" ? 0 : entity.kind === "failed" ? 1 : entity.kind === "completed" ? 2 : entity.kind === "running" ? 3 : 4;
   var record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
   var sessionKind = (row, status) => status?.pendingInteraction ? "waiting" : (status?.running ?? row?.running) === true ? "running" : typeof status?.running === "boolean" ? "idle" : "unavailable";
@@ -3209,8 +3213,10 @@
         waitingAvailable: record(status)
       });
     }
+    const jobRows = record(jobs?.rows) && Object.hasOwn(jobs.rows, scope) && Array.isArray(jobs.rows[scope]) ? jobs.rows[scope] : null;
+    const jobsAvailability = jobs?.available === false ? "unavailable" : jobRows ? "available" : "unknown";
     const seen = /* @__PURE__ */ new Set();
-    for (const job of jobs?.available === false ? [] : jobs?.rows?.[scope] ?? []) {
+    for (const job of jobsAvailability === "available" ? jobRows : []) {
       if (!record(job) || typeof job.id !== "string" && typeof job.id !== "number") continue;
       const key = `job:${job.id}`;
       if (seen.has(key)) continue;
@@ -3221,7 +3227,7 @@
     return { scope, entities, availability: {
       currentSession: "available",
       liveStatus: typeof statuses?.get === "function" ? "available" : "unavailable",
-      jobs: jobs && jobs.available !== false && record(jobs.rows) ? "available" : "unavailable"
+      jobs: jobsAvailability
     } };
   }
   function createActivityTracker({ onChange } = {}) {
@@ -3347,7 +3353,7 @@
     let service = null, scope = null, release = null, unsubscribe = null, snapshot = emptyJobs;
     const listeners = /* @__PURE__ */ new Set();
     const publish = () => {
-      snapshot = scope && service ? service.state.getSnapshot() ?? emptyJobs : emptyJobs;
+      snapshot = scope && service ? service.state.getSnapshot() ?? unknownJobs : emptyJobs;
       for (const listener of listeners) listener();
     };
     function connect() {
@@ -5397,22 +5403,28 @@
       scope = null;
     } };
   }
-  function createLegendPreference(scope, storage2 = () => window.localStorage) {
-    const key = scope ? `ascii-whales.legend.v1:${scope}` : null;
-    let seen = false;
-    try {
-      seen = key !== null && storage2()?.getItem(key) === "seen";
-    } catch {
-    }
+  function createLegendPreference(form) {
+    let dismissed = false;
     return {
       get seen() {
-        return seen;
-      },
-      dismiss() {
-        seen = true;
+        if (dismissed) return true;
         try {
-          if (key !== null) storage2()?.setItem(key, "seen");
+          const snapshot = form.getSnapshot();
+          return snapshot.status === "ready" && snapshot.value?.legendSeen === true;
         } catch {
+          return false;
+        }
+      },
+      async dismiss() {
+        dismissed = true;
+        try {
+          const snapshot = form.getSnapshot();
+          if (snapshot.status !== "ready" || !snapshot.writable) return false;
+          if (snapshot.value?.legendSeen === true) return true;
+          if (typeof form.set === "function") return await form.set("legendSeen", true);
+          return await form.mutate([{ op: "set", path: ["legendSeen"], value: true }], snapshot.revision);
+        } catch {
+          return false;
         }
       }
     };
@@ -5443,7 +5455,6 @@
     const t = ctx.locale.bind("asciiWhales");
     const useForm = () => React.useSyncExternalStore(formSubscribe, formSnapshot, formSnapshot);
     const jobs = createJobsBridge();
-    const legendPreference = createLegendPreference(globalThis.window?.location?.origin ?? null);
     const labelOf = (entity) => entity.label || t(entity.type === "job" ? "activityJob" : entity.type === "subagent" ? "activitySubagent" : "activitySession");
     const statusOf = (entity) => t({
       running: "activityRunning",
@@ -5459,8 +5470,9 @@
         returnFocus.current = document.activeElement;
       }, []);
       function close() {
-        onClose();
+        const result = onClose();
         if (returnFocus.current?.isConnected) returnFocus.current.focus();
+        return result;
       }
       return h(
         "section",
@@ -5580,7 +5592,8 @@
       const language = React.useSyncExternalStore(localeSubscribe, localeSnapshot, localeSnapshot);
       const [presentation, setPresentation] = React.useState(null);
       const [announcement, setAnnouncement] = React.useState({ serial: 0, entities: [] });
-      const [legendOpen, setLegendOpen] = React.useState(() => !legendPreference.seen);
+      const legendPreference = React.useMemo(() => createLegendPreference(form), []);
+      const [legendDismissed, setLegendDismissed] = React.useState(false);
       const announcer = React.useMemo(() => createActivityAnnouncer({ announce: setAnnouncement }), []);
       const receiveActivity = React.useCallback((value) => {
         setPresentation(value);
@@ -5631,9 +5644,9 @@
         config.activity && h(
           "aside",
           { className: "aw-activity" },
-          legendOpen && h(Legend, { onClose: () => {
-            legendPreference.dismiss();
-            setLegendOpen(false);
+          !legendDismissed && !legendPreference.seen && h(Legend, { onClose: () => {
+            setLegendDismissed(true);
+            return legendPreference.dismiss();
           } }),
           current && h(
             "details",
@@ -5645,6 +5658,7 @@
               current.availability.currentSession === "unavailable" && h("p", null, t("activityScopeUnavailable")),
               current.availability.liveStatus === "unavailable" && h("p", null, t("activityWaitingUnavailable")),
               current.availability.jobs === "unavailable" && h("p", null, t("activityJobsUnavailable")),
+              current.availability.jobs === "unknown" && h("p", null, t("activityJobsUnknown")),
               h("p", null, t("activityOverflow"), " ", current.overflow.length),
               h("ul", null, ...current.entities.map((entity) => h(
                 "li",
@@ -6234,6 +6248,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       activityScopeUnavailable: "Current session state is unavailable.",
       activityWaitingUnavailable: "Waiting information is unavailable.",
       activityJobsUnavailable: "Background task states are unavailable.",
+      activityJobsUnknown: "Current background tasks are unknown.",
       activityOverflow: "Tasks without their own whale",
       activitySession: "Session",
       activitySubagent: "Subagent",
@@ -6373,6 +6388,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       activityScopeUnavailable: "当前会话状态不可用。",
       activityWaitingUnavailable: "等待信息不可用。",
       activityJobsUnavailable: "后台任务状态不可用。",
+      activityJobsUnknown: "当前后台任务名单未知。",
       activityOverflow: "未单独分配鲸鱼的任务数",
       activitySession: "会话",
       activitySubagent: "子代理",

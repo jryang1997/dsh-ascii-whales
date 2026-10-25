@@ -3157,7 +3157,8 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
   // src/activity.js
   var unavailable = Object.freeze({ currentSession: "unavailable", liveStatus: "unavailable", jobs: "unavailable" });
   var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]), availability: unavailable });
-  var emptyJobs = Object.freeze({ rows: Object.freeze({}), available: false });
+  var unknownJobs = Object.freeze({ rows: Object.freeze({}) });
+  var emptyJobs = Object.freeze({ ...unknownJobs, available: false });
   var rank = (entity) => entity.kind === "waiting" ? 0 : entity.kind === "failed" ? 1 : entity.kind === "completed" ? 2 : entity.kind === "running" ? 3 : 4;
   function createActivityTracker({ onChange } = {}) {
     let snapshot = EMPTY_ACTIVITY, scope = null, seats = [], now = 0;

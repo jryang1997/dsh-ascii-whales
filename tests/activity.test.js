@@ -137,6 +137,23 @@ test('the optional jobs bridge shares one roster, releases on session changes an
   unsubscribe();
 });
 
+test('an attached bridge without a roster remains unknown until explicit rows arrive or service detaches', () => {
+  let value = null, listener;
+  const service = { state: { getSnapshot: () => value,
+    subscribe(callback) { listener = callback; return () => {}; } }, watchRows: () => () => {} };
+  const jobs = createJobsBridge();
+  const detach = jobs.attach(service);
+  jobs.watch('main');
+  const availability = () => readActivitySnapshot(fixture(), new Map(), jobs.getSnapshot()).availability.jobs;
+  assert.equal(availability(), 'unknown');
+  value = { rows: { main: [] } }; listener();
+  assert.equal(availability(), 'available');
+  value = { rows: {} }; listener();
+  assert.equal(availability(), 'unknown');
+  detach();
+  assert.equal(availability(), 'unavailable');
+});
+
 test('state changes retain the real simulation and resume bindings after config rebuilds', () => {
   const config = normalizeConfig({ count: 3, color: 'rainbow' });
   const simulation = createWhaleSimulation(config, { seed: 42 }); simulation.resize(1400, 850);

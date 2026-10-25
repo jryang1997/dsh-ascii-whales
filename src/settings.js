@@ -37,7 +37,6 @@ export function registerWhales(ctx, React, dictionaries) {
   const t = ctx.locale.bind('asciiWhales');
   const useForm = () => React.useSyncExternalStore(formSubscribe, formSnapshot, formSnapshot);
   const jobs = createJobsBridge();
-  const legendPreference = createLegendPreference(globalThis.window?.location?.origin ?? null);
   const labelOf = entity => entity.label || t(entity.type === 'job' ? 'activityJob' : entity.type === 'subagent' ? 'activitySubagent' : 'activitySession');
   const statusOf = entity => t({ running: 'activityRunning', waiting: 'activityWaiting', idle: 'activityIdle',
     completed: 'activityCompleted', failed: 'activityFailed', unavailable: 'activityUnavailable' }[entity.kind]);
@@ -45,8 +44,9 @@ export function registerWhales(ctx, React, dictionaries) {
     const returnFocus = React.useRef(null);
     React.useEffect(() => { returnFocus.current = document.activeElement; }, []);
     function close() {
-      onClose();
+      const result = onClose();
       if (returnFocus.current?.isConnected) returnFocus.current.focus();
+      return result;
     }
     return h('section', { className: 'aw-legend', 'aria-label': t('activityLegend') },
       h('h3', null, t('activityLegend')),
@@ -162,7 +162,8 @@ export function registerWhales(ctx, React, dictionaries) {
     const language = React.useSyncExternalStore(localeSubscribe, localeSnapshot, localeSnapshot);
     const [presentation, setPresentation] = React.useState(null);
     const [announcement, setAnnouncement] = React.useState({ serial: 0, entities: [] });
-    const [legendOpen, setLegendOpen] = React.useState(() => !legendPreference.seen);
+    const legendPreference = React.useMemo(() => createLegendPreference(form), []);
+    const [legendDismissed, setLegendDismissed] = React.useState(false);
     const announcer = React.useMemo(() => createActivityAnnouncer({ announce: setAnnouncement }), []);
     const receiveActivity = React.useCallback(value => {
       setPresentation(value);
@@ -203,13 +204,17 @@ export function registerWhales(ctx, React, dictionaries) {
     h('div', { 'aria-hidden': true, style: { position: 'absolute', inset: 0 } },
       h(Canvas, { config, activity: config.activity ? activity : EMPTY_ACTIVITY, onActivityChange: receiveActivity })),
     config.activity && h('aside', { className: 'aw-activity' },
-      legendOpen && h(Legend, { onClose: () => { legendPreference.dismiss(); setLegendOpen(false); } }),
+      !legendDismissed && !legendPreference.seen && h(Legend, { onClose: () => {
+        setLegendDismissed(true);
+        return legendPreference.dismiss();
+      } }),
       current && h('details', { className: 'aw-activity-summary' },
         h('summary', null, t('activitySummary')),
         h('section', { 'aria-label': t('activitySummary') },
           current.availability.currentSession === 'unavailable' && h('p', null, t('activityScopeUnavailable')),
           current.availability.liveStatus === 'unavailable' && h('p', null, t('activityWaitingUnavailable')),
           current.availability.jobs === 'unavailable' && h('p', null, t('activityJobsUnavailable')),
+          current.availability.jobs === 'unknown' && h('p', null, t('activityJobsUnknown')),
           h('p', null, t('activityOverflow'), ' ', current.overflow.length),
           h('ul', null, ...current.entities.map(entity => h('li', { key: entity.key },
             labelOf(entity), ' · ', statusOf(entity),

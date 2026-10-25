@@ -32,7 +32,10 @@ function configEditorState(base, draft, revision) {
         .map(key => ({ op: 'set', path: [key], value: values[key] }));
       if (!ops.length) return { editor, notice: '' };
       try {
-        if (await form.mutate(ops, revision)) {
+        const latest = form.getSnapshot();
+        const saved = normalizeConfig(latest.value);
+        const unchanged = latest.status === 'ready' && Object.keys(FIELDS).every(key => saved[key] === base[key]);
+        if (await form.mutate(ops, unchanged ? latest.revision : revision)) {
           return { editor: createConfigEditor(form.getSnapshot()), notice: 'saved' };
         }
         return { editor, notice: 'conflict' };

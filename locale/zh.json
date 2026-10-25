@@ -129,6 +129,7 @@
     "activityScopeUnavailable": "当前会话状态不可用。",
     "activityWaitingUnavailable": "等待信息不可用。",
     "activityJobsUnavailable": "后台任务状态不可用。",
+    "activityJobsUnknown": "当前后台任务名单未知。",
     "activityOverflow": "未单独分配鲸鱼的任务数",
     "activitySession": "会话",
     "activitySubagent": "子代理",
