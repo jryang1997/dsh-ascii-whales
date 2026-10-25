@@ -213,11 +213,11 @@ kit 单 `1.x`：major = 会改变既有校验结论或配置 schema；minor = �
 - 未验证：kit 在第三个真实插件上的启动耗时；whale tarball 修复后 DSH 安装行为；npm 包发布链路。
 - 原始证据与逐行引用：`.scratch/research/scaffold/findings.md`（本地，未随仓库发布）。
 
-## 实施记录（2026-10-25）
+## 实施记录（2026-10-25，已完成发布）
 
-- 本地 kit 仓库：C:/Users/Jerry/Documents/deepseek-harness/默认工作区/dsh-plugin-kit，包名 @jryang1997/dsh-plugin-kit 1.0.0；零运行时依赖，kit 自身 127 项测试通过；CLI 覆盖 check/test/verify/pack/screenshots/artifacts/review/probe/init。
-- whale 已接入：package.json 增加本地 devDependency 与 dshPluginKit 配置；五类静态检查、真实 pack 检查、产物 --check 与测试发现都走 kit；重复的三个脚本和两份工具测试删除，行为由 kit fixture 覆盖。pnpm verify 通过（375 项测试；原 388 项中 13 项工具测试迁入 kit）。
-- 发布包策略按共识改为精简运行时包：运行文件 + locale + 图标 + README/CHANGELOG + docs/images + docs/research；tests/、scripts/、preview/、.node-version 由 pack 检查拒绝。真实 npm pack 结果 66 个文件。
-- 未完成/待授权：kit 仓库尚未 git init/push、未打 tag；dictate 迁移（Node pin、pnpm、锁文件、双平台 CI）留到 kit 可用固定引用后；npm 注册暂缓，发布前 CI 的 frozen install 会因本地 file: 依赖失败。
-
-- kit 本地仓库首次提交：1f40b75（未 push）。
+- kit 已公开：github.com/jryang1997/dsh-plugin-kit，tag v1.0.0（发布 commit fc47d51，Release 带 npm pack tarball 与 SHA256SUMS）；零运行时依赖，kit 自身 127 项测试通过；CLI 覆盖 check/test/verify/pack/screenshots/artifacts/review/probe/init。
+- whale 已接入并发布 0.15.0：devDependency 固定为 v1.0.0 tag 的 codeload tarball；五类静态检查、真实 pack 检查、产物 --check 与测试发现都走 kit；重复的三个脚本和两份工具测试删除。发布包为运行文件 + locale + 图标 + README/CHANGELOG + docs/images + docs/research（66 文件），开发目录由 pack 检查拒绝。
+- dictate 已迁移并发布 2.8.0：devDependency 同为 kit v1.0.0；改用 pnpm + 锁文件 + `.node-version` 24.19.0，CI 改为 ubuntu + windows 双平台；`pnpm verify` 的 8 项测试通过。
+- 两仓库 CI 均已在 GitHub Actions 双平台通过；whale v0.15.0 与 dictate v2.8.0 均有 Release 资产。
+- 环境限制：本机对 github.com 的 git 访问被阻断（api.github.com、codeload.github.com 正常），推送通过 GitHub API 重建提交，因此远端 SHA 与本地不同、内容一致；依赖使用 codeload tarball URL 而非 `git+https`。
+- 未完成：Chrome `ui` 捕获（计划的 v1.1）；npm 注册继续暂缓；真实桌面窗口验收需重启 DSH 后确认。
