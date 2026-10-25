@@ -88,7 +88,9 @@ Rain is off by default, with intensity from 0 to 1 and a default of 0.45. Streak
 
 ## Whales around your conversation
 
-Text edge effect offers Glow, Soft blur and Frosted glass, with Frosted glass as the default. Glow clears whales around text; blur and frost retain translucent silhouettes so the whale remains continuous behind a paragraph. This choice is independent of the content-box glass switch. Whales briefly hide during reading scrolls and resume from the same position afterward. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones.
+Text edge effect offers Off, Glow, Soft blur and Frosted glass, with Frosted glass as the default. Off leaves whales around text untreated. Glow clears them; blur and frost retain translucent silhouettes behind a paragraph. This choice is independent of the content-box glass switch. Settings start with a large live preview, followed by Appearance, Whales, Reading and Sea cards. Switches control booleans, buttons select modes, and sliders adjust numeric values. While you scroll, the school keeps swimming and the text mask follows the new positions. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones.
+
+**Pause rendering while scrolling** is under Advanced settings and is off by default. Turn it on and scrolling hides the decorative layer at once and freezes the simulation; about 140 ms after your last scroll it measures the new position once and fades back in — useful when a soft mask feels like it lags behind moving text.
 
 | Light theme | Dark theme |
 | :---: | :---: |
@@ -101,7 +103,7 @@ For the input box, you can show blurred whale silhouettes or have the whales swi
 | Frosted content boxes | Blurred whales in content cards, the input box and right sidebar, with clear text regions | On |
 | Whales avoid the input box | Whales swim around the input box as an obstacle | Off |
 
-**Frosted content boxes** and **Whales avoid the input box** are mutually exclusive. Enabling either turns the other off. Text protection stays active with either option disabled.
+**Frosted content boxes** and **Whales avoid the input box** are mutually exclusive. Enabling either turns the other off. Text edge effects are controlled independently and can also be turned off.
 
 <details>
 <summary>View input-box avoidance</summary>
@@ -159,7 +161,7 @@ When there are more active tasks than whales, the first whale summarizes the ext
 
 Custom text supports Chinese characters, English, emoji, and combined glyphs. Whitespace is ignored. The input limit is 40 UTF-16 code units, so some emoji use more than one unit. Switching to ASCII preserves your saved custom text.
 
-The desktop app follows the sidebar width automatically. In a regular browser, adjust **Browser left inset** to position the visible whale area.
+The desktop app follows the sidebar width automatically. In a regular browser, adjust **Browser left inset** to position the visible whale area. **Pause rendering while scrolling** sits in the same Advanced settings group, off by default.
 
 <details>
 <summary>View the settings page</summary>
@@ -172,7 +174,7 @@ The desktop app follows the sidebar width automatically. In a regular browser, a
 
 Download or clone the repository, then open [whale-preview.html](./preview/whale-preview.html) in your browser. It uses the plugin's renderer and does not need a server.
 
-The page includes all four rendering combinations and a live group of whales. Change the species, body text, size, speed, glass, and theme. A simulated input box at the bottom lets you compare frosted glass with avoidance.
+The page includes all four rendering combinations and a live group of whales. Change the species, body text, size, speed, glass, and theme, or try **Pause rendering while scrolling**. A simulated input box at the bottom lets you compare frosted glass with avoidance.
 
 ## Development
 

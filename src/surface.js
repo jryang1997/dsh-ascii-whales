@@ -48,6 +48,14 @@ export function createCellPalette(name = 'ocean', colorIndex) {
   return palette;
 }
 
+// Match the ink palette's depth range; retain enough contrast for distant
+// whales while giving a crossing foreground silhouette a clear visual lead.
+function surfaceDepthOpacity(pose) {
+  const depth = pose?.focal > 0 && Number.isFinite(pose.cameraZ) ? pose.cameraZ / pose.focal : 0.14;
+  const t = Math.max(0, Math.min(1, (depth - 0.14) / 1.21));
+  return 1 - 0.38 * t * t * (3 - 2 * t);
+}
+
 /** One painter shared by the plugin, live previews and rendering checks. */
 export function createWhalePainter(scene, config) {
   const ascii = config.fillMode === 'ascii', tiles = config.renderStyle === 'cells';
@@ -67,6 +75,7 @@ export function createWhalePainter(scene, config) {
     // object and updates it in place, so those two options need a repaint, not a
     // rebuilt painter. Font, alphabet, cell shape and palette are fixed here.
     const opacity = config.opacity, quietCenter = config.quietCenter;
+    const depthOpacities = poses.map(surfaceDepthOpacity);
     target.font = font;
     target.textAlign = 'center';
     target.textBaseline = 'middle';
@@ -77,7 +86,8 @@ export function createWhalePainter(scene, config) {
       if (owner < 0) continue;
       const particle = scene.particles[owner], pose = poses[particle.whale];
       const x = grid.centersX[cell], y = grid.centersY[cell], coverage = grid.coverage[cell], light = grid.lights[cell];
-      let alpha = glyphOpacity(opacity, light, grid.visibility[cell], attenuation(x, y, width, height, quietCenter)) * (0.3 + coverage * 0.7);
+      let alpha = glyphOpacity(opacity, light, grid.visibility[cell], attenuation(x, y, width, height, quietCenter))
+        * (0.3 + coverage * 0.7) * depthOpacities[particle.whale];
       if (fade) alpha *= fade(x, y);
       if (alpha < 0.01) continue;
       // Clouds tint the ink, while the original surface light still selects

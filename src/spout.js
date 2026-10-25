@@ -17,47 +17,46 @@ const SPOUT_MARK = Object.freeze({
 const SPOUT_STAMPS = Object.freeze({
   blue: {
     basis: 'screen',
-    jet: { anchor: { row: 0, col: 1 }, rows: [' * '] },
-    bush: { anchor: { row: 1, col: 1 }, rows: [' o ', 'o*o', ' o '] },
-    droplets: { anchor: { row: 1, col: 1 }, rows: [' . ', '. .', ' . '] },
+    jet: { anchor: { row: 1, col: 2 }, rows: ['  *  ', '* * *', '  *  '] },
+    bush: { anchor: { row: 2, col: 2 }, rows: [' . . ', '. * .', '* * *', '. * .', ' . . '] },
+    droplets: { anchor: { row: 2, col: 2 }, rows: ['.   .', '  .  ', '. . .', '  .  ', '.   .'] },
   },
   humpback: {
     basis: 'screen',
-    jet: { anchor: { row: 0, col: 2 }, rows: [' *** '] },
-    bush: { anchor: { row: 1, col: 3 }, rows: [" 'o o' ", 'o  *  o', " 'o o' "] },
-    droplets: { anchor: { row: 1, col: 3 }, rows: ['.  .  .', ' .   . ', '   .   '] },
+    jet: { anchor: { row: 1, col: 4 }, rows: ['  .*.*.  ', '   ***   ', '  .*.*.  '] },
+    bush: { anchor: { row: 2, col: 4 }, rows: ['  .  *  .', ' . o  o .', '*   *   *', ' . o  o .', '  .  *  .'] },
+    droplets: { anchor: { row: 2, col: 4 }, rows: ['.   .   .', '  .   .  ', '.   .   .', '    .    ', '.   .   .'] },
   },
   bowhead: {
     basis: 'lateral',
-    jet: { anchor: { row: 1, col: 2 }, rows: ["  '  ", '  *  '] },
-    bush: { anchor: { row: 3, col: 4 }, rows: ['O       O', " '     ' ", "  '   '  ", '    *    '] },
-    droplets: { anchor: { row: 2, col: 4 }, rows: ['.       .', " '     ' ", '    .    '] },
+    jet: { anchor: { row: 1, col: 5 }, rows: ['  .     .  ', '     *     ', "  '     '  "] },
+    bush: { anchor: { row: 2, col: 5 }, rows: ['.    .    .', "  '     '  ", '    * *    ', "  '     '  ", '.    .    .'] },
+    droplets: { anchor: { row: 2, col: 5 }, rows: ['.         .', '  .     .  ', '     .     ', '  .     .  ', '.         .'] },
   },
   fin: {
     basis: 'screen',
     unverified: true,
     jet: { anchor: { row: 0, col: 1 }, rows: [' * '] },
-    bush: { anchor: { row: 1, col: 1 }, rows: [' . ', ' * ', ' . '] },
+    bush: { anchor: { row: 1, col: 1 }, rows: [' . ', '* *', ' . '] },
     droplets: { anchor: { row: 0, col: 1 }, rows: [' . '] },
   },
   sperm: {
     basis: 'body',
-    jet: { anchor: { row: 0, col: 0 }, rows: ['*  ', " ' ", '  o'] },
-    bush: { anchor: { row: 0, col: 0 }, rows: ['*   ', " '  ", '  o ', '   ~'] },
-    droplets: { anchor: { row: 0, col: 0 }, rows: ['*  ', ' . ', '  .'] },
+    jet: { anchor: { row: 0, col: 0 }, rows: ['* .', " ' ", '  o'] },
+    bush: { anchor: { row: 0, col: 0 }, rows: ['* ..', " '~ ", ' o. ', '  . '] },
+    droplets: { anchor: { row: 0, col: 0 }, rows: ['* .', ' . ', '  .'] },
   },
 });
 
 /**
- * Phase window is half-open [0, 760). Alpha is 1 until 160ms, then linear to 0
- * at 760. The burst keeps the whale until 760 even after the ink falls under
- * 0.04 — otherwise a click at 759ms would start a second mist. Glyphs skip the
- * faint ink themselves.
+ * A round puff, not a fountain. The window is half-open [0, 1500). Alpha stays
+ * 1 until 700ms, then falls to 0 at 1500. The burst keeps the whale until then,
+ * so a later clock check cannot start a second puff on top of this one.
  */
 export function spoutAge(ageMs) {
-  if (typeof ageMs !== 'number' || !Number.isFinite(ageMs) || ageMs < 0 || ageMs >= 760) return null;
-  const alpha = ageMs < 160 ? 1 : (760 - ageMs) / 600;
-  const phase = ageMs < 160 ? 'jet' : ageMs < 420 ? 'bush' : 'droplets';
+  if (typeof ageMs !== 'number' || !Number.isFinite(ageMs) || ageMs < 0 || ageMs >= 1500) return null;
+  const alpha = ageMs < 700 ? 1 : (1500 - ageMs) / 800;
+  const phase = ageMs < 220 ? 'jet' : ageMs < 700 ? 'bush' : 'droplets';
   return { phase, alpha };
 }
 

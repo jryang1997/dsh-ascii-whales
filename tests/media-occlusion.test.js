@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWhaleLayer } from '../src/engine.js';
+import { createWhaleLayer, diffWhaleConfig } from '../src/engine.js';
 import { normalizeConfig } from '../src/model.js';
+import { createWhaleSimulation } from '../src/simulation.js';
 
 function events(value = {}) {
   const listeners = new Map(), listenerOptions = new Map();
@@ -40,7 +41,7 @@ function context() {
   return ctx;
 }
 function harness(t, options = {}) {
-  const saved = new Map(), observers = [], mutations = [], pending = new Map(), timers = new Map();
+  const saved = new Map(), observers = [], mutations = [], pending = new Map(), timers = new Map(), buffers = [];
   const work = { geometry: 0, style: 0, ranges: 0 };
   let now = 1000, next = 1, layer;
   const bounds = { left: 0, top: 0, width: 800, height: 600 };
@@ -50,7 +51,7 @@ function harness(t, options = {}) {
   canvas.getContext = () => ink;
   const document = events({ body, hidden: false, queries: 0,
     querySelectorAll(selector) { this.queries++; return selector === '[data-conversation-scroll]' ? [scroller] : []; },
-    createElement() { const offscreen = node('CANVAS', bounds); const ctx = context(); offscreen.getContext = () => ctx; return offscreen; } });
+    createElement() { const offscreen = node('CANVAS', bounds); const ctx = context(); offscreen.getContext = () => ctx; buffers.push(offscreen); return offscreen; } });
   const reduced = events({ matches: options.reduced !== false }), transparency = events({ matches: Boolean(options.reducedTransparency) });
   const window = events({ devicePixelRatio: 1, matchMedia: query => query.includes('reduced-motion') ? reduced : transparency });
   const globals = { document, window, performance: { now: () => now }, getComputedStyle: element => { work.style++; return element.computed || defaults; },
@@ -75,7 +76,7 @@ function harness(t, options = {}) {
     for (const [id, timer] of [...timers]) if (timer.due <= now) { timers.delete(id); timer.fn(); }
     const due = [...pending.values()]; pending.clear(); for (const fn of due) fn(now);
   }
-  const api = { document, window, scroller, body, canvas, ink, observers, mutations, pending, timers, work, step,
+  const api = { document, window, scroller, body, canvas, ink, observers, mutations, pending, timers, buffers, config, work, step,
     text(count = 1) {
       const lines = Array.from({ length: count }, (_, i) => {
         const parent = append(scroller, node('P', { left: 50, top: 40 + i * 24, width: 500, height: 22 }));
@@ -110,7 +111,7 @@ function harness(t, options = {}) {
 }
 
 for (const readingEffect of ['glow', 'blur', 'frost']) test(`${readingEffect}: scroll bursts do not repeatedly measure text or repaint the sea on the input path`, t => {
-  const h = harness(t, { config: { glass: true, readingEffect }, reduced: false });
+  const h = harness(t, { config: { glass: true, readingEffect, pauseOnScroll: true }, reduced: false });
   h.text(24); h.mount();
   const before = { ...h.work }, paints = h.ink.calls.length;
   for (let i = 0; i < 12; i++) { h.document.dispatch('scroll', h.scroller); h.step(16); }
@@ -124,6 +125,88 @@ for (const readingEffect of ['glow', 'blur', 'frost']) test(`${readingEffect}: s
   assert.ok(h.work.ranges > before.ranges);
 });
 
+for (const glass of [false, true]) test(`none: text work stays disabled while content glass=${glass} and media exclusion keep working`, t => {
+  const h = harness(t, { config: { glass, readingEffect: 'none' } });
+  h.text(3);
+  h.media('DIV', { left: 80, top: 60, width: 580, height: 360 },
+    { backgroundColor: 'rgb(255, 255, 255)', ...rounded(18) });
+  h.media();
+  h.mount();
+  assert.equal(h.work.ranges, 0, 'none never measures real text');
+  assert.equal(h.buffers.length, glass ? 2 : 0, 'only the independent shared glass sea may allocate buffers');
+  assert.equal(h.ink.calls.filter(call => call.op === 'drawImage').length, glass ? 1 : 0,
+    'none never draws a text mask or local replacement');
+  assert.equal(h.masks().length, 1, 'media still clears the finished overlay');
+  h.mutate(h.scroller, undefined, 'childList'); h.flush();
+  assert.equal(h.work.ranges, 0, 'content invalidation cannot re-enable text measurements');
+  assert.equal(h.masks().length, 2, 'media is refreshed independently');
+});
+
+for (const effect of ['glow', 'blur', 'frost']) test(`none to ${effect} and back remeasures immediately without stale text painting`, t => {
+  const h = harness(t, { config: { readingEffect: 'none' } });
+  h.text(3); const layer = h.mount();
+  assert.equal(h.work.ranges, 0);
+  assert.equal(h.buffers.length, 0);
+  layer.update({ ...h.config, readingEffect: effect });
+  assert.equal(h.work.ranges, 3, 'reduced motion receives the enabled mask within update, without waiting for a frame');
+  assert.ok(h.ink.calls.some(call => call.op === 'drawImage'));
+  let mark = h.ink.calls.length;
+  layer.update({ ...h.config, readingEffect: 'none' });
+  assert.ok(!h.ink.calls.slice(mark).some(call => call.op === 'drawImage'), 'none paints neither a mask nor a text replacement');
+  const before = h.work.ranges, buffers = h.buffers.length;
+  h.scroller.children[0].rect.top += 80;
+  h.mutate(h.scroller, undefined, 'childList'); h.flush();
+  assert.equal(h.work.ranges, before);
+  mark = h.ink.calls.length;
+  layer.update({ ...h.config, readingEffect: effect });
+  assert.equal(h.work.ranges, before + 3, 'the current text position is remeasured on re-enable');
+  assert.ok(h.buffers.length > buffers, 'the mask was released while disabled');
+  assert.ok(h.ink.calls.slice(mark).some(call => call.op === 'drawImage'));
+});
+
+test('disabling text during scrolling resumes with media exclusion and no text measurements', t => {
+  const h = harness(t, { config: { pauseOnScroll: true } });
+  h.text(3); h.media(); const layer = h.mount();
+  const before = h.work.ranges;
+  h.document.dispatch('scroll', h.scroller);
+  layer.update({ ...h.config, readingEffect: 'none' });
+  const mark = h.ink.calls.length;
+  h.flush();
+  assert.equal(h.work.ranges, before);
+  assert.ok(!h.ink.calls.slice(mark).some(call => call.op === 'drawImage'));
+  assert.equal(clearsIn(h.ink.calls.slice(mark)).length, 1);
+});
+
+test('none toggles retain the same whales, motion objects and simulation clock', () => {
+  const config = normalizeConfig({ count: 1 });
+  const simulation = createWhaleSimulation(config, { seed: 42 });
+  simulation.resize(800, 600); simulation.advance(0.1);
+  const scene = simulation.scene, whale = scene.whales[0], motion = whale._motion;
+  const before = { time: scene.time, x: whale.x, y: whale.y, age: motion.age };
+  for (const readingEffect of ['none', 'glow', 'none', 'blur', 'none', 'frost']) {
+    const next = { ...config, readingEffect };
+    assert.equal(diffWhaleConfig(config, next).scene, false);
+    assert.equal(simulation.update(next), false);
+    assert.equal(simulation.scene, scene);
+    assert.equal(scene.whales[0], whale);
+    assert.equal(whale._motion, motion);
+    assert.deepEqual({ time: scene.time, x: whale.x, y: whale.y, age: motion.age }, before);
+  }
+  simulation.dispose();
+});
+
+test('none in the demo retains card glass and text without allocating a text mask', t => {
+  const h = harness(t, { config: { glass: true, readingEffect: 'none' },
+    layerOptions: { demoCard: { x: 0.1, y: 0.5, width: 0.8, height: 0.2, radius: 12 } } });
+  const layer = h.mount();
+  assert.equal(h.document.queries, 0);
+  assert.equal(h.buffers.length, 2, 'only the card glass sea buffers exist');
+  assert.equal(h.ink.calls.filter(call => call.op === 'drawImage').length, 1, 'the card glass is painted once');
+  assert.equal(h.ink.calls.filter(call => call.op === 'fill').length, 5, 'the card body and four sample text lines remain visible');
+  layer.update({ ...h.config, readingEffect: 'frost' });
+  assert.ok(h.buffers.length > 2, 'enabling text protection prepares the preview mask immediately');
+});
+
 test('static text geometry is reused across ordinary animation frames', t => {
   const h = harness(t, { config: { glass: true }, reduced: false });
   h.text(24); h.mount();
@@ -133,7 +216,7 @@ test('static text geometry is reused across ordinary animation frames', t => {
 });
 
 test('passive wheel input hides immediately, ignores unrelated scrolling and releases suspended work on disposal', t => {
-  const h = harness(t, { config: { glass: true } });
+  const h = harness(t, { config: { glass: true, pauseOnScroll: true } });
   h.text(24); const layer = h.mount();
   const before = { ...h.work }, paints = h.ink.calls.length;
   assert.deepEqual(h.document.listenerOptions.get('wheel'), { capture: true, passive: true });
@@ -161,6 +244,58 @@ test('passive wheel input hides immediately, ignores unrelated scrolling and rel
   for (const event of ['wheel', 'scroll', 'touchmove']) assert.equal(h.document.listeners.get(event).size, 0);
   h.step(200);
   assert.equal(h.ink.calls.length, paints, 'a disposed scroll timer never revives the layer');
+});
+
+test('the scroll pause is off by default: the school keeps swimming while text moves', t => {
+  const h = harness(t, { config: { glass: true, readingEffect: 'frost' }, reduced: false });
+  h.text(24); const layer = h.mount();
+  const before = { ...h.work }, paints = h.ink.calls.length;
+  for (let i = 0; i < 6; i++) { h.document.dispatch('scroll', h.scroller); h.step(40); }
+  assert.notEqual(h.canvas.style.opacity, '0', 'a scroll burst must not hide the decorative layer');
+  assert.equal(h.timers.size, 0, 'no resume timer is armed while the pause is off');
+  assert.ok(h.ink.calls.length > paints, 'the animation loop keeps drawing through scrolling');
+  assert.ok(h.work.geometry + h.work.ranges > 0, 'the moving text still refreshes its geometry on the measure budget');
+  const measured = h.work.ranges;
+  for (let i = 0; i < 4; i++) { h.document.dispatch('scroll', h.scroller); h.step(10); }
+  // 24 text lines per scan: four events over 40ms may cost at most one scan,
+  // because the refresh rides the 120ms measure budget instead of each event.
+  assert.ok(h.work.ranges - measured <= 24, `scroll events must not re-scan per event: ${h.work.ranges - measured}`);
+  t.diagnostic(`default-off scroll burst, 10 frames of 40ms: ${JSON.stringify(h.work)} after ${JSON.stringify(before)}`);
+  // Turning the guard on takes effect from the next burst without remounting.
+  layer.update({ ...h.config, pauseOnScroll: true });
+  h.document.dispatch('scroll', h.scroller);
+  assert.equal(h.canvas.style.opacity, '0', 'the enabled guard hides the layer immediately');
+  assert.equal(h.timers.size, 1, 'the enabled guard schedules one quiet-interval resume');
+});
+
+test('turning the scroll pause off mid-burst restores the layer and its pending work', t => {
+  const h = harness(t, { config: { glass: true, pauseOnScroll: true }, reduced: false });
+  h.text(24); const layer = h.mount();
+  h.document.dispatch('scroll', h.scroller);
+  assert.equal(h.canvas.style.opacity, '0');
+  assert.equal(h.timers.size, 1);
+  const paints = h.ink.calls.length;
+  layer.update({ ...h.config, pauseOnScroll: false });
+  assert.notEqual(h.canvas.style.opacity, '0', 'switching off must never leave the sea hidden behind the text');
+  assert.equal(h.timers.size, 0, 'the abandoned quiet interval cannot repaint later');
+  assert.ok(h.ink.calls.length > paints, 'the switch itself redraws the current position');
+  h.document.dispatch('scroll', h.scroller);
+  assert.notEqual(h.canvas.style.opacity, '0', 'scrolling after the switch keeps drawing');
+  h.step(400);
+  assert.notEqual(h.canvas.style.opacity, '0');
+});
+
+test('a static reduced-motion sea still follows the text when the scroll pause is off', t => {
+  const h = harness(t, { config: { glass: true, readingEffect: 'frost' } });
+  h.text(3); h.mount();
+  const before = h.work.ranges;
+  h.scroller.children.forEach(child => { child.rect.top -= 60; });
+  h.document.dispatch('scroll', h.scroller);
+  assert.notEqual(h.canvas.style.opacity, '0', 'reduced motion does not imply the hidden layer');
+  h.step(40);
+  assert.ok(h.work.ranges > before, 'the stopped loop still schedules one coalesced redraw');
+  h.step(40);
+  assert.equal(h.timers.size, 0, 'the disabled guard armed no resume timer');
 });
 
 test('a transparent-background GIF fully holds the sea out even when glass and avoidance are disabled', t => {

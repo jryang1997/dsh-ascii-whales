@@ -2,6 +2,7 @@ import { glassRoundedSubpath, glassContentTone } from './glass.js';
 
 /** Material above DOM text: blur only the ocean, never the document itself. */
 export function readingEffectTone(effect = 'frost', strength = 0.55, options = {}) {
+  if (effect === 'none') return { mode: 'none' };
   const base = glassContentTone(strength, options);
   if (effect === 'glow' || options.reducedTransparency) return { ...base, mode: 'glow' };
   const frost = effect !== 'blur';
@@ -117,7 +118,9 @@ export function measureReadingText(roots, canvasRect) {
 /** Cache the soft mask; text measurement and per-line blur never run per frame. */
 export function createReadingProtection() {
   let mask = null, key = '', replacement = null, replacementInk = null;
+  function clear() { mask = replacement = replacementInk = null; key = ''; }
   function setRegions(groups, canvasRect, effect = 'glow') {
+    if (effect === 'none') { clear(); return; }
     const nextKey = JSON.stringify([canvasRect.width, canvasRect.height, effect, groups]);
     if (nextKey === key) return;
     key = nextKey;
@@ -145,10 +148,13 @@ export function createReadingProtection() {
   }
   return {
     get active() { return Boolean(mask); },
-    measure(roots, canvasRect, effect = 'glow') { setRegions(measureReadingText(roots, canvasRect), canvasRect, effect); },
+    measure(roots, canvasRect, effect = 'glow') {
+      if (effect === 'none') { clear(); return; }
+      setRegions(measureReadingText(roots, canvasRect), canvasRect, effect);
+    },
     setRegions,
     paint(target, width, height, { material = { mode: 'glow' }, source = null, sourceRect = null, underlay = null } = {}) {
-      if (!mask) return;
+      if (!mask || material.mode === 'none') return;
       target.save();
       target.globalAlpha = 1;
       target.globalCompositeOperation = 'destination-out';
@@ -186,6 +192,6 @@ export function createReadingProtection() {
       target.drawImage(replacement, 0, 0, width, height);
       target.restore();
     },
-    dispose() { mask = replacement = replacementInk = null; key = ''; },
+    dispose: clear,
   };
 }

@@ -168,8 +168,46 @@ for (const effect of ['blur', 'frost']) test(`${effect} replaces the mask with t
   protection.dispose();
 });
 
+for (const method of ['measure', 'setRegions']) test(`${method}: none drops cached masks and replacement buffers before inspecting geometry`, t => {
+  const { masks, ink } = host(t);
+  const root = element(rect(400, 100, 600, 300));
+  text(root, [rect(410, 110, 380, 20)]);
+  const protection = createReadingProtection(), target = ink();
+  const options = { material: readingEffectTone('frost'), source: {}, sourceRect: [0, 0, 200, 160] };
+  protection.measure([root], canvas, 'frost');
+  protection.paint(target, 1000, 800, options);
+  assert.equal(masks.length, 2, 'the enabled effect allocated a mask and replacement');
+  const count = target.calls.length;
+  protection.paint(target, 1000, 800, { ...options, material: readingEffectTone('none') });
+  assert.equal(target.calls.length, count, 'none never erases or replaces even an existing mask');
+  protection[method](null, null, 'none');
+  assert.equal(protection.active, false);
+  protection.paint(target, 1000, 800, options);
+  assert.equal(target.calls.length, count, 'disabled protection cannot reuse the old mask');
+  assert.equal(masks.length, 2, 'disabling allocates no canvas');
+  protection.measure([root], canvas, 'frost');
+  protection.paint(target, 1000, 800, options);
+  assert.equal(masks.length, 4, 're-enabling the same geometry allocates fresh mask and replacement buffers');
+  assert.equal(protection.active, true);
+  assert.equal(target.calls.at(-2).args[0], masks[2]);
+  assert.equal(target.calls.at(-1).args[0], masks[3]);
+});
+
+test('none skips native text traversal and canvas allocation from the initial state', t => {
+  const { masks, ink } = host(t);
+  document.createTreeWalker = document.createRange = () => { throw new Error('disabled text must not be measured'); };
+  const protection = createReadingProtection(), target = ink();
+  protection.measure([element(rect(400, 100, 600, 300))], canvas, 'none');
+  protection.paint(target, 1000, 800, { material: readingEffectTone('none'), underlay: '#fff' });
+  assert.equal(protection.active, false);
+  assert.equal(masks.length, 0);
+  assert.equal(target.calls.length, 0);
+});
+
 test('reading effects default to frosted glass, retain explicit choices and honor reduced transparency', () => {
   assert.equal(readingEffectTone().mode, 'frost');
+  assert.deepEqual(readingEffectTone('none'), { mode: 'none' });
+  assert.deepEqual(readingEffectTone('none', 0.55, { reducedTransparency: true }), { mode: 'none' });
   assert.equal(readingEffectTone('glow').mode, 'glow');
   assert.equal(readingEffectTone('blur').mode, 'blur');
   assert.ok(readingEffectTone('frost').blur > readingEffectTone('blur').blur);
