@@ -23,10 +23,10 @@
 从海面正上方看，五种鲸鱼用文字和字格组成身体，缓缓摆尾、转向、滑行。鱼身可以使用你自己的文字，也可以按明暗填入 ASCII 字符。鲸体在本地绘制，无需图片素材或外部服务。
 
 <p align="center">
-  <img src="./docs/images/cruise.gif" width="960" alt="DeepSeek Harness 空白对话页上，文字鲸鱼围着输入框巡游">
+  <img src="./docs/images/cruise.gif" width="960" alt="DeepSeek Harness 首页上，文字鲸鱼在方格海面上巡游">
 </p>
 
-<p align="center"><sub>桌面窗口里的空白对话页。鲸鱼围着输入框游，这是实际运行的画面。</sub></p>
+<p align="center"><sub>桌面窗口里的 DeepSeek Harness 首页。鲸鱼在方格海面上巡游，这是实际运行的画面。</sub></p>
 
 <p align="center">
   <img src="./docs/images/modes.png" width="960" alt="同一头蓝鲸的四种组合：纯字符或彩色字格，搭配自定义文字或 ASCII">

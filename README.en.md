@@ -23,10 +23,10 @@
 Five whale species cruise, turn, and glide through the conversation page, seen from directly above. Their bodies consist of your text or ASCII characters chosen by shading. Whales are drawn locally, without image assets or external services.
 
 <p align="center">
-  <img src="./docs/images/cruise.gif" width="960" alt="Glyph whales cruising around the input box on an empty DeepSeek Harness page">
+  <img src="./docs/images/cruise.gif" width="960" alt="Glyph whales cruising across the squared sea on the DeepSeek Harness home page">
 </p>
 
-<p align="center"><sub>An empty conversation page in the desktop window. The whales swim around the input box. This is the running app.</sub></p>
+<p align="center"><sub>The DeepSeek Harness home page in the desktop window. The whales cruise across the squared sea. This is the running app.</sub></p>
 
 <p align="center">
   <img src="./docs/images/modes.png" width="960" alt="Four views of the same blue whale: glyphs or colored cells, each with custom text or ASCII">
