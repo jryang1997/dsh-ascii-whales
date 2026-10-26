@@ -55,6 +55,7 @@ The current published package is [v0.15.0](https://github.com/jryang1997/dsh-asc
 - Form whales from Chinese characters, English text, or emoji. Leave the text blank to use the default phrase, `探索未至之境`.
 - Choose blue, humpback, sperm, fin, or bowhead whales, or let a mixed group swim together.
 - Draw glyphs alone for a lighter outline, or add colored cells to shade the back, flanks, flippers, and flukes.
+- A faint grid of character cells fills the whole sea, and the whale tiles sit on the same lattice. **Squared sea** can be switched off; it is on by default.
 - Adjust the count, body size, speed, opacity, and palette. Body size does not change swimming speed or tail-beat timing.
 - Apply saved settings while preserving the group's movement. Switching models keeps the whales swimming.
 - Version 0.14.0 adds sea-surface wind streaks and slow cloud shadows, each with its own switch. Whales leave through any edge and return on the opposite side, steering clear of obstacles there before they cross. See [atmosphere research](./docs/research/ATMOSPHERE-RESEARCH.md).
@@ -100,7 +101,7 @@ See the [dictation gather research](./docs/research/DICTATION-GATHER.md) for the
 
 ## Whales around your conversation
 
-Text edge effect offers Off, Glow, Soft blur and Frosted glass, with Frosted glass as the default. Off leaves whales around text untreated. Glow clears them; blur and frost retain translucent silhouettes behind a paragraph. This choice is independent of the content-box glass switch. Settings start with a large live preview, followed by Appearance, Whales, Reading and Sea cards. Switches control booleans, buttons select modes, and sliders adjust numeric values. While you scroll, the school keeps swimming and the text mask follows the new positions. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones.
+Text edge effect offers Off, Glow, Soft blur and Frosted glass, with Frosted glass as the default. Off leaves whales around text untreated. Glow clears them; blur and frost retain translucent silhouettes behind a paragraph. This choice is independent of the content-box glass switch. Settings start with a large live preview, followed by Appearance, Whales, Reading and Sea cards. Switches control booleans, buttons select modes, and sliders adjust numeric values. While you scroll, the school keeps swimming and the text mask follows the new positions. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones. The squared sea sits beneath the school and the cloud shadows, shares the same reading protection as the whales, fades with Background opacity, and has its own switch.
 
 **Pause rendering while scrolling** is under Advanced settings and is off by default. Turn it on and scrolling hides the decorative layer at once and freezes the simulation; about 140 ms after your last scroll it measures the new position once and fades back in — useful when a soft mask feels like it lags behind moving text.
 
@@ -156,7 +157,7 @@ Dragging a slider updates the static sample in the settings page. Select **Save*
 | Drawing style | Glyphs only, colored cells |
 | Fill content | Custom text, ASCII characters |
 | Whale colors | Ocean, Azure, Indigo, random color per whale |
-| Other switches | Show whales, Follow task activity, Dictation echo, Quieter reading area |
+| Other switches | Show whales, Squared sea, Follow task activity, Dictation echo, Quieter reading area |
 
 Random color per whale assigns distinct hues from eight palettes and retains body shading. Painting, saving settings, resizing, and changing count, text, species or size preserve each whale's color. Reopening the background generates a new set.
 
@@ -242,6 +243,7 @@ Package with `pnpm --config.ignore-scripts=true pack`.
 | [dictation.js](./src/dictation.js) | Dictation bridge, gather band and slot geometry, breathing and easing |
 | [voice-sea.js](./src/voice-sea.js) | Voice-driven sea swell field and drawer |
 | [rain.js](./src/rain.js) | Wind-driven rain, intensity transitions, and impact ripples |
+| [sea-grid.js](./src/sea-grid.js) | Squared sea hairline lattice, theme ink, and device-pixel snapping |
 | [simulation.js](./src/simulation.js) | Scene adoption, resizing, and advancement of motion and sea effects |
 | [config-editor.js](./src/config-editor.js) | Draft rules, validation, differential saves, and revision conflicts |
 | [browser-build.mjs](./scripts/browser-build.mjs) | Shared browser artifact assembly and consistency checks |

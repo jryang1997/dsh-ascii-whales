@@ -121,11 +121,17 @@ export function glassRoundedSubpath(ctx, rect) {
  * Keep the sharp sea outside every pane. Intersect one exterior clip per pane
  * so overlapping or nested panes stay excluded, including in clear mode.
  * The caller owns save/restore; no feather or raster tile can widen this edge.
+ *
+ * `extent` is the unscaled rectangle the exterior must cover. The settings
+ * preview letterboxes the logical sea into a wider canvas, so its paper has to
+ * continue past `width`/`height`; the conversation overlay leaves it null and
+ * gets the historical canvas-sized rectangle.
  */
-export function glassClipExterior(ctx, panes, width, height) {
+export function glassClipExterior(ctx, panes, width, height, extent = null) {
+  const bounds = extent || { x: 0, y: 0, width, height, radius: 0 };
   for (const pane of panes) {
     ctx.beginPath();
-    glassRoundedSubpath(ctx, { x: 0, y: 0, width, height, radius: 0 });
+    glassRoundedSubpath(ctx, { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, radius: 0 });
     glassRoundedSubpath(ctx, pane);
     ctx.clip('evenodd');
   }

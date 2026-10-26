@@ -17,6 +17,7 @@ const ALTERNATIVES = Object.freeze({
   color: 'azure', activity: false, dictationEcho: false, quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
   readingEffect: 'glow', composerGlass: true, composerAvoid: true, spout: false, ripples: false, wind: false, clouds: false,
   rain: true, rainIntensity: 0.8, pauseOnScroll: true,
+  seaGrid: false,
 });
 
 const GROUP_OF = Object.freeze({
@@ -25,7 +26,7 @@ const GROUP_OF = Object.freeze({
   palette: ['color'],
   glass: ['glass', 'glassStrength', 'readingEffect'],
   composer: ['composerGlass', 'composerAvoid'],
-  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll'],
+  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'seaGrid', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll'],
 });
 const GROUPS = Object.keys(GROUP_OF);
 
@@ -561,7 +562,9 @@ test('content glass gives every card a pane and fades the sharp glyphs inside it
   install();
   t.after(restore);
   // Cloud shadows have independent Canvas buffers; count the glass buffers alone.
-  const config = normalizeConfig({ ...DEFAULTS, composerAvoid: false, clouds: false });
+  // The squared sea is a separate layer whose hairlines are not glass strokes,
+  // so it is off here to keep the pane accounting exact.
+  const config = normalizeConfig({ ...DEFAULTS, composerAvoid: false, clouds: false, seaGrid: false });
   const layer = createWhaleLayer(canvas(), config);
   // One shared sea buffer plus its blurred copy: two offscreen canvases, no more.
   assert.equal(stats.createCanvas, 2, 'the shared sea and its blur buffer are allocated once');

@@ -4,6 +4,7 @@ import { whalePose, projectParticle, createDepthGrid, resolveDepthGrid, stampSea
 import { createWhaleSimulation, sceneConfigChanged } from './simulation.js';
 import { glassRoundedPath, glassRoundedSubpath, glassClipExterior, glassTone, glassSeaFactor, glassSeaBuffer } from './glass.js';
 import { attachSpout } from './spout.js';
+import { drawSeaGrid } from './sea-grid.js';
 import { drawWater } from './water.js';
 import { drawVoiceSea } from './voice-sea.js';
 import { drawRain } from './rain.js';
@@ -58,7 +59,7 @@ const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength', 'readingEffect']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll']);
+const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'seaGrid', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -390,6 +391,10 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     // The painter works in CSS pixels; the 1/factor transform rasterises it at a
     // fraction of the resolution and the panes scale the blur back up.
     seaInk.setTransform(1 / seaFactor, 0, 0, 1 / seaFactor, seaPad, seaPad);
+    // The panes have to see the same squared sea that the open water shows.
+    if (config.seaGrid) drawSeaGrid(seaInk, { width, height, cellWidth: grid.cellWidth,
+      cellHeight: grid.cellHeight, scale: 1 / seaFactor, offsetX: seaPad, offsetY: seaPad,
+      opacity: config.opacity, dark });
     drawAtmosphere(seaInk, atmosphere, { width, height, cellWidth: grid.cellWidth,
       cellHeight: grid.cellHeight, palette: sceneryPalette, opacity: config.opacity,
       wind: config.wind, clouds: config.clouds, dark });
@@ -533,7 +538,22 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     stampSeaWraps(scene, projected, grid);
     shadeAtmosphere(atmosphere, grid, config);
     ink.save();
-    glassClipExterior(ink, panes, width, height);
+    glassClipExterior(ink, panes, width, height,
+      // The preview's full-canvas paper needs the exterior to cover the whole
+      // canvas, not only the letterboxed sea. Untransformed coordinates: the
+      // canvas device rectangle mapped back through the current transform.
+      viewport ? { x: -offsetX / ratio, y: -offsetY / ratio,
+        width: canvas.width / ratio, height: canvas.height / ratio } : null);
+    // The squared sea is the base of everything drawn above it: a hairline
+    // frame around every character cell, aligned with the tiles and glyphs the
+    // painter will place in those same cells.
+    if (config.seaGrid) drawSeaGrid(ink, { width, height, cellWidth: grid.cellWidth,
+      cellHeight: grid.cellHeight, scale: ratio, offsetX, offsetY,
+      // The settings preview letterboxes the conversation sea into a wider
+      // canvas. Only there does the paper continue past the logical sea; the
+      // conversation overlay covers its canvas exactly.
+      extend: Boolean(viewport),
+      opacity: config.opacity, dark: document.body.hasAttribute('data-ds-dark-theme') });
     const fade = readingLayout?.fade ?? null;
     const sceneryFade = readingLayout ? readingLayout.sceneryFade
       : (x, y) => attenuation(x, y, width, height, config.quietCenter);

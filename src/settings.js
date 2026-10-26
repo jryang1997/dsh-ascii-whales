@@ -294,7 +294,7 @@ export function registerWhales(ctx, React, dictionaries) {
       { id: 'appearance', fields: ['renderStyle', 'fillMode', 'text', 'color', 'opacity', 'glyphSize'] },
       { id: 'school', fields: ['species', 'count', 'whaleSize', 'speed', 'activity', 'dictationEcho', 'spout'] },
       { id: 'reading', fields: ['readingEffect', 'glass', 'glassStrength', 'quietCenter', 'composerAvoid'] },
-      { id: 'sea', fields: ['wind', 'clouds', 'ripples', 'rain', 'rainIntensity'] },
+      { id: 'sea', fields: ['seaGrid', 'wind', 'clouds', 'ripples', 'rain', 'rainIntensity'] },
     ];
     return h('form', { ref: viewportRef, className: 'aw-settings', onSubmit: save },
       h('style', null, SETTINGS_CSS),

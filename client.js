@@ -1886,6 +1886,10 @@
     composerAvoid: { kind: "boolean", default: false },
     spout: { kind: "boolean", default: true },
     ripples: { kind: "boolean", default: true },
+    // The squared sea: a hairline frame around every water cell, aligned with the
+    // tiles the bodies occupy. On by default — it is the surface the school swims
+    // on, not an occasional weather effect.
+    seaGrid: { kind: "boolean", default: true },
     wind: { kind: "boolean", default: true },
     clouds: { kind: "boolean", default: true },
     rain: { kind: "boolean", default: false },
@@ -2512,10 +2516,11 @@
     ctx.arcTo(x, y, x + radius, y, radius);
     ctx.closePath();
   }
-  function glassClipExterior(ctx, panes, width, height) {
+  function glassClipExterior(ctx, panes, width, height, extent = null) {
+    const bounds = extent || { x: 0, y: 0, width, height, radius: 0 };
     for (const pane of panes) {
       ctx.beginPath();
-      glassRoundedSubpath(ctx, { x: 0, y: 0, width, height, radius: 0 });
+      glassRoundedSubpath(ctx, { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, radius: 0 });
       glassRoundedSubpath(ctx, pane);
       ctx.clip("evenodd");
     }
@@ -4799,6 +4804,72 @@
     return { paint, detach };
   }
 
+  // src/sea-grid.js
+  var SEA_GRID_INK = Object.freeze({ light: [36, 54, 70], dark: [203, 219, 236] });
+  var SEA_GRID_ALPHA = Object.freeze({ light: 0.105, dark: 0.075 });
+  var SEA_GRID_BASE_OPACITY = 0.6;
+  var SEA_GRID_MAX_ALPHA = 0.16;
+  var gridFinite = (value, fallback) => Number.isFinite(value) ? value : fallback;
+  var gridClamp = (value, low, high) => value < low ? low : value > high ? high : value;
+  function seaGridAlpha(opacity = SEA_GRID_BASE_OPACITY, dark = false) {
+    const concentration = gridClamp(gridFinite(opacity, SEA_GRID_BASE_OPACITY), 0, 1);
+    const base = dark ? SEA_GRID_ALPHA.dark : SEA_GRID_ALPHA.light;
+    return gridClamp(base * (concentration / SEA_GRID_BASE_OPACITY), 0, SEA_GRID_MAX_ALPHA);
+  }
+  function drawSeaGrid(target, options = {}) {
+    const width = Math.max(0, gridFinite(options.width, 0));
+    const height = Math.max(0, gridFinite(options.height, 0));
+    const cellWidth = gridFinite(options.cellWidth, 0);
+    const cellHeight = gridFinite(options.cellHeight, 0);
+    const scale = Math.max(0.05, gridFinite(options.scale, 1));
+    const offsetX = gridFinite(options.offsetX, 0);
+    const offsetY = gridFinite(options.offsetY, 0);
+    const alpha = seaGridAlpha(options.opacity, options.dark === true);
+    const result = { lines: 0, alpha };
+    if (!target || typeof target.beginPath !== "function" || typeof target.moveTo !== "function" || typeof target.lineTo !== "function" || typeof target.stroke !== "function") return result;
+    if (!(width > 0 && height > 0) || !(cellWidth >= 2 && cellHeight >= 2)) return result;
+    if (!(alpha > 1e-3)) return result;
+    const ink = options.dark === true ? SEA_GRID_INK.dark : SEA_GRID_INK.light;
+    const canvas = options.extend === true ? target.canvas : null;
+    const extend = Boolean(canvas && canvas.width > 1 && canvas.height > 1);
+    const left = extend ? 0.5 : Math.round(offsetX) + 0.5;
+    const top = extend ? 0.5 : Math.round(offsetY) + 0.5;
+    const right = extend ? canvas.width - 0.5 : Math.round(offsetX + width * scale) - 0.5;
+    const bottom = extend ? canvas.height - 0.5 : Math.round(offsetY + height * scale) - 0.5;
+    if (!(right > left && bottom > top)) return result;
+    const stepX = cellWidth * scale, stepY = cellHeight * scale;
+    const firstColumn = extend ? Math.floor((left - offsetX) / stepX) - 1 : 1;
+    const lastColumn = extend ? Math.ceil((right - offsetX) / stepX) + 1 : Math.ceil((width - 0.01) / cellWidth) - 1;
+    const firstRow = extend ? Math.floor((top - offsetY) / stepY) - 1 : 1;
+    const lastRow = extend ? Math.ceil((bottom - offsetY) / stepY) + 1 : Math.ceil((height - 0.01) / cellHeight) - 1;
+    target.save?.();
+    target.setTransform?.(1, 0, 0, 1, 0, 0);
+    target.beginPath();
+    for (let column = firstColumn; column <= lastColumn; column++) {
+      const x = Math.round(offsetX + column * cellWidth * scale) + 0.5;
+      if (x <= left || x >= right) continue;
+      target.moveTo(x, top);
+      target.lineTo(x, bottom);
+      result.lines++;
+    }
+    for (let row = firstRow; row <= lastRow; row++) {
+      const y = Math.round(offsetY + row * cellHeight * scale) + 0.5;
+      if (y <= top || y >= bottom) continue;
+      target.moveTo(left, y);
+      target.lineTo(right, y);
+      result.lines++;
+    }
+    if (!result.lines) {
+      target.restore?.();
+      return result;
+    }
+    target.lineWidth = 1;
+    target.strokeStyle = `rgba(${ink[0]}, ${ink[1]}, ${ink[2]}, ${alpha.toFixed(4)})`;
+    target.stroke();
+    target.restore?.();
+    return result;
+  }
+
   // src/foreground.js
   var MEDIA_TAGS = /* @__PURE__ */ new Set(["IMG", "VIDEO", "IFRAME", "OBJECT", "EMBED", "CANVAS"]);
   var MAX_VISIT = 6e3;
@@ -5264,7 +5335,7 @@
   var PALETTE_KEYS = Object.freeze(["color"]);
   var GLASS_KEYS = Object.freeze(["glass", "glassStrength", "readingEffect"]);
   var COMPOSER_KEYS = Object.freeze(["composerGlass", "composerAvoid"]);
-  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds", "rain", "rainIntensity", "activity", "dictationEcho", "pauseOnScroll"]);
+  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "seaGrid", "wind", "clouds", "rain", "rainIntensity", "activity", "dictationEcho", "pauseOnScroll"]);
   var anyChanged = (keys, previous, next) => keys.some((key) => previous[key] !== next[key]);
   var noChange = (changes) => !changes.scene && !changes.metrics && !changes.palette && !changes.glass && !changes.composer && !changes.live;
   function diffWhaleConfig(previous, next) {
@@ -5527,6 +5598,17 @@
       seaInk.setTransform(1, 0, 0, 1, 0, 0);
       seaInk.clearRect(0, 0, sea.width, sea.height);
       seaInk.setTransform(1 / seaFactor, 0, 0, 1 / seaFactor, seaPad, seaPad);
+      if (config.seaGrid) drawSeaGrid(seaInk, {
+        width,
+        height,
+        cellWidth: grid.cellWidth,
+        cellHeight: grid.cellHeight,
+        scale: 1 / seaFactor,
+        offsetX: seaPad,
+        offsetY: seaPad,
+        opacity: config.opacity,
+        dark
+      });
       drawAtmosphere(seaInk, atmosphere, {
         width,
         height,
@@ -5670,7 +5752,36 @@
       stampSeaWraps(scene, projected, grid);
       shadeAtmosphere(atmosphere, grid, config);
       ink.save();
-      glassClipExterior(ink, panes, width, height);
+      glassClipExterior(
+        ink,
+        panes,
+        width,
+        height,
+        // The preview's full-canvas paper needs the exterior to cover the whole
+        // canvas, not only the letterboxed sea. Untransformed coordinates: the
+        // canvas device rectangle mapped back through the current transform.
+        viewport ? {
+          x: -offsetX / ratio,
+          y: -offsetY / ratio,
+          width: canvas.width / ratio,
+          height: canvas.height / ratio
+        } : null
+      );
+      if (config.seaGrid) drawSeaGrid(ink, {
+        width,
+        height,
+        cellWidth: grid.cellWidth,
+        cellHeight: grid.cellHeight,
+        scale: ratio,
+        offsetX,
+        offsetY,
+        // The settings preview letterboxes the conversation sea into a wider
+        // canvas. Only there does the paper continue past the logical sea; the
+        // conversation overlay covers its canvas exactly.
+        extend: Boolean(viewport),
+        opacity: config.opacity,
+        dark: document.body.hasAttribute("data-ds-dark-theme")
+      });
       const fade = readingLayout?.fade ?? null;
       const sceneryFade = readingLayout ? readingLayout.sceneryFade : (x, y) => attenuation(x, y, width, height, config.quietCenter);
       const scenery = {
@@ -6387,7 +6498,7 @@
         { id: "appearance", fields: ["renderStyle", "fillMode", "text", "color", "opacity", "glyphSize"] },
         { id: "school", fields: ["species", "count", "whaleSize", "speed", "activity", "dictationEcho", "spout"] },
         { id: "reading", fields: ["readingEffect", "glass", "glassStrength", "quietCenter", "composerAvoid"] },
-        { id: "sea", fields: ["wind", "clouds", "ripples", "rain", "rainIntensity"] }
+        { id: "sea", fields: ["seaGrid", "wind", "clouds", "ripples", "rain", "rainIntensity"] }
       ];
       return h(
         "form",
@@ -6629,7 +6740,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       readingGroup: "Reading & glass",
       readingDescription: "Text effects and card glass are independent. Both can be turned off.",
       seaGroup: "Sea & weather",
-      seaDescription: "Choose wind, clouds, swimming wakes and rain.",
+      seaDescription: "Choose the squared sea, wind, clouds, swimming wakes and rain.",
       advancedGroup: "Advanced settings",
       unsavedDraft: "Unsaved changes, shown in the preview only",
       savedDraft: "Changes preview immediately. Save to apply to the background.",
@@ -6690,6 +6801,8 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       pauseOnScrollHint: "Off by default: the school keeps swimming while you scroll and the text mask follows the new positions. When on, scrolling hides the decorative layer at once and freezes the simulation; about 140 ms after the last scroll it measures once and fades back in, so a soft mask can never lag behind moving text.",
       ripples: "Swimming wakes and splashes",
       ripplesHint: "Swimming and gliding leave an ASCII wake that spreads and fades along the trail. Strong tail strokes add a brief splash. Submerged whales stop making new wakes.",
+      seaGrid: "Squared sea",
+      seaGridHint: "A faint frame around every character cell fills the whole sea, and the whale tiles share the same lattice; the grid fades with background concentration. On by default.",
       save: "Save",
       saving: "Saving…",
       reset: "Restore defaults",
@@ -6743,7 +6856,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       readingGroup: "阅读与玻璃",
       readingDescription: "文字效果与卡片玻璃分别控制，均可关闭。",
       seaGroup: "海面与天气",
-      seaDescription: "按喜好开关风纹、云影、尾流和雨水。",
+      seaDescription: "按喜好开关方格、风纹、云影、尾流和雨水。",
       advancedGroup: "高级设置",
       unsavedDraft: "有未保存的调整，仅在预览中显示",
       savedDraft: "调整会即时预览，保存后应用到背景",
@@ -6804,6 +6917,8 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       pauseOnScrollHint: "默认关闭，滚动时鲸群继续巡游，文字遮罩随位置刷新。开启后滚动即刻隐去装饰层并暂停仿真，停手约 140 毫秒后按新位置测量一次再淡入恢复，可避免柔边遮罩跟不上移动中的文字。",
       ripples: "游动尾流与水花",
       ripplesHint: "游过后留下逐渐展开、消散的 ASCII 尾流，滑行也有；用力拍尾时带少量碎水。潜入水下后停止生成新尾流。",
+      seaGrid: "海面方格",
+      seaGridHint: "整片海面按字格铺满浅色方格，鲸体的字格与它共用同一套格线；方格随背景浓度一起变淡。默认开启。",
       save: "保存",
       saving: "保存中…",
       reset: "恢复默认值",

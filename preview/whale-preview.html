@@ -22,8 +22,8 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
 <article class="card"><h2>彩色字格 · 自定义文字</h2><canvas data-style="cells" data-fill="custom" aria-label="彩色字格自定义文字"></canvas><p>文字仍是原文，格子底色显示背部、侧身和鳍尾的深浅。</p></article>
 <article class="card"><h2>纯字符 · ASCII</h2><canvas data-style="glyphs" data-fill="ascii" aria-label="纯字符ASCII"></canvas><p>按明暗选择疏密不同的符号，使用等宽字体。</p></article>
 <article class="card"><h2>彩色字格 · ASCII</h2><canvas data-style="cells" data-fill="ascii" aria-label="彩色字格ASCII"></canvas><p>先绘深浅底格，再叠加 ASCII 字符，接近参考截图的构成。</p></article>
-</div><section><h2>巡游与内容框毛玻璃预览</h2><p>在「文字边缘效果」中选择关闭、微光、柔和模糊或毛玻璃。微光让鲸鱼隐去，模糊与毛玻璃保留文字背后的连续鲸影，关闭内容框毛玻璃也能使用。开启「内容框毛玻璃」后，消息卡片、输入框和右侧栏显示模糊鲸影，右侧栏的鲸影更淡。可在右侧输入备注、点击按钮检查交互。数量、大小和速度会更新同一群鲸鱼。「鱼群避让输入框」让鲸鱼绕开输入框，与内容框毛玻璃互斥。「海上落雨」与雨量控制细雨到密雨，雨向随海面风纹偏转；雨落海后的涟漪独立于游动尾流。实际插件保存设置后生效。</p>
-<div class="controls"><label>配色<select id="color"><option value="ocean">深海蓝</option><option value="azure">晴空蓝</option><option value="indigo">靛蓝</option><option value="rainbow">每鲸随机色</option></select></label><label>状态演示<select id="activityScene"><option value="none">自由巡游</option><option value="running">会话工作中</option><option value="team">子代理与后台任务</option><option value="waiting">等待你处理</option><option value="completed">后台任务完成</option><option value="failed">后台任务失败</option></select></label><label>渲染样式<select id="renderStyle"><option value="glyphs">纯字符</option><option value="cells" selected>彩色字格</option></select></label><label>填充内容<select id="fillMode"><option value="custom">自定义文字</option><option value="ascii" selected>ASCII</option></select></label><label>鱼身文字<input id="text" type="text" value="探索未至之境" maxlength="40"></label><label>鲸类<select id="species"><option value="mixed">混合鲸群</option><option value="blue">蓝鲸</option><option value="humpback">座头鲸</option><option value="sperm">抹香鲸</option><option value="fin">长须鲸</option><option value="bowhead">弓头鲸</option></select></label><label class="slider">数量<input id="count" type="range" min="1" max="8" step="1" value="3"><output id="countOut" for="count">3</output></label><label class="slider">鲸鱼大小<input id="whaleSize" type="range" min="0.55" max="1.55" step="0.05" value="1"><output id="whaleSizeOut" for="whaleSize">1.00</output></label><label class="slider">速度<input id="speed" type="range" min="0.3" max="2" step="0.05" value="0.65"><output id="speedOut" for="speed">0.65</output></label><label>文字边缘效果<select id="readingEffect"><option value="none">关闭</option><option value="glow">微光</option><option value="blur">柔和模糊</option><option value="frost" selected>毛玻璃</option></select></label><label><input id="glass" type="checkbox" checked>内容框毛玻璃</label><label><input id="dark" type="checkbox">深色背景</label><label><input id="composerAvoid" type="checkbox">鱼群避让输入框</label><label><input id="activity" type="checkbox" checked>跟随任务状态</label><label><input id="ripples" type="checkbox" checked>游动尾流与水花</label><label><input id="wind" type="checkbox" checked>海面风纹</label><label><input id="clouds" type="checkbox" checked>掠海云影</label><label><input id="rain" type="checkbox">海上落雨</label><label class="slider">雨量<input id="rainIntensity" type="range" min="0" max="1" step="0.01" value="0.45"><output id="rainIntensityOut" for="rainIntensity">45%</output></label><label><input id="pauseOnScroll" type="checkbox">滚动时暂停渲染</label><button id="pause" type="button">暂停</button> <span id="status" role="status"></span></div>
+</div><section><h2>巡游与内容框毛玻璃预览</h2><p>在「文字边缘效果」中选择关闭、微光、柔和模糊或毛玻璃。微光让鲸鱼隐去，模糊与毛玻璃保留文字背后的连续鲸影，关闭内容框毛玻璃也能使用。开启「内容框毛玻璃」后，消息卡片、输入框和右侧栏显示模糊鲸影，右侧栏的鲸影更淡。可在右侧输入备注、点击按钮检查交互。数量、大小和速度会更新同一群鲸鱼。「鱼群避让输入框」让鲸鱼绕开输入框，与内容框毛玻璃互斥。「海上落雨」与雨量控制细雨到密雨，雨向随海面风纹偏转；雨落海后的涟漪独立于游动尾流。「海面方格」给整片海面铺上与鲸体同源的浅色格线，浓度随背景浓度变化。实际插件保存设置后生效。</p>
+<div class="controls"><label>配色<select id="color"><option value="ocean">深海蓝</option><option value="azure">晴空蓝</option><option value="indigo">靛蓝</option><option value="rainbow">每鲸随机色</option></select></label><label>状态演示<select id="activityScene"><option value="none">自由巡游</option><option value="running">会话工作中</option><option value="team">子代理与后台任务</option><option value="waiting">等待你处理</option><option value="completed">后台任务完成</option><option value="failed">后台任务失败</option></select></label><label>渲染样式<select id="renderStyle"><option value="glyphs">纯字符</option><option value="cells" selected>彩色字格</option></select></label><label>填充内容<select id="fillMode"><option value="custom">自定义文字</option><option value="ascii" selected>ASCII</option></select></label><label>鱼身文字<input id="text" type="text" value="探索未至之境" maxlength="40"></label><label>鲸类<select id="species"><option value="mixed">混合鲸群</option><option value="blue">蓝鲸</option><option value="humpback">座头鲸</option><option value="sperm">抹香鲸</option><option value="fin">长须鲸</option><option value="bowhead">弓头鲸</option></select></label><label class="slider">数量<input id="count" type="range" min="1" max="8" step="1" value="3"><output id="countOut" for="count">3</output></label><label class="slider">鲸鱼大小<input id="whaleSize" type="range" min="0.55" max="1.55" step="0.05" value="1"><output id="whaleSizeOut" for="whaleSize">1.00</output></label><label class="slider">速度<input id="speed" type="range" min="0.3" max="2" step="0.05" value="0.65"><output id="speedOut" for="speed">0.65</output></label><label>文字边缘效果<select id="readingEffect"><option value="none">关闭</option><option value="glow">微光</option><option value="blur">柔和模糊</option><option value="frost" selected>毛玻璃</option></select></label><label><input id="glass" type="checkbox" checked>内容框毛玻璃</label><label><input id="dark" type="checkbox">深色背景</label><label><input id="composerAvoid" type="checkbox">鱼群避让输入框</label><label><input id="activity" type="checkbox" checked>跟随任务状态</label><label><input id="ripples" type="checkbox" checked>游动尾流与水花</label><label><input id="wind" type="checkbox" checked>海面风纹</label><label><input id="clouds" type="checkbox" checked>掠海云影</label><label><input id="seaGrid" type="checkbox" checked>海面方格</label><label><input id="rain" type="checkbox">海上落雨</label><label class="slider">雨量<input id="rainIntensity" type="range" min="0" max="1" step="0.01" value="0.45"><output id="rainIntensityOut" for="rainIntensity">45%</output></label><label><input id="pauseOnScroll" type="checkbox">滚动时暂停渲染</label><button id="pause" type="button">暂停</button> <span id="status" role="status"></span></div>
 <div class="stage" id="stage" data-conversation-scroll><div class="flow" data-chat-flow><article class="reading-prose"><h3>鲸鱼从文字旁经过</h3><p>这段正文没有卡片背景。切换文字边缘效果，可以比较微光的隐去效果，以及模糊、毛玻璃保留的连续鲸影。关闭内容框毛玻璃也能比较。</p></article><article class="msg-card msg-card--mid"><h3>五种鲸类</h3><p>蓝鲸、座头鲸、抹香鲸、长须鲸、弓头鲸各有自己的头型、胸鳍与尾叶；拖动数量与大小可以对比它们在同一片海里的比例。</p></article><article class="msg-card msg-card--narrow"><h3>鱼群避让输入框</h3><p>另一选项：鲸鱼把输入框当成障碍绕开，不再从框内穿过。与内容框毛玻璃二选一。</p></article></div><div class="composer-seat" data-composer-seat><div class="composer-card" data-composer-card>给鲸鱼发一条消息，按 Enter 发送<span class="composer-note">预览用假输入框：座位 [data-composer-seat] 与卡片 [data-composer-card] 的结构和实际 DSH 一致</span></div></div><aside class="rightbar-preview" data-rightbar-col><div class="rightbar-panel"><h3>任务详情</h3><p>鲸影从磨砂玻璃后缓缓经过，侧栏中的文字保持清晰。</p><small>当前会话</small><p>文字蓝鲸 · 阅读体验</p><hr><label for="sidebarNote">任务备注</label><input id="sidebarNote" type="text" placeholder="在这里输入备注"><button type="button" onclick="this.textContent=this.textContent==='已标记'?'标记为已读':'已标记'">标记为已读</button><hr><small>正文与侧栏都可以正常选择文字、点击和输入。</small></div></aside><canvas id="live" aria-label="鲸鱼巡游动态预览"></canvas></div>
 <p class="hint">使用插件的正式渲染器：控件变化只调用 update()，不重建画布；暂停冻结最后一帧，恢复后从原地继续。系统减少动态效果时显示静态姿态，页面在后台时暂停。</p>
 <p class="hint">鲸鱼大小只改体长：0.55 约半身，1.00 默认，1.55 最大。内容框毛玻璃与鱼群避让二选一：开一个会自动关掉另一个。独立预览不替代实际 DSH 窗口的最终观感。</p></section><p class="hint">原版字格研究见 ASCII-RENDER-NOTES.md，鲸类图片依据见 WHALE-REFERENCES.md。</p></main>
@@ -1810,6 +1810,10 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     composerAvoid: { kind: "boolean", default: false },
     spout: { kind: "boolean", default: true },
     ripples: { kind: "boolean", default: true },
+    // The squared sea: a hairline frame around every water cell, aligned with the
+    // tiles the bodies occupy. On by default — it is the surface the school swims
+    // on, not an occasional weather effect.
+    seaGrid: { kind: "boolean", default: true },
     wind: { kind: "boolean", default: true },
     clouds: { kind: "boolean", default: true },
     rain: { kind: "boolean", default: false },
@@ -2387,10 +2391,11 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     ctx.arcTo(x, y, x + radius, y, radius);
     ctx.closePath();
   }
-  function glassClipExterior(ctx, panes, width, height) {
+  function glassClipExterior(ctx, panes, width, height, extent = null) {
+    const bounds = extent || { x: 0, y: 0, width, height, radius: 0 };
     for (const pane of panes) {
       ctx.beginPath();
-      glassRoundedSubpath(ctx, { x: 0, y: 0, width, height, radius: 0 });
+      glassRoundedSubpath(ctx, { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, radius: 0 });
       glassRoundedSubpath(ctx, pane);
       ctx.clip("evenodd");
     }
@@ -4625,6 +4630,72 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     return { paint, detach };
   }
 
+  // src/sea-grid.js
+  var SEA_GRID_INK = Object.freeze({ light: [36, 54, 70], dark: [203, 219, 236] });
+  var SEA_GRID_ALPHA = Object.freeze({ light: 0.105, dark: 0.075 });
+  var SEA_GRID_BASE_OPACITY = 0.6;
+  var SEA_GRID_MAX_ALPHA = 0.16;
+  var gridFinite = (value, fallback) => Number.isFinite(value) ? value : fallback;
+  var gridClamp = (value, low, high) => value < low ? low : value > high ? high : value;
+  function seaGridAlpha(opacity = SEA_GRID_BASE_OPACITY, dark = false) {
+    const concentration = gridClamp(gridFinite(opacity, SEA_GRID_BASE_OPACITY), 0, 1);
+    const base = dark ? SEA_GRID_ALPHA.dark : SEA_GRID_ALPHA.light;
+    return gridClamp(base * (concentration / SEA_GRID_BASE_OPACITY), 0, SEA_GRID_MAX_ALPHA);
+  }
+  function drawSeaGrid(target, options = {}) {
+    const width = Math.max(0, gridFinite(options.width, 0));
+    const height = Math.max(0, gridFinite(options.height, 0));
+    const cellWidth = gridFinite(options.cellWidth, 0);
+    const cellHeight = gridFinite(options.cellHeight, 0);
+    const scale = Math.max(0.05, gridFinite(options.scale, 1));
+    const offsetX = gridFinite(options.offsetX, 0);
+    const offsetY = gridFinite(options.offsetY, 0);
+    const alpha = seaGridAlpha(options.opacity, options.dark === true);
+    const result = { lines: 0, alpha };
+    if (!target || typeof target.beginPath !== "function" || typeof target.moveTo !== "function" || typeof target.lineTo !== "function" || typeof target.stroke !== "function") return result;
+    if (!(width > 0 && height > 0) || !(cellWidth >= 2 && cellHeight >= 2)) return result;
+    if (!(alpha > 1e-3)) return result;
+    const ink = options.dark === true ? SEA_GRID_INK.dark : SEA_GRID_INK.light;
+    const canvas = options.extend === true ? target.canvas : null;
+    const extend = Boolean(canvas && canvas.width > 1 && canvas.height > 1);
+    const left = extend ? 0.5 : Math.round(offsetX) + 0.5;
+    const top = extend ? 0.5 : Math.round(offsetY) + 0.5;
+    const right = extend ? canvas.width - 0.5 : Math.round(offsetX + width * scale) - 0.5;
+    const bottom = extend ? canvas.height - 0.5 : Math.round(offsetY + height * scale) - 0.5;
+    if (!(right > left && bottom > top)) return result;
+    const stepX = cellWidth * scale, stepY = cellHeight * scale;
+    const firstColumn = extend ? Math.floor((left - offsetX) / stepX) - 1 : 1;
+    const lastColumn = extend ? Math.ceil((right - offsetX) / stepX) + 1 : Math.ceil((width - 0.01) / cellWidth) - 1;
+    const firstRow = extend ? Math.floor((top - offsetY) / stepY) - 1 : 1;
+    const lastRow = extend ? Math.ceil((bottom - offsetY) / stepY) + 1 : Math.ceil((height - 0.01) / cellHeight) - 1;
+    target.save?.();
+    target.setTransform?.(1, 0, 0, 1, 0, 0);
+    target.beginPath();
+    for (let column = firstColumn; column <= lastColumn; column++) {
+      const x = Math.round(offsetX + column * cellWidth * scale) + 0.5;
+      if (x <= left || x >= right) continue;
+      target.moveTo(x, top);
+      target.lineTo(x, bottom);
+      result.lines++;
+    }
+    for (let row = firstRow; row <= lastRow; row++) {
+      const y = Math.round(offsetY + row * cellHeight * scale) + 0.5;
+      if (y <= top || y >= bottom) continue;
+      target.moveTo(left, y);
+      target.lineTo(right, y);
+      result.lines++;
+    }
+    if (!result.lines) {
+      target.restore?.();
+      return result;
+    }
+    target.lineWidth = 1;
+    target.strokeStyle = `rgba(${ink[0]}, ${ink[1]}, ${ink[2]}, ${alpha.toFixed(4)})`;
+    target.stroke();
+    target.restore?.();
+    return result;
+  }
+
   // src/foreground.js
   var MEDIA_TAGS = /* @__PURE__ */ new Set(["IMG", "VIDEO", "IFRAME", "OBJECT", "EMBED", "CANVAS"]);
   var MAX_VISIT = 6e3;
@@ -5090,7 +5161,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
   var PALETTE_KEYS = Object.freeze(["color"]);
   var GLASS_KEYS = Object.freeze(["glass", "glassStrength", "readingEffect"]);
   var COMPOSER_KEYS = Object.freeze(["composerGlass", "composerAvoid"]);
-  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "wind", "clouds", "rain", "rainIntensity", "activity", "dictationEcho", "pauseOnScroll"]);
+  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "seaGrid", "wind", "clouds", "rain", "rainIntensity", "activity", "dictationEcho", "pauseOnScroll"]);
   var anyChanged = (keys, previous, next) => keys.some((key) => previous[key] !== next[key]);
   var noChange = (changes) => !changes.scene && !changes.metrics && !changes.palette && !changes.glass && !changes.composer && !changes.live;
   function diffWhaleConfig(previous, next) {
@@ -5353,6 +5424,17 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       seaInk.setTransform(1, 0, 0, 1, 0, 0);
       seaInk.clearRect(0, 0, sea.width, sea.height);
       seaInk.setTransform(1 / seaFactor, 0, 0, 1 / seaFactor, seaPad, seaPad);
+      if (config.seaGrid) drawSeaGrid(seaInk, {
+        width,
+        height,
+        cellWidth: grid.cellWidth,
+        cellHeight: grid.cellHeight,
+        scale: 1 / seaFactor,
+        offsetX: seaPad,
+        offsetY: seaPad,
+        opacity: config.opacity,
+        dark
+      });
       drawAtmosphere(seaInk, atmosphere, {
         width,
         height,
@@ -5496,7 +5578,36 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       stampSeaWraps(scene, projected, grid);
       shadeAtmosphere(atmosphere, grid, config);
       ink.save();
-      glassClipExterior(ink, panes, width, height);
+      glassClipExterior(
+        ink,
+        panes,
+        width,
+        height,
+        // The preview's full-canvas paper needs the exterior to cover the whole
+        // canvas, not only the letterboxed sea. Untransformed coordinates: the
+        // canvas device rectangle mapped back through the current transform.
+        viewport ? {
+          x: -offsetX / ratio,
+          y: -offsetY / ratio,
+          width: canvas.width / ratio,
+          height: canvas.height / ratio
+        } : null
+      );
+      if (config.seaGrid) drawSeaGrid(ink, {
+        width,
+        height,
+        cellWidth: grid.cellWidth,
+        cellHeight: grid.cellHeight,
+        scale: ratio,
+        offsetX,
+        offsetY,
+        // The settings preview letterboxes the conversation sea into a wider
+        // canvas. Only there does the paper continue past the logical sea; the
+        // conversation overlay covers its canvas exactly.
+        extend: Boolean(viewport),
+        opacity: config.opacity,
+        dark: document.body.hasAttribute("data-ds-dark-theme")
+      });
       const fade = readingLayout?.fade ?? null;
       const sceneryFade = readingLayout ? readingLayout.sceneryFade : (x, y) => attenuation(x, y, width, height, config.quietCenter);
       const scenery = {
@@ -5927,6 +6038,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       composerAvoid: el("composerAvoid").checked,
       ripples: el("ripples").checked,
       activity: el("activity").checked,
+      seaGrid: el("seaGrid").checked,
       wind: el("wind").checked,
       clouds: el("clouds").checked,
       rain: el("rain").checked,
@@ -6023,7 +6135,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     paused = !paused;
     apply();
   });
-  for (const id of ["glass", "composerAvoid", "ripples", "activity", "wind", "clouds", "rain", "pauseOnScroll"]) {
+  for (const id of ["glass", "composerAvoid", "ripples", "activity", "seaGrid", "wind", "clouds", "rain", "pauseOnScroll"]) {
     el(id).addEventListener("change", () => changeOption(id, el(id).checked));
   }
   var sampleObserver = new ResizeObserver(scheduleSamples);

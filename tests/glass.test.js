@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { glassRoundedPath, glassRoundedSubpath, glassTone, glassDistance, glassContains, glassEdgeFade } from '../src/glass.js';
+import { glassRoundedPath, glassRoundedSubpath, glassClipExterior, glassTone, glassDistance, glassContains, glassEdgeFade } from '../src/glass.js';
 import { normalizeConfig, FIELDS, DEFAULTS } from '../src/model.js';
 
 test('frost strength grows the blur and the fog together, monotonically', () => {
@@ -99,6 +99,36 @@ test('rounded subpaths append to one path, so panes can share a single union cli
   assert.equal(log.filter(entry => entry === 'move').length, 2, 'one subpath start per pane');
   assert.equal(log.filter(entry => entry === 'arc').length, 8, 'four corner arcs per pane');
   assert.equal(log.filter(entry => entry === 'close').length, 2);
+});
+
+test('the pane exterior clip can be widened to the whole preview canvas', () => {
+  const recorder = () => {
+    const calls = { moves: [], clips: [] };
+    return {
+      calls,
+      beginPath() {},
+      moveTo(x, y) { calls.moves.push([x, y]); },
+      lineTo() {}, arcTo() {}, closePath() {},
+      clip(rule) { calls.clips.push(rule); },
+    };
+  };
+  const pane = { x: 40, y: 30, width: 200, height: 120, radius: 12 };
+  // The conversation overlay keeps the historical canvas-sized exterior.
+  const sea = recorder();
+  glassClipExterior(sea, [pane], 300, 200);
+  assert.deepEqual(sea.calls.clips, ['evenodd']);
+  assert.deepEqual(sea.calls.moves[0], [0, 0]);
+  assert.deepEqual(sea.calls.moves[1], [52, 30], 'the pane follows the exterior rectangle');
+  // The letterboxed settings preview passes the real canvas rectangle instead,
+  // so the paper can continue outside the logical sea.
+  const preview = recorder();
+  glassClipExterior(preview, [pane], 300, 200, { x: -50, y: -20, width: 500, height: 300 });
+  assert.deepEqual(preview.calls.moves[0], [-50, -20]);
+  assert.deepEqual(preview.calls.moves[1], [52, 30]);
+  // Without panes there is nothing to exclude and no clip is issued at all.
+  const open = recorder();
+  glassClipExterior(open, [], 300, 200);
+  assert.equal(open.calls.clips.length, 0);
 });
 
 test('rounded shape tests agree at the corners, so no glyph falls between layers', () => {
