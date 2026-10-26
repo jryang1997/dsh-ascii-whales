@@ -48,7 +48,7 @@ Or install the release tarball through the plugin manager:
 2. Install the file through the DSH plugin manager.
 3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
-The current published package is [v0.15.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.15.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). All clips on this page use the light theme with the sidebar hidden: the cruise and rain clips are real DSH page recordings, while the dive, fluke and task-activity clips render a single whale with the same renderer so the motion stays readable (glyphs, custom text and a random color per whale).
+The current published package is [v1.0.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v1.0.0). The full history is in the [changelog](./CHANGELOG.md). All clips on this page use the light theme with the sidebar hidden: the cruise and rain clips are real DSH page recordings, while the dive, fluke and task-activity clips render a single whale with the same renderer so the motion stays readable (glyphs, custom text and a random color per whale).
 
 ## Features
 
