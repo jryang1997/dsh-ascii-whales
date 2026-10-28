@@ -43,9 +43,9 @@ const baseline = () => normalizeConfig(DEFAULTS);
 const ALTERNATIVES = Object.freeze({
   enabled: false, resourceMode: 'economy', count: 5, species: 'blue', renderStyle: 'cells', fillMode: 'ascii',
   text: '深海蓝鲸', speed: 1.1, opacity: 0.7, glyphSize: 13, whaleSize: 1.2,
-  color: 'azure', activity: false, quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
+  color: 'azure', activity: false, dictationEcho: false, quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
   readingEffect: 'glow', composerGlass: true, composerAvoid: true, spout: false, ripples: false, wind: false, clouds: false,
-  rain: true, rainIntensity: 0.8, pauseOnScroll: true,
+  rain: true, rainIntensity: 0.8, pauseOnScroll: true, seaGrid: false,
 });
 
 const GROUP_OF = Object.freeze({
@@ -54,7 +54,7 @@ const GROUP_OF = Object.freeze({
   palette: ['color'],
   glass: ['glass', 'glassStrength', 'readingEffect'],
   composer: ['composerGlass', 'composerAvoid'],
-  live: ['resourceMode', 'speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'pauseOnScroll'],
+  live: ['resourceMode', 'speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'seaGrid', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll'],
 });
 const GROUPS = Object.keys(GROUP_OF);
 
@@ -591,7 +591,9 @@ test('content glass gives every card a pane and fades the sharp glyphs inside it
   install();
   t.after(restore);
   // Cloud shadows have independent Canvas buffers; count the glass buffers alone.
-  const config = normalizeConfig({ ...DEFAULTS, composerAvoid: false, clouds: false });
+  // The squared sea is a separate layer whose hairlines are not glass strokes,
+  // so it is off here to keep the pane accounting exact.
+  const config = normalizeConfig({ ...DEFAULTS, composerAvoid: false, clouds: false, seaGrid: false });
   const layer = createWhaleLayer(canvas(), config);
   // One shared sea buffer plus its blurred copy: two offscreen canvases, no more.
   assert.equal(stats.createCanvas, 2, 'the shared sea and its blur buffer are allocated once');
@@ -801,5 +803,40 @@ for (const material of [
     assert.ok(drawn.every(point => point.exteriorDepth === panes), 'sharp whale commands use the actual pane clip');
     assert.ok(stats.blurCopies > 0 && stats.paneImages > 0, 'recognized panels use the actual blurred-sea pipeline');
   } finally { layer.dispose(); }
+});
+
+
+test('dictation repaints in place and the voice swell only paints while recording', t => {
+  const card = { left: 100, top: 400, width: 600, height: 120 };
+  const { stats, drawn, canvas, raf, canvases, install, restore } = harness({ composerRect: card });
+  install();
+  t.after(restore);
+  const config = normalizeConfig({ ...DEFAULTS, glass: false, composerAvoid: false, wind: false,
+    clouds: false, ripples: false, spout: false, activity: false, text: '鲸' });
+  const layer = createWhaleLayer(canvas(), config);
+  assert.equal(stats.getContext, 1);
+  const swellGlyphs = new Set(['·', '˙', "'", ';', '~']);
+
+  // Idle and missing snapshots never create a second context or canvas.
+  layer.setDictation(null);
+  layer.setDictation({ schema: 1, seq: 0, phase: 'idle' }, () => 0);
+  assert.equal(stats.getContext, 1);
+  assert.equal(canvases.length, 1);
+
+  // Quiet raw microphone RMS must still paint from the measured composer anchor.
+  layer.setDictation({ schema: 1, seq: 1, phase: 'recording' }, () => 0.02);
+  for (let frame = 0; frame < 120; frame += 1) raf.step();
+  assert.ok(drawn.some(point => swellGlyphs.has(point.glyph)), 'the voice swell reaches the canvas');
+  assert.equal(stats.getContext, 1, 'the swell shares the layer context');
+
+  // Done calms the sea again; the school keeps its single layer.
+  layer.setDictation({ schema: 1, seq: 2, phase: 'done' }, () => 1);
+  for (let frame = 0; frame < 150; frame += 1) raf.step();
+  assert.equal(drawn.some(point => swellGlyphs.has(point.glyph)), false, 'the sea is calm after done');
+  assert.equal(canvases.length, 1);
+
+  // Disposing and then receiving a late snapshot must stay harmless.
+  layer.dispose();
+  layer.setDictation({ schema: 1, seq: 3, phase: 'recording' }, () => 1);
 });
 

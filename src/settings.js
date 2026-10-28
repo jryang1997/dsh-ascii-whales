@@ -4,6 +4,7 @@ import { PRESETS, matchPreset } from './presets.js';
 import { createWhaleLayer } from './engine.js';
 import { EMPTY_ACTIVITY, currentSessionId, readActivitySnapshot, createJobsBridge } from './activity.js';
 import { createActivityAnnouncer, createLegendPreference } from './activity-ui.js';
+import { createDictationBridge } from './dictation.js';
 
 /** The preview always shows the school, whatever the saved switches say. */
 function previewConfigOf(draft) {
@@ -58,6 +59,14 @@ export function registerWhales(ctx, React, dictionaries) {
         onFocus: event => { if (event.relatedTarget?.isConnected) returnFocus.current = event.relatedTarget; } }, t('activityLegendClose')));
   }
   ctx.inject?.(['jobs'], child => child.effect(() => jobs.attach(child.jobs)));
+  const dictation = createDictationBridge();
+  // The dictation service is optional the same way: when the other plugin is
+  // missing this child fiber never activates and the layer stays decorative.
+  ctx.inject?.(['dictation'], child => child.effect(() => dictation.attach(child.dictation)));
+  // A parked optional fiber does not prove the provider is absent. Keep semantic
+  // fallback listening throughout this plugin's lifetime; the attached service
+  // wins inside the bridge. Optional lookup supplies RMS without React updates.
+  ctx.effect(() => dictation.attachFallback(() => ctx.get?.('dictation')));
 
   /**
    * The canvas mounts exactly once and later changes are pushed through update().
@@ -69,14 +78,17 @@ export function registerWhales(ctx, React, dictionaries) {
    * So the layer lives for as long as the canvas node and only the update effect
    * reacts to configuration changes.
    */
-  function Canvas({ config, activity = EMPTY_ACTIVITY, onActivityChange }) {
+  function Canvas({ config, activity = EMPTY_ACTIVITY, dictation: dictationState = null, dictationLevel = () => 0, onActivityChange }) {
     const ref = React.useRef(null);
     const configRef = React.useRef(config);
     const activityRef = React.useRef(activity);
+    const dictationRef = React.useRef(dictationState);
+    const levelRef = React.useRef(dictationLevel);
     const layer = React.useRef(null);
     React.useEffect(() => {
       const instance = createWhaleLayer(ref.current, configRef.current, { onActivityChange });
       instance.setActivity(activityRef.current);
+      instance.setDictation(dictationRef.current, levelRef.current);
       layer.current = instance;
       return () => { instance.dispose(); layer.current = null; };
       // Mount-only on purpose: this effect owns the canvas, not the config.
@@ -89,6 +101,11 @@ export function registerWhales(ctx, React, dictionaries) {
       activityRef.current = activity;
       layer.current?.setActivity(activity);
     }, [activity]);
+    React.useEffect(() => {
+      dictationRef.current = dictationState;
+      levelRef.current = dictationLevel;
+      layer.current?.setDictation(dictationState, dictationLevel);
+    }, [dictationState, dictationLevel]);
     return h('canvas', { ref, 'aria-hidden': true, style: { display: 'block', width: '100%', height: '100%' } });
   }
 
@@ -184,7 +201,14 @@ export function registerWhales(ctx, React, dictionaries) {
     }, [list, statuses, jobSnapshot, language]);
     const activityKey = JSON.stringify(nextActivity);
     const activity = React.useMemo(() => nextActivity, [activityKey]);
+    const dictationSnapshot = React.useSyncExternalStore(dictation.subscribe, dictation.getSnapshot, dictation.getSnapshot);
     const scope = currentSessionId(list);
+    // A take belongs to one composer; the overlay is page-wide, so ignore another
+    // session's microphone. The switch is read here as well, so turning it off
+    // drops the directive without waiting for the simulation to notice.
+    const dictationState = config.dictationEcho
+      && (dictationSnapshot.sessionId === null || dictationSnapshot.sessionId === scope)
+      ? dictationSnapshot : null;
     const visible = snapshot.status === 'ready' && config.enabled && (panelId === null || panelId === 'conversation');
     React.useEffect(() => {
       jobs.watch(visible && config.activity ? scope : null);
@@ -202,7 +226,8 @@ export function registerWhales(ctx, React, dictionaries) {
     } },
     h('style', null, ACTIVITY_CSS),
     h('div', { 'aria-hidden': true, style: { position: 'absolute', inset: 0 } },
-      h(Canvas, { config, activity: config.activity ? activity : EMPTY_ACTIVITY, onActivityChange: receiveActivity })),
+      h(Canvas, { config, activity: config.activity ? activity : EMPTY_ACTIVITY,
+        dictation: dictationState, dictationLevel: dictation.level, onActivityChange: receiveActivity })),
     config.activity && h('aside', { className: 'aw-activity' },
       !legendDismissed && !legendPreference.seen && h(Legend, { onClose: () => {
         setLegendDismissed(true);
@@ -231,6 +256,9 @@ export function registerWhales(ctx, React, dictionaries) {
     const [saving, setSaving] = React.useState(false);
     const [notice, setNotice] = React.useState('');
     const [showLegend, setShowLegend] = React.useState(false);
+    // The switch is always visible, but its hint tells the truth when the other
+    // plugin is not installed. Presence is bridge state, not a settings field.
+    const dictationPresent = React.useSyncExternalStore(dictation.subscribePresence, dictation.hasProvider, dictation.hasProvider);
     const dirty = editor?.dirty ?? false;
     React.useEffect(() => {
       if (snapshot.status === 'ready' && !dirty) setEditor(createConfigEditor(snapshot));
@@ -320,15 +348,16 @@ export function registerWhales(ctx, React, dictionaries) {
           h('div', { className: 'aw-scale', 'aria-hidden': true },
             h('span', null, formatValue(key, field, field.min)), h('span', null, formatValue(key, field, field.max))));
       }
+      const copy = key === 'dictationEcho' && !dictationPresent ? 'dictationEchoUnavailable' : `${key}Hint`;
       return h('div', { className: `aw-row aw-row--${field.kind}`, key, 'data-aw-field': key },
         h('div', { className: 'aw-copy' }, h('div', { className: 'aw-row-heading' }, title, output),
-          h('p', { id: hint }, t(`${key}Hint`))), control);
+          h('p', { id: hint }, t(copy))), control);
     }
     const groups = [
       { id: 'appearance', fields: ['renderStyle', 'fillMode', 'color', 'opacity', 'glyphSize'] },
-      { id: 'school', fields: ['species', 'count', 'whaleSize', 'speed', 'spout'] },
+      { id: 'school', fields: ['species', 'count', 'whaleSize', 'speed', 'dictationEcho', 'spout'] },
       { id: 'reading', fields: ['readingEffect', 'glass', 'glassStrength', 'quietCenter', 'composerAvoid'] },
-      { id: 'sea', fields: ['wind', 'clouds', 'ripples', 'rain', 'rainIntensity'] },
+      { id: 'sea', fields: ['seaGrid', 'wind', 'clouds', 'ripples', 'rain', 'rainIntensity'] },
       { id: 'layout', fields: ['leftInset', 'pauseOnScroll'] },
     ];
     return h('form', { ref: viewportRef, className: 'aw-settings', onSubmit: save },

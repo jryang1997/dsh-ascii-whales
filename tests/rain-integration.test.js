@@ -60,7 +60,9 @@ test('built plugin and preview paint identical rain through intensity, wind and 
   const [client, previewHtml] = await Promise.all(['client.js', 'preview/whale-preview.html']
     .map(name => readFile(new URL(name, root), 'utf8')));
   const pair = createArtifactPair({ client, previewHtml }, { count: 1, rain: false,
-    glass: false, wind: false, clouds: false, ripples: false });
+    // The squared sea strokes its own cell lattice; this check accounts for
+    // rain strokes alone, so the base surface stays off in both entries.
+    glass: false, wind: false, clouds: false, ripples: false, seaGrid: false });
   t.after(() => pair.dispose());
   const check = () => {
     const frames = pair.snapshots();

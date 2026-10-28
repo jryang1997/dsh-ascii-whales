@@ -12,6 +12,9 @@ importers:
         specifier: 3.18.5
         version: 3.18.5
     devDependencies:
+      '@jryang1997/dsh-plugin-kit':
+        specifier: https://codeload.github.com/jryang1997/dsh-plugin-kit/tar.gz/refs/tags/v1.0.0
+        version: https://codeload.github.com/jryang1997/dsh-plugin-kit/tar.gz/refs/tags/v1.0.0
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -180,6 +183,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@jryang1997/dsh-plugin-kit@https://codeload.github.com/jryang1997/dsh-plugin-kit/tar.gz/refs/tags/v1.0.0':
+    resolution: {integrity: sha512-mxrFBl8hwmRLjScr10Q7X34KvLDJtR7pNwzuP5iItY5yXuTAri/YN+qcqGTYNZvlBiJLMvDwir6yC8Mm8zAMbA==, tarball: https://codeload.github.com/jryang1997/dsh-plugin-kit/tar.gz/refs/tags/v1.0.0}
+    version: 1.0.0
+    engines: {node: '>=20.19'}
+    hasBin: true
+
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -274,6 +283,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@jryang1997/dsh-plugin-kit@https://codeload.github.com/jryang1997/dsh-plugin-kit/tar.gz/refs/tags/v1.0.0': {}
 
   '@standard-schema/spec@1.1.0': {}
 

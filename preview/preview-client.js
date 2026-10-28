@@ -11,6 +11,9 @@ const readNumber = (id, min, max, fallback) => {
 };
 const twoDigits = value => Number(value).toFixed(2);
 let layer = null, paused = false, sampleFrame = 0;
+// Preview-only dictation driver: the capture harness pushes a contract snapshot
+// and a synthetic level, exactly like the real bridge service would.
+let dictationState = null, dictationLevel = 0;
 
 function readConfig() {
   return { ...DEFAULTS,
@@ -23,7 +26,7 @@ function readConfig() {
     readingEffect: el('readingEffect').value,
     opacity: 0.8, glass: el('glass').checked, quietCenter: false,
     composerAvoid: el('composerAvoid').checked, ripples: el('ripples').checked, activity: el('activity').checked,
-    wind: el('wind').checked, clouds: el('clouds').checked, rain: el('rain').checked,
+    seaGrid: el('seaGrid').checked, wind: el('wind').checked, clouds: el('clouds').checked, rain: el('rain').checked, dictationEcho: true,
     rainIntensity: readNumber('rainIntensity', 0, 1, DEFAULTS.rainIntensity),
     pauseOnScroll: el('pauseOnScroll').checked,
   };
@@ -69,7 +72,11 @@ function applyActivity() {
     { key: 'session:preview-agent', type: 'subagent', primary: false, label: '子代理', kind: 'running' }, job,
   ] : [])] });
 }
-function boot() { layer = createWhaleLayer(el('live'), readConfig()); applyActivity(); }
+function boot() {
+  layer = createWhaleLayer(el('live'), readConfig());
+  layer.setDictation(dictationState, () => dictationLevel);
+  applyActivity();
+}
 function disposeLayer() { layer?.dispose(); layer = null; }
 function changeOption(id, value) {
   const next = changeConfigDraft(readConfig(), id, value);
@@ -85,7 +92,7 @@ el('activityScene').addEventListener('change', applyActivity);
 el('whaleSize').addEventListener('input', scheduleSamples);
 el('dark').addEventListener('change', () => { apply(); scheduleSamples(); });
 el('pause').addEventListener('click', () => { paused = !paused; apply(); });
-for (const id of ['glass', 'composerAvoid', 'ripples', 'activity', 'wind', 'clouds', 'rain', 'pauseOnScroll']) {
+for (const id of ['glass', 'composerAvoid', 'ripples', 'activity', 'seaGrid', 'wind', 'clouds', 'rain', 'pauseOnScroll']) {
   el(id).addEventListener('change', () => changeOption(id, el(id).checked));
 }
 const sampleObserver = new ResizeObserver(scheduleSamples);
@@ -97,6 +104,15 @@ window.__previewTest = {
   size(value) { el('whaleSize').value = String(value); apply(); drawSamples(); },
   layerAlive: () => Boolean(layer),
   option(which, on) { changeOption(which === 'avoid' ? 'composerAvoid' : 'glass', Boolean(on)); },
+  // Drive the dictation easter egg without the real plugin: pass a contract
+  // snapshot (phase recording/processing/done) and a synthetic 0..1 level.
+  dictation(state = null, level = 0.8) {
+    dictationState = state && state.phase ? Object.freeze({ schema: 1, seq: 1, since: Date.now(),
+      sessionId: null, locked: false, cancelArmed: false, polishing: false, pending: false,
+      code: null, ...state }) : null;
+    dictationLevel = Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;
+    layer?.setDictation(dictationState, () => dictationLevel);
+  },
 };
 window.addEventListener('pagehide', () => {
   disposeLayer(); sampleObserver.disconnect();

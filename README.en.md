@@ -54,10 +54,10 @@ With 16 logical processors, divide these values by 16 for whole-machine normaliz
 Five whale species cruise, turn, and glide through the conversation page, seen from directly above. Their bodies consist of your text or ASCII characters chosen by shading. Whales are drawn locally, without image assets or external services.
 
 <p align="center">
-  <img src="./docs/images/cruise.gif" width="960" alt="Glyph whales cruising around the input box on an empty DeepSeek Harness page">
+  <img src="./docs/images/cruise.gif" width="960" alt="Glyph whales cruising across the squared sea on the DeepSeek Harness home page">
 </p>
 
-<p align="center"><sub>An empty conversation page in the desktop window. The whales swim around the input box. This is the running app.</sub></p>
+<p align="center"><sub>The DeepSeek Harness home page in the desktop window. The whales cruise across the squared sea. This is the running app.</sub></p>
 
 <p align="center">
   <img src="./docs/images/modes.png" width="960" alt="Four views of the same blue whale: glyphs or colored cells, each with custom text or ASCII">
@@ -79,13 +79,14 @@ Or install the release tarball through the plugin manager:
 2. Install the file through the DSH plugin manager.
 3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
-The current published package is [v0.14.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v0.14.0). Changes since 0.10.0 are in the [changelog](./CHANGELOG.md). The task-state clip is a simulated fixture from local integrated sources; it does not claim that v0.14.0 shipped these interactions. The existing cruise, dive, fluke, and rain clips are recordings of real DSH pages. Cruise uses the desktop window; the other clips use a source build after 0.14.0 with the dark theme, glyphs, custom text, and a random color per whale.
+The current published package is [v1.0.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v1.0.0). The full history is in the [changelog](./CHANGELOG.md). All clips on this page use the light theme with the sidebar hidden: the cruise and rain clips are real DSH page recordings, while the dive, fluke and task-activity clips render a single whale with the same renderer so the motion stays readable (glyphs, custom text and a random color per whale). The task-state GIF remains a simulated fixture from the local integrated sources; it does not claim that v1.0.0 shipped these interactions.
 
 ## Features
 
 - Form whales from Chinese characters, English text, or emoji. Leave the text blank to use the default phrase, `探索未至之境`.
 - Choose blue, humpback, sperm, fin, or bowhead whales, or let a mixed group swim together.
 - Draw glyphs alone for a lighter outline, or add colored cells to shade the back, flanks, flippers, and flukes.
+- A faint grid of character cells fills the whole sea, and the whale tiles sit on the same lattice. **Squared sea** can be switched off; it is on by default.
 - Adjust the count, body size, speed, opacity, and palette. Body size does not change swimming speed or tail-beat timing.
 - Apply saved settings while preserving the group's movement. Switching models keeps the whales swimming.
 - Version 0.14.0 adds sea-surface wind streaks and slow cloud shadows, each with its own switch. Whales leave through any edge and return on the opposite side, steering clear of obstacles there before they cross. See [atmosphere research](./docs/research/ATMOSPHERE-RESEARCH.md).
@@ -96,30 +97,42 @@ The current published package is [v0.14.0](https://github.com/jryang1997/dsh-asc
 ## Motion
 
 <p align="center">
-  <img src="./docs/images/dive.gif" width="960" alt="Real DSH dark page with whales swimming; one dives and returns nose first">
+  <img src="./docs/images/dive.gif" width="960" alt="Single-whale close-up: a humpback lifts its fluke, goes under and returns nose first">
 </p>
 
-<p align="center"><sub>Each whale picks its own moment to dive: the nose goes under first and the tail disappears last, then the nose returns first. Recorded from a real DSH page.</sub></p>
+<p align="center"><sub>One whale rendered on its own: the fluke lifts and disappears last, the whale keeps its course underwater, and the nose returns first.</sub></p>
 
 <p align="center">
-  <img src="./docs/images/tail.gif" width="960" alt="Real DSH dark page with whales beating their flukes and leaving a wake">
+  <img src="./docs/images/tail.gif" width="960" alt="Single-whale close-up: a humpback beats its flukes and leaves a widening wake">
 </p>
 
-<p align="center"><sub>Both fluke lobes beat up and down while the whale swims forward, leaving a widening wake. Glyphs, custom text and a random color per whale.</sub></p>
+<p align="center"><sub>One whale rendered on its own: both fluke lobes beat up and down, and the wake widens behind it. Glyphs and custom text.</sub></p>
 
 ## Rain
 
 <p align="center">
-  <img src="./docs/images/rain.gif" width="960" alt="Real DSH dark page with fine rain drifting in the wind over swimming whales">
+  <img src="./docs/images/rain.gif" width="960" alt="Real DSH light page with the sidebar hidden: fine rain drifting over swimming whales">
 </p>
 
-<p align="center"><sub>Streaks follow the slowly turning breeze and leave small splashes and short ripples where they land. The switch and intensity update in place.</sub></p>
+<p align="center"><sub>A real DSH light page with the sidebar hidden: streaks follow the slowly turning breeze and leave small splashes and short ripples where they land.</sub></p>
 
 Rain is off by default, with intensity from 0 to 1 and a default of 0.45. Streaks follow a slowly changing sea breeze and change length and speed by layer; turning the sea wind off returns them to vertical rain. Landing splashes and spreading ripples are separate from the swimming wake switch. Rain uses the same reading, media and glass protection, and pauses when the page is hidden, the effect is paused or the system asks for reduced motion.
 
+## Dictation echo
+
+<p align="center">
+  <img src="./docs/images/dictation-echo.gif" width="960" alt="Real DSH page: while holding the composer, the school gathers just above it and the sea follows the voice">
+</p>
+
+<p align="center"><sub>A real DSH recording from an earlier version, showing the dictation flow. It has not been re-recorded for the all-whale turning and live-amplitude corrections.</sub></p>
+
+Requires the [dsh-hold-to-dictate](https://github.com/jryang1997/dsh-hold-to-dictate) plugin. **Dictation echo** is on by default in settings and can be switched off; with only the whale plugin installed it does nothing. While a take records, every whale turns toward the composer and slowly approaches it; crowded layouts keep every whale responding as they wait for space. The sea rises and falls from the input box, with louder live speech producing a larger vertical amplitude; silence lets the surface settle. When the take finishes (done) the school disperses. Reduced motion never gathers or advances the swell.
+
+See the [dictation gather research](./docs/research/DICTATION-GATHER.md) for the design trade-offs; the cross-plugin contract lives in the producer's ADR.
+
 ## Whales around your conversation
 
-Text edge effect offers Off, Glow, Soft blur and Frosted glass, with Frosted glass as the default. Off leaves whales around text untreated. Glow clears them; blur and frost retain translucent silhouettes behind a paragraph. This choice is independent of the content-box glass switch. Settings start with a draft preview, followed by the scene preset, body text, task-following switch, and legend button. Appearance, Whales, Reading, Sea, and Layout controls are in Advanced settings, collapsed initially. While you scroll, the school keeps swimming and the text mask follows the new positions. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones.
+Text edge effect offers Off, Glow, Soft blur and Frosted glass, with Frosted glass as the default. Off leaves whales around text untreated. Glow clears them; blur and frost retain translucent silhouettes behind a paragraph. This choice is independent of the content-box glass switch. Settings start with a large live preview, followed by the first-level scene preset, body text, task-following switch and legend button; Appearance, Whales, Reading, Sea and Layout controls sit in Advanced settings, collapsed by default. Switches control booleans, buttons select modes, and sliders adjust numeric values. While you scroll, the school keeps swimming and the text mask follows the new positions. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones. The squared sea sits beneath the school and the cloud shadows, shares the same reading protection as the whales, fades with Background opacity, and has its own switch.
 
 **Pause rendering while scrolling** is under Advanced settings and is off by default. Turn it on and scrolling hides the decorative layer at once and freezes the simulation; about 140 ms after your last scroll it measures the new position once and fades back in — useful when a soft mask feels like it lags behind moving text.
 
@@ -150,7 +163,7 @@ For the input box, you can show blurred whale silhouettes or have the whales swi
 
 </details>
 
-The older reading and size screenshots use the Chinese UI and come from the standalone preview or simulated environments. The new settings fixtures cover both languages. The settings page itself follows the DSH UI language; its English and Simplified Chinese strings ship with the plugin. See [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
+The older reading and size screenshots use the Chinese UI and come from the standalone preview or simulated environments. The new settings fixtures cover both languages, and the settings screenshots below use the English UI. The settings page itself follows the DSH UI language; both English and Simplified Chinese strings ship with the plugin. See [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
 
 ## Settings
 
@@ -177,7 +190,7 @@ A preset or control changes only the draft and preview. **Save** applies it to t
 | Drawing style | Glyphs only, colored cells |
 | Fill content | Custom text, ASCII characters |
 | Whale colors | Ocean, Azure, Indigo, random color per whale |
-| Other switches | Show whales, Follow task activity, Quieter reading area |
+| Other switches | Show whales, Squared sea, Follow task activity, Dictation echo, Quieter reading area |
 
 Random color per whale assigns distinct hues from eight palettes and retains body shading. Painting, saving settings, resizing, and changing count, text, species or size preserve each whale's color. Reopening the background generates a new set.
 
@@ -192,6 +205,12 @@ Follow task activity is on by default. The first whale represents the current se
 | Missing capability or undetermined state | Unavailable or not-yet-known text, with no inferred idle or result |
 
 When there are more tracked tasks than whales, the first whale summarizes the extra count and the most urgent reminder. Disabling the switch restores decorative swimming. Reduced motion keeps the pose still while state changes update static badges. The plugin only reads published DSH state. It does not answer questions, approve operations or follow job output. Historical job results do not produce new badges when the background opens.
+
+<p align="center">
+  <img src="./docs/images/activity-en.gif" width="960" alt="Single-whale close-up: the badges ···, ! approval, ✓ build and × test appear in turn above the whale">
+</p>
+
+<p align="center"><sub>One whale rendered on its own: <code>···</code> while working, <code>!</code> while waiting for approval, <code>✓</code> on completion and <code>×</code> on failure; task names come from DSH.</sub></p>
 
 Custom text supports Chinese characters, English, emoji, and combined glyphs. Whitespace is ignored. The input limit is 40 UTF-16 code units, so some emoji use more than one unit. Switching to ASCII preserves your saved custom text.
 
@@ -218,7 +237,7 @@ The page includes all four rendering combinations and a live group of whales. Ch
 ```text
 src/             Implementation sources
 tests/           Tests and helpers/ adapters
-scripts/         Build, verification, and review tools
+scripts/         Build and preview generators (verification tooling is a devDependency)
 preview/         Standalone entry and generated page
 docs/research/   Research and design records
 docs/images/     Screenshots and clips
@@ -238,7 +257,9 @@ pnpm verify
 
 After changing browser sources, run `pnpm build` and `pnpm preview` to update both artifacts, then run `pnpm verify`. Verification checks committed output without rebuilding it, so stale artifacts fail. Test discovery recursively includes `*.test.js` under `tests/`, excluding hidden directories and `node_modules/`. It does not scan repository backups, reference projects, or worktree copies. GitHub Actions runs the same verification on Windows and Linux.
 
-`pnpm check` checks syntax; `pnpm test` runs tests. `pnpm --silent review:snapshot --base <ref>` outputs a JSON review inventory including untracked files. `pnpm --silent agent:probe` checks whether its process can read the entry files. See the [engineering guide](./docs/agents/engineering.md) for native-tool read preflight, review scope, and browser evidence requirements.
+Verification, packaging, and review share the dev dependency [@jryang1997/dsh-plugin-kit](https://github.com/jryang1997/dsh-plugin-kit) (pinned to tag v1.0.0, configured under `dshPluginKit` in [package.json](./package.json)): `pnpm check` runs manifest, locale, README, version, and syntax checks; `pnpm test` discovers and runs tests; `pnpm verify` checks static items, artifacts, the published tarball, the screenshots manifest, and tests. `pnpm --silent review:snapshot --base <ref>` outputs a JSON review inventory including untracked files. `pnpm --silent agent:probe` checks whether its process can read the entry files. See the [engineering guide](./docs/agents/engineering.md) for native-tool read preflight, review scope, and browser evidence requirements.
+
+The published tarball contains runtime files, `locale/`, the icon, README/CHANGELOG, and `docs/images/` plus `docs/research/`; the pack check rejects development paths such as `tests/`, `scripts/`, `preview/`, and `.node-version`. The kit is pinned through its v1.0.0 GitHub tarball; git access to GitHub is restricted on this machine, so the dependency uses a codeload URL instead of a `git+https` specifier.
 
 Package with `pnpm --config.ignore-scripts=true pack`.
 
@@ -256,7 +277,10 @@ Package with `pnpm --config.ignore-scripts=true pack`.
 | [engine.js](./src/engine.js) | Canvas drawing and updates in place |
 | [reading-layout.js](./src/reading-layout.js) | Shared glass, masks, and avoidance rules for conversation and demo cards |
 | [activity.js](./src/activity.js) | Published DSH state, stable task bindings, job subscriptions, and badges |
+| [dictation.js](./src/dictation.js) | Dictation bridge, gather band and slot geometry, breathing and easing |
+| [voice-sea.js](./src/voice-sea.js) | Voice-driven sea swell field and drawer |
 | [rain.js](./src/rain.js) | Wind-driven rain, intensity transitions, and impact ripples |
+| [sea-grid.js](./src/sea-grid.js) | Squared sea hairline lattice, theme ink, and device-pixel snapping |
 | [simulation.js](./src/simulation.js) | Scene adoption, resizing, and advancement of motion and sea effects |
 | [config-editor.js](./src/config-editor.js) | Draft rules, validation, differential saves, and revision conflicts |
 | [browser-build.mjs](./scripts/browser-build.mjs) | Shared browser artifact assembly and consistency checks |

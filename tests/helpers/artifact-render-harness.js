@@ -151,6 +151,7 @@ export function environment(html = '', initial = {}, seed = 42, reducedMotion = 
     },
   });
   const globals = { window, document, Math: math, performance: { now: () => clock.now }, devicePixelRatio: 1,
+    CustomEvent: class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
     requestAnimationFrame(callback) { const id = clock.next++; clock.queue.set(id, callback); return id; },
     cancelAnimationFrame(id) { clock.queue.delete(id); },
     setTimeout(callback, delay) { const id = clock.next++; clock.timers.set(id, { callback, due: clock.now + delay }); return id; },
@@ -333,6 +334,12 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
     return { getSnapshot: () => value, subscribe(callback) { listeners.add(callback); return () => listeners.delete(callback); },
       set(next) { value = next; for (const listener of [...listeners]) listener(); } };
   }
+  const dictationState = store({ schema: 1, seq: 0, phase: 'idle', since: 0, sessionId: null });
+  let dictationLevel = 0;
+  const dictationFace = { schema: 1, getSnapshot: dictationState.getSnapshot,
+    subscribe: dictationState.subscribe, level: () => dictationLevel };
+  const emitDictation = () => host.document.dispatchEvent({ type: 'dsh:dictation', detail: dictationState.getSnapshot() });
+  if (options.dictation) host.document.addEventListener('dsh:dictation:request', emitDictation);
   const activityList = store(options.activity?.list ?? { byId: {} });
   const activityStatuses = store(options.activity?.statuses ?? new Map());
   const activityJobs = store({ rows: options.activity?.rows ?? {} });
@@ -349,7 +356,12 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
     configForms: { get: () => form },
     locale: { register() {}, bind: () => key => key, subscribe: () => () => {}, getSnapshot: () => 'en' },
     effect,
+    get: name => options.dictation && name === 'dictation' ? dictationFace : undefined,
     inject(names, callback) {
+      if (names[0] === 'dictation' && options.dictation && options.dictation !== 'fallback') {
+        callback({ effect, dictation: dictationFace });
+        return;
+      }
       if (!options.activity || options.activity.jobsUnavailable || names[0] !== 'jobs') return;
       callback({ effect(callback) { detachJobs = effect(callback); return detachJobs; }, jobs: { state: activityJobs, watchRows(id) {
         watchedJobs.set(id, (watchedJobs.get(id) ?? 0) + 1);
@@ -423,6 +435,18 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
       if (next.rows) activityJobs.set({ rows: next.rows });
     },
     detachJobs() { detachJobs?.(); },
+    setDictation(next, level = dictationLevel) {
+      if (!options.dictation) throw new Error('Dictation provider adapter was not enabled');
+      dictationLevel = level;
+      const value = { ...dictationState.getSnapshot(), ...next };
+      dictationState.set(value);
+      emitDictation();
+      preview.window.__previewTest.dictation(value, level);
+    },
+    setDictationLevel(level) {
+      dictationLevel = level;
+      preview.window.__previewTest.dictation(dictationState.getSnapshot(), level);
+    },
     watchedJobs: () => [...watchedJobs.keys()],
     dispose() {
       adapter.dispose();

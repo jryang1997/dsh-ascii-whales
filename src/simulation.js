@@ -5,6 +5,8 @@ import { createAtmosphereField, resizeAtmosphereField, stepAtmosphere } from './
 import { createActivityTracker } from './activity.js';
 import { createRainField, resizeRainField, stepRain, resetRainField } from './rain.js';
 import { resourcePolicy } from './resource-policy.js';
+import { EMPTY_DICTATION, gatherActive, normalizeDictation } from './dictation.js';
+import { createVoiceSeaField, resetVoiceSeaField, stepVoiceSea } from './voice-sea.js';
 
 const sceneConfigKeys = Object.freeze(['count', 'text', 'species', 'whaleSize']);
 
@@ -12,6 +14,11 @@ const sceneConfigKeys = Object.freeze(['count', 'text', 'species', 'whaleSize'])
 export function sceneConfigChanged(previous = {}, next = {}) {
   return sceneConfigKeys.some(key => previous[key] !== next[key]);
 }
+
+const dictationAnchorOf = value => value && ['left', 'top', 'width', 'height']
+  .every(key => Number.isFinite(value[key])) && value.width > 0 && value.height > 0
+  ? { left: value.left, top: value.top, width: value.width, height: value.height }
+  : null;
 
 /** Owns the simulation clock, replacement ordering and surface effect history. */
 export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null, onActivityChange } = {}) {
@@ -28,12 +35,40 @@ export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null,
     activityVersion++;
     onActivityChange?.(value);
   } });
+  const voiceSea = createVoiceSeaField();
+  // Dictation is an externally driven UI state, not a task entity: it lives on
+  // the scene as a small directive the motion layer reads, and it never feeds
+  // the activity seats or badges.
+  let dictation = EMPTY_DICTATION;
+  let dictationAnchor = null;
+  let dictationLevel = () => 0;
+  let dictationEnabled = config.dictationEcho !== false;
+
+  /** Rebuild the scene directive while keeping the ease and slot cache alive. */
+  function applyDictation(previous = null) {
+    if (!scene) return;
+    const before = previous || scene.dictation || null;
+    scene.dictation = {
+      active: dictationEnabled && gatherActive(dictation),
+      anchor: dictationEnabled ? dictationAnchor : null,
+      composerAvoid: config.composerAvoid === true,
+      engage: before && Number.isFinite(before.engage) ? before.engage : 0,
+      slots: before ? before.slots : null,
+      layoutKey: before ? before.layoutKey : '',
+      level: 0,
+    };
+  }
+
+  applyDictation();
+
   return {
     get scene() { return scene; },
-    water, atmosphere, rain,
+    water, atmosphere, rain, voiceSea,
+    get dictation() { return dictation; },
     update(next) {
       if (disposed) return false;
       const rebuild = sceneConfigChanged(config, next);
+      const previousDictation = scene.dictation || null;
       if (rebuild) {
         const previous = scene;
         scene = createScene(next.count, next.text, next.species, next.whaleSize, previous.colorSeed);
@@ -46,6 +81,8 @@ export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null,
       }
       if (rebuild || config.ripples !== next.ripples) resetWaterField(water);
       config = { ...next };
+      dictationEnabled = config.dictationEcho !== false;
+      applyDictation(rebuild ? previousDictation : scene.dictation);
       activity.apply(scene.whales, activityTime, config.activity);
       return rebuild;
     },
@@ -56,6 +93,30 @@ export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null,
       activity.apply(scene.whales, activityTime, config.activity);
       return before !== activityVersion;
     },
+    setDictation(snapshot, levelSource) {
+      if (disposed) return;
+      const wasActive = gatherActive(dictation);
+      dictation = normalizeDictation(snapshot);
+      dictationLevel = typeof levelSource === 'function' ? levelSource : () => 0;
+      applyDictation(scene.dictation);
+      // Both events can arrive while hidden/paused, without an intervening tick.
+      // Every new take must plan from the current school, never a previous one.
+      if (!wasActive && gatherActive(dictation)) {
+        scene.dictation.layoutKey = '';
+        scene.dictation.slots = null;
+      }
+    },
+    setDictationAnchor(anchor) {
+      if (disposed) return;
+      const next = dictationAnchorOf(anchor);
+      if (next === null && dictationAnchor === null) return;
+      if (next !== null && dictationAnchor !== null
+        && next.left === dictationAnchor.left && next.top === dictationAnchor.top
+        && next.width === dictationAnchor.width && next.height === dictationAnchor.height) return;
+      dictationAnchor = next;
+      applyDictation(scene.dictation);
+    },
+    dictationLevel() { return disposed ? 0 : dictationLevel(); },
     resize(width, height) {
       if (disposed) return;
       resizeScene(scene, width, height);
@@ -82,9 +143,16 @@ export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null,
       stepAtmosphere(atmosphere, elapsed, metrics);
       stepRain(rain, elapsed, { enabled: config.rain, intensity: config.rainIntensity,
         wind: config.wind, atmosphere, metrics, integrationHz: policy.rainHz });
+      // The voice swell follows the same simulation clock; a disabled switch lets
+      // the live rings drain naturally instead of freezing them mid-swell.
+      stepVoiceSea(voiceSea, elapsed, dictationLevel(), {
+        enabled: dictationEnabled && dictation.phase === 'recording',
+        x: dictationAnchor ? dictationAnchor.left + dictationAnchor.width / 2 : 0,
+        y: dictationAnchor ? dictationAnchor.top + dictationAnchor.height / 2 : 0,
+        width: scene.width, height: scene.height });
       metrics?.end('advance', started);
       return elapsed;
     },
-    dispose() { disposed = true; resetWaterField(water); resetRainField(rain); scene = null; },
+    dispose() { disposed = true; resetWaterField(water); resetRainField(rain); resetVoiceSeaField(voiceSea); scene = null; dictationAnchor = null; dictationLevel = () => 0; },
   };
 }

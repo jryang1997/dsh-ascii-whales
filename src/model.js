@@ -18,6 +18,10 @@ export const FIELDS = Object.freeze({
   whaleSize: { kind: 'number', min: 0.55, max: 1.55, step: 0.05, default: 1 },
   color: { kind: 'enum', values: ['ocean', 'azure', 'indigo', 'rainbow'], default: 'ocean' },
   activity: { kind: 'boolean', default: true },
+  // Hold-to-talk decoration. On by default because it only does anything while
+  // the dictation plugin is installed and its bridge is live; that is what makes
+  // the easter egg discoverable, and the switch is still one click away.
+  dictationEcho: { kind: 'boolean', default: true },
   quietCenter: { kind: 'boolean', default: true },
   leftInset: { kind: 'number', min: 0, max: 500, step: 1, default: 280 },
   readingEffect: { kind: 'enum', values: ['none', 'glow', 'blur', 'frost'], default: 'frost' },
@@ -31,6 +35,10 @@ export const FIELDS = Object.freeze({
   composerAvoid: { kind: 'boolean', default: false },
   spout: { kind: 'boolean', default: true },
   ripples: { kind: 'boolean', default: true },
+  // The squared sea: a hairline frame around every water cell, aligned with the
+  // tiles the bodies occupy. On by default — it is the surface the school swims
+  // on, not an occasional weather effect.
+  seaGrid: { kind: 'boolean', default: true },
   wind: { kind: 'boolean', default: true },
   clouds: { kind: 'boolean', default: true },
   rain: { kind: 'boolean', default: false },
