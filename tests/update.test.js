@@ -5,19 +5,47 @@ import { adoptSceneState } from '../src/motion.js';
 import { createWhaleLayer, diffWhaleConfig, mountWhales } from '../src/engine.js';
 import { whaleSpecies } from '../src/species.js';
 import { createWhaleSimulation } from '../src/simulation.js';
+import { createWorkMetrics } from '../src/work-metrics.js';
 
 const close = (a, b, epsilon = 1e-9) => assert.ok(Math.abs(a - b) <= epsilon, `${a} differs from ${b}`);
+
+test('optional observation preserves seeded renderer output, reading masks and lifecycle', () => {
+  function render(observe) {
+    const env = harness();
+    env.install();
+    const metrics = createWorkMetrics();
+    const layer = createWhaleLayer(env.canvas(), { ...DEFAULTS, spout: false }, { seed: 42, metrics: observe ? metrics : null });
+    try {
+      for (let frame = 0; frame < 90; frame++) env.raf.step();
+      layer.setActivity({ entities: [] });
+      layer.update({ ...DEFAULTS, spout: false, opacity: 0.5 });
+      const result = { drawn: structuredClone(env.drawn), stats: { ...env.stats }, pending: env.raf.pending() };
+      layer.dispose();
+      const before = metrics.snapshot();
+      env.raf.step();
+      assert.deepEqual(metrics.snapshot(), before, 'disposed layers do no observed work');
+      return { result, sample: before };
+    } finally { layer.dispose(); env.restore(); }
+  }
+  const observed = render(true), control = render(false);
+  assert.deepEqual(observed.result, control.result);
+  assert.equal(observed.sample.counters.wakeup.count, 90);
+  assert.equal(observed.sample.counters.motionStep.count, 89);
+  assert.ok(observed.sample.counters.layout.count > 0);
+  for (const cause of ['sync', 'animation', 'activity', 'config']) assert.ok(observed.sample.timeline.some(event => event.name === 'draw' && event.cause === cause), cause);
+  assert.equal(control.sample.counters.wakeup.count, 0);
+});
+
 const baseline = () => normalizeConfig(DEFAULTS);
 
 // A different value for every field: used to prove that each option lands in
 // exactly one rebuild group and that the value fingerprint follows it.
 const ALTERNATIVES = Object.freeze({
-  enabled: false, count: 5, species: 'blue', renderStyle: 'cells', fillMode: 'ascii',
+  enabled: false, resourceMode: 'economy', count: 5, species: 'blue', renderStyle: 'cells', fillMode: 'ascii',
   text: '深海蓝鲸', speed: 1.1, opacity: 0.7, glyphSize: 13, whaleSize: 1.2,
   color: 'azure', activity: false, dictationEcho: false, quietCenter: false, leftInset: 300, glass: false, glassStrength: 0.8,
   readingEffect: 'glow', composerGlass: true, composerAvoid: true, spout: false, ripples: false, wind: false, clouds: false,
-  rain: true, rainIntensity: 0.8, pauseOnScroll: true,
-  seaGrid: false,
+  rain: true, rainIntensity: 0.8, pauseOnScroll: true, seaGrid: false,
 });
 
 const GROUP_OF = Object.freeze({
@@ -26,7 +54,7 @@ const GROUP_OF = Object.freeze({
   palette: ['color'],
   glass: ['glass', 'glassStrength', 'readingEffect'],
   composer: ['composerGlass', 'composerAvoid'],
-  live: ['speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'seaGrid', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll'],
+  live: ['resourceMode', 'speed', 'opacity', 'quietCenter', 'enabled', 'leftInset', 'spout', 'ripples', 'seaGrid', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll'],
 });
 const GROUPS = Object.keys(GROUP_OF);
 
@@ -503,7 +531,8 @@ test('speed 0 is a preview-only pause sentinel and never leaks into the settings
   const draws = stats.draws;
   for (let frame = 0; frame < 40; frame++) raf.step();
   assert.deepEqual(drawn.map(point => ({ x: point.x, y: point.y })), frozen, 'a paused layer must not move');
-  assert.ok(stats.draws > draws, 'a paused layer keeps its last static frame on screen');
+  assert.equal(stats.draws, draws, 'a paused layer retains its frame without repeating work');
+  assert.equal(raf.pending().length, 0, 'preview pause cancels continuous scheduling');
   // A paused layer also ignores scene edits positionally: the school stays put.
   layer.update({ ...config, speed: 0, text: '深海蓝鲸' });
   assert.deepEqual(drawn.map(point => ({ x: point.x, y: point.y })), frozen, 'pausing must survive a rebuild');

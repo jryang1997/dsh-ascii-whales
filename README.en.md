@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="./icon.svg" width="112" height="112" alt="Glyph whales icon">
+  <img src="./icon.svg" width="112" height="112" alt="ASCII Whales icon">
 </p>
 
-<h1 align="center">Glyph whales</h1>
+<h1 align="center">ASCII Whales</h1>
 
-<p align="center">Turn your own text into whales that swim across DeepSeek Harness.</p>
+<p align="center">Follow DeepSeek Harness tasks with whales that distinguish running, waiting, and observed background results.</p>
 
 <p align="center"><a href="./README.md">简体中文</a> · <strong>English</strong></p>
 
@@ -17,6 +17,37 @@
   <a href="#install">Install</a> · <a href="#settings">Settings</a> ·
   <a href="#local-preview">Local preview</a> · <a href="./CHANGELOG.md">Changelog</a>
 </p>
+
+The whales follow the current session, subagents, and visible background tasks. `···` means running. `!` means you need to answer, approve, or review a plan. `✓` and `×` appear only when the plugin first observes a background task running, then sees it complete or fail. **Idle does not mean success.**
+
+<p align="center">
+  <img src="./docs/images/status-demo-en.gif" width="960" alt="SIMULATED formal-renderer states: running, waiting for you, Build demo completed, and a separate Check demo failed; the idle session is not marked successful">
+</p>
+
+<p align="center"><sub>SIMULATED fixture, NOT an installed DSH recording. Formal client.js, light theme, reduced motion. Four frames show the states in order; Build demo and Check demo are different tasks. See <a href="./docs/research/TASK-DEMO.md">demo provenance and acceptance evidence</a> for build identity, still frames, and reproduction. The actual installed-host status recording is still missing, so that acceptance item in #3 remains unverified.</sub></p>
+
+| Marker | Meaning |
+| --- | --- |
+| `···` | A session, subagent, or background task is running; a task still stopping also counts as running |
+| `!` | Waiting for your answer, approval, or plan review |
+| No result marker | Known idle or stopped turn, with calm gliding; this does not imply success |
+| `✓` | A background task completed after the plugin observed it running |
+| `×` | A background task failed after the plugin observed it running |
+| Unavailable or not yet known | A required host capability, current session, or task roster is missing or not yet determined; decoration remains, with no inferred idle or result |
+
+Cancellation, stopping, disconnection, and disappearing tasks do not imply success or failure. Historical results do not pop up on first load. The first-use legend keeps your focus and remembers explicit dismissal; you can reopen it in Settings. The text summary includes task names and states, including tasks without their own whale. Turn off **Follow task activity** to restore decorative swimming. Whales do not replace the host task history or answer or approve for you.
+
+Start with **Scene preset** and choose Default, Rainy, Minimal, or Night voyage. Open **Advanced settings** for individual controls. A preset changes the draft and preview; **Save** applies it to the conversation background. **Reload saved values** discards the draft. See [Settings](#settings).
+
+**Resource mode** is independent of scene presets. Economy reduces continuous scheduling, internal integration, and drawing while keeping task-prompt time independent. In the 45-sample controlled headless Chrome comparison on 2026-10-31, run on the build after the 1.0.0 merge, economy observed lower CPU; turning the plugin off used the least CPU. The table shows median single-core-equivalent CPU percentages for the isolated Chrome process tree (n = 5 per cell), including fixture and CDP overhead, rather than plugin-exclusive CPU.
+
+| Simulated scenario | Off | Standard | Economy |
+| --- | --- | --- | --- |
+| Idle | 0.093 | 46.106 | 23.581 |
+| Append | 0.886 | 48.898 | 25.158 |
+| Scroll | 7.129 | 51.163 | 27.883 |
+
+With 16 logical processors, divide these values by 16 for whole-machine normalized percentages. See the [full resource report](./docs/research/RESOURCE-COMPARISON.en.md) for ranges, actual work, and independent diagnostics. Actual DSH resource benefits, GPU utilization, and energy remain unmeasured; these observations do not establish battery gains or a general speedup. See the [three-condition method](./docs/measurement.en.md) and [local evidence status](./docs/resource-report-status.md).
 
 > Inspired by [ascii-sharks](https://github.com/stackedlol/ascii-sharks). Thanks to the project for the original visual idea.
 
@@ -48,7 +79,7 @@ Or install the release tarball through the plugin manager:
 2. Install the file through the DSH plugin manager.
 3. Open **Plugins → Glyph whales**, adjust the settings, and select **Save**.
 
-The current published package is [v1.0.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v1.0.0). The full history is in the [changelog](./CHANGELOG.md). All clips on this page use the light theme with the sidebar hidden: the cruise and rain clips are real DSH page recordings, while the dive, fluke and task-activity clips render a single whale with the same renderer so the motion stays readable (glyphs, custom text and a random color per whale).
+The current published package is [v1.0.0](https://github.com/jryang1997/dsh-ascii-whales/releases/tag/v1.0.0). The full history is in the [changelog](./CHANGELOG.md). All clips on this page use the light theme with the sidebar hidden: the cruise and rain clips are real DSH page recordings, while the dive, fluke and task-activity clips render a single whale with the same renderer so the motion stays readable (glyphs, custom text and a random color per whale). The task-state GIF remains a simulated fixture from the local integrated sources; it does not claim that v1.0.0 shipped these interactions.
 
 ## Features
 
@@ -101,7 +132,7 @@ See the [dictation gather research](./docs/research/DICTATION-GATHER.md) for the
 
 ## Whales around your conversation
 
-Text edge effect offers Off, Glow, Soft blur and Frosted glass, with Frosted glass as the default. Off leaves whales around text untreated. Glow clears them; blur and frost retain translucent silhouettes behind a paragraph. This choice is independent of the content-box glass switch. Settings start with a large live preview, followed by Appearance, Whales, Reading and Sea cards. Switches control booleans, buttons select modes, and sliders adjust numeric values. While you scroll, the school keeps swimming and the text mask follows the new positions. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones. The squared sea sits beneath the school and the cloud shadows, shares the same reading protection as the whales, fades with Background opacity, and has its own switch.
+Text edge effect offers Off, Glow, Soft blur and Frosted glass, with Frosted glass as the default. Off leaves whales around text untreated. Glow clears them; blur and frost retain translucent silhouettes behind a paragraph. This choice is independent of the content-box glass switch. Settings start with a large live preview, followed by the first-level scene preset, body text, task-following switch and legend button; Appearance, Whales, Reading, Sea and Layout controls sit in Advanced settings, collapsed by default. Switches control booleans, buttons select modes, and sliders adjust numeric values. While you scroll, the school keeps swimming and the text mask follows the new positions. Content cards, the input box and the right sidebar use frosted materials, with a quieter, more diffuse whale silhouette in the sidebar. Light and dark themes use separate tones. The squared sea sits beneath the school and the cloud shadows, shares the same reading protection as the whales, fades with Background opacity, and has its own switch.
 
 **Pause rendering while scrolling** is under Advanced settings and is off by default. Turn it on and scrolling hides the decorative layer at once and freezes the simulation; about 140 ms after your last scroll it measures the new position once and fades back in — useful when a soft mask feels like it lags behind moving text.
 
@@ -132,13 +163,15 @@ For the input box, you can show blurred whale silhouettes or have the whales swi
 
 </details>
 
-Screenshots use the Chinese UI and come from the standalone preview or simulated environments; the settings screenshot below is the English UI. The settings page follows the DSH UI language, and both English and Simplified Chinese strings ship with the plugin. See [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
+The older reading and size screenshots use the Chinese UI and come from the standalone preview or simulated environments. The new settings fixtures cover both languages, and the settings screenshots below use the English UI. The settings page itself follows the DSH UI language; both English and Simplified Chinese strings ship with the plugin. See [SOURCE-NOTES.md](./docs/research/SOURCE-NOTES.md) for verification details and the limits of testing in the actual DSH desktop window.
 
 ## Settings
 
 The settings page follows the DSH UI language. English and Simplified Chinese strings are bundled with the plugin.
 
-Dragging a slider updates the static sample in the settings page. Select **Save** to apply the draft to the conversation background. **Restore defaults** changes the draft; **Reload saved values** discards unsaved edits.
+Choose Default, Rainy, Minimal, or Night voyage in **Scene preset**. A preset changes the count, speed, opacity, palette, and sea effects together. It preserves your body text, species, drawing style, sizes, reading protection, task following, and layout preferences. Default restores only the preset-owned parameters; **Restore all defaults** resets the whole draft. Editing a scene-owned parameter shows Custom when the combination no longer matches.
+
+A preset or control changes only the draft and preview. **Save** applies it to the conversation background. A failed save or revision conflict keeps your draft without overwriting newer values. **Reload saved values** discards unsaved edits. Valid existing settings survive upgrades without applying a preset. **Show task state legend** opens the initially hidden legend; you can close it again. Advanced settings start collapsed, and all existing controls remain available.
 
 | Numeric setting | Range | Default |
 | --- | --- | --- |
@@ -161,16 +194,17 @@ Dragging a slider updates the static sample in the settings page. Select **Save*
 
 Random color per whale assigns distinct hues from eight palettes and retains body shading. Painting, saving settings, resizing, and changing count, text, species or size preserve each whale's color. Reopening the background generates a new set.
 
-Follow task activity is on by default. The first whale represents the current session. The remaining whales keep stable bindings to subagents, other active sessions, and background jobs visible to the current session.
+Follow task activity is on by default. The first whale represents the current session. The remaining whales keep stable bindings to related subagents and background tasks visible to the current session.
 
 | Actual state | Whale behavior |
 | --- | --- |
 | Running session, subagent or job | Stronger swimming, more sustained tail strokes, `···` |
 | Idle or stopped turn | Calm gliding; an inactive subagent does not imply success |
 | Waiting for an answer, approval or plan review | Smooth surfacing, slow swimming, `!` and the task name; no new dives |
-| Observed job completion / failure | `✓` / `×` and the job name for six seconds of playback |
+| Background task completion or failure after observed running | `✓` or `×` and the task name for six seconds of simulation time; pausing simulation pauses this clock |
+| Missing capability or undetermined state | Unavailable or not-yet-known text, with no inferred idle or result |
 
-When there are more active tasks than whales, the first whale summarizes the extra count and the most urgent reminder. Disabling the switch restores decorative swimming. Reduced motion keeps the pose still while state changes update static badges. The plugin only reads published DSH state. It does not answer questions, approve operations or follow job output. Historical job results do not produce new badges when the background opens.
+When there are more tracked tasks than whales, the first whale summarizes the extra count and the most urgent reminder. Disabling the switch restores decorative swimming. Reduced motion keeps the pose still while state changes update static badges. The plugin only reads published DSH state. It does not answer questions, approve operations or follow job output. Historical job results do not produce new badges when the background opens.
 
 <p align="center">
   <img src="./docs/images/activity-en.gif" width="960" alt="Single-whale close-up: the badges ···, ! approval, ✓ build and × test appear in turn above the whale">
@@ -185,7 +219,10 @@ The desktop app follows the sidebar width automatically. In a regular browser, a
 <details>
 <summary>View the settings page</summary>
 
-<p><img src="./docs/images/settings-en.png" width="960" alt="Glyph whales settings page in English: scene preview, Appearance and Whales groups, and the Save bar"></p>
+<p><img src="./docs/images/settings-en.png" width="960" alt="SIMULATED formal English settings: scene preset, body text, task following, legend button, and Save; legend starts hidden and Advanced settings collapsed"></p>
+<p><img src="./docs/images/settings-en-legend.png" width="960" alt="SIMULATED formal English settings with the task-state legend explicitly opened"></p>
+
+These simulated fixtures use the formal settings component, not installed DSH screenshots. The options scroll while the preview and save area stay visible. The existing English UI label remains **Glyph whales**; ASCII Whales is the public name in this introduction. See [demo provenance](./docs/research/TASK-DEMO.md) for build identity.
 
 </details>
 
@@ -218,7 +255,7 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
-After changing browser sources, run `pnpm build` and `pnpm preview` to update both artifacts, then run `pnpm verify`. Verification checks committed output without rebuilding it, so stale artifacts fail. Test discovery recursively includes `*.test.js` under `tests/`, excluding hidden directories and `node_modules/`. It does not scan repository backups, reference projects, or worktree copies. GitHub Actions runs the same verification on Windows and Linux.
+After changing browser sources, run `pnpm build` and `pnpm preview` to update both artifacts, then run `pnpm verify`. Verification checks committed output without rebuilding it, so stale artifacts fail. Test discovery includes `*.test.js` / `*.test.mjs` in the repository root and under `src/`, `tests/`, `scripts/` and `preview/`, excluding hidden directories and `node_modules/`. It does not scan repository backups, reference projects, or worktree copies. GitHub Actions runs the same verification on Windows and Linux.
 
 Verification, packaging, and review share the dev dependency [@jryang1997/dsh-plugin-kit](https://github.com/jryang1997/dsh-plugin-kit) (pinned to tag v1.0.0, configured under `dshPluginKit` in [package.json](./package.json)): `pnpm check` runs manifest, locale, README, version, and syntax checks; `pnpm test` discovers and runs tests; `pnpm verify` checks static items, artifacts, the published tarball, the screenshots manifest, and tests. `pnpm --silent review:snapshot --base <ref>` outputs a JSON review inventory including untracked files. `pnpm --silent agent:probe` checks whether its process can read the entry files. See the [engineering guide](./docs/agents/engineering.md) for native-tool read preflight, review scope, and browser evidence requirements.
 

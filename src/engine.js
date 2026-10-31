@@ -1,3 +1,4 @@
+import { resourcePolicy } from './resource-policy.js';
 import { createReadingLayout, demoReadingSnapshot } from './reading-layout.js';
 import { createWhalePainter } from './surface.js';
 import { whalePose, projectParticle, createDepthGrid, resolveDepthGrid, stampSeaWraps, fitCanvas, normalizeConfig, attenuation } from './model.js';
@@ -59,7 +60,7 @@ const METRIC_KEYS = Object.freeze(['glyphSize', 'fillMode', 'renderStyle']);
 const PALETTE_KEYS = Object.freeze(['color']);
 const GLASS_KEYS = Object.freeze(['glass', 'glassStrength', 'readingEffect']);
 const COMPOSER_KEYS = Object.freeze(['composerGlass', 'composerAvoid']);
-const LIVE_KEYS = Object.freeze(['enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'seaGrid', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll']);
+const LIVE_KEYS = Object.freeze(['resourceMode', 'enabled', 'speed', 'opacity', 'quietCenter', 'leftInset', 'spout', 'ripples', 'seaGrid', 'wind', 'clouds', 'rain', 'rainIntensity', 'activity', 'dictationEcho', 'pauseOnScroll']);
 const anyChanged = (keys, previous, next) => keys.some(key => previous[key] !== next[key]);
 const noChange = changes => !changes.scene && !changes.metrics && !changes.palette
   && !changes.glass && !changes.composer && !changes.live;
@@ -283,10 +284,11 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   // preview use the DOM adapter instead.
   const demo = options.demoCard || null;
   const readingProtection = createReadingProtection();
-  const scenerySeed = Math.floor(Math.random() * 0x100000000) >>> 0;
+  const metrics = options.metrics || null;
+  const scenerySeed = options.seed ?? (Math.floor(Math.random() * 0x100000000) >>> 0);
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const reducedTransparency = window.matchMedia('(prefers-reduced-transparency: reduce)');
-  const simulation = createWhaleSimulation(config, { seed: scenerySeed });
+  const simulation = createWhaleSimulation(config, { seed: scenerySeed, metrics, onActivityChange: options.onActivityChange });
   let scene = simulation.scene;
   const { water, atmosphere, rain, voiceSea } = simulation;
   let sceneryPalette = createInkPalette(config.color);
@@ -294,7 +296,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
   let painter = createWhalePainter(scene, config);
   ink.font = painter.font;
-  let metrics = measureGlyphs();
+  let glyphMetrics = measureGlyphs();
   let width = 0, height = 0, ratio = 1, grid = null;
   let offsetX = 0, offsetY = 0;
   // A preview uses the same logical sea as the background. Only its final
@@ -306,16 +308,17 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
   let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
   let panes = [], tone = null, readingLayout = null, foreground = null, sidebarForegrounds = [];
+  let scheduled = null, refreshRaf = 0, refreshCause = null;
   // Canvas-relative composer card used by the dictation gather. Measured on the
   // existing 120 ms budget; never read from the animation frame.
   let composerAnchor = null;
-  let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+  let previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
   let readingTextDirty = true, readingRoots = [], scrolling = false, scrollTimer = 0;
   const originalOpacity = canvas.style?.opacity ?? '', originalTransition = canvas.style?.transition ?? '';
   const SCROLL_IDLE_MS = 140;
   const spout = attachSpout(canvas, () => ({
     enabled: config.spout,
-    reduced: reduced.matches,
+    reduced: reduced.matches || config.speed === 0,
     hidden: document.hidden,
     opacity: config.opacity,
     quietCenter: config.quietCenter,
@@ -472,6 +475,13 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
    * neither scan competes with input.
    */
   function measure() {
+    if (!metrics) return measureContent();
+    const started = metrics.begin();
+    try { return measureContent(); }
+    finally { metrics.end('layout', started, demo ? 'demo' : 'dom'); }
+  }
+
+  function measureContent() {
     measuredAt = performance.now();
     panes = [];
     tone = null;
@@ -520,8 +530,15 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       composer: composer ? composer.rect : null });
   }
 
-  function draw() {
-    if (scrolling || !width || !height || !scene || !grid) return;
+  function draw(cause = 'sync') {
+    if (disposed || !config.enabled || document.hidden || scrolling || !width || !height || !scene || !grid) return;
+    if (!metrics) return drawContent();
+    const started = metrics.begin();
+    drawContent();
+    metrics.end('draw', started, cause);
+  }
+
+  function drawContent() {
     if (performance.now() - measuredAt > MEASURE_INTERVAL) measure();
     if (viewport) {
       ink.setTransform(1, 0, 0, 1, 0, 0);
@@ -570,7 +587,9 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     drawRain(ink, rain, { ...rainScenery, phase: 'surface' });
     paintGlyphs(ink, fade);
     drawRain(ink, rain, { ...rainScenery, phase: 'fall' });
+    const spoutStarted = metrics?.begin();
     spout.paint(ink, fade);
+    metrics?.end('spoutUpdate', spoutStarted);
     if (config.activity) drawActivityBadges(ink, scene.whales, width, height, {
       dark: document.body.hasAttribute('data-ds-dark-theme'), opacity: config.opacity,
       fade: sceneryFade,
@@ -741,27 +760,87 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     for (const line of demoTextRegions(card)) { glassRoundedPath(ink, line); ink.fill(); }
   }
 
+  function canAnimate() {
+    return !disposed && config.enabled && config.speed > 0 && !scrolling && !document.hidden
+      && !reduced.matches && width > 0 && height > 0 && scene;
+  }
+
+  function cancelContinuous() {
+    if (scheduled?.kind === 'raf') cancelAnimationFrame(scheduled.handle);
+    else if (scheduled?.kind === 'timer') clearTimeout(scheduled.handle);
+    scheduled = null;
+    previous = null;
+  }
+
+  function cancelRefresh() {
+    cancelAnimationFrame(refreshRaf);
+    refreshRaf = 0;
+    refreshCause = null;
+  }
+
+  function scheduleContinuous() {
+    if (scheduled || !canAnimate()) return;
+    const policy = resourcePolicy(config.resourceMode);
+    if (policy.scheduler === 'timer') {
+      if (previous === null) previous = performance.now();
+      scheduled = { kind: 'timer', handle: setTimeout(() => frame(performance.now()), policy.drawIntervalMs) };
+    } else scheduled = { kind: 'raf', handle: requestAnimationFrame(frame) };
+  }
+
   function frame(now) {
-    raf = 0;
-    if (disposed || scrolling || document.hidden || reduced.matches || !width || !height || !scene) return;
-    if (previous !== null) {
-      simulation.advance(Math.min(0.1, (now - previous) / 1000));
+    const started = metrics?.begin();
+    const kind = scheduled?.kind;
+    scheduled = null;
+    try {
+      if (!canAnimate()) return;
+      if (previous !== null) simulation.advance(Math.min(0.1, (now - previous) / 1000));
+      previous = now;
+      // Compare paint starts on the performance clock. The requestAnimationFrame
+      // timestamp belongs to the frame, while the callback-to-first-command
+      // offset varies with how heavy the previous paint was; mixing the two let
+      // two paints land closer than the budget even though the frame timestamps
+      // did not. `lastPaint` is also written by the single-shot refresh path in
+      // `performance.now()` units, so the budget and its records share a clock.
+      const paintAt = performance.now();
+      if (paintAt - lastPaint >= resourcePolicy(config.resourceMode).drawIntervalMs - 1e-7) {
+        draw('animation');
+        lastPaint = paintAt;
+      }
+      scheduleContinuous();
+    } finally { metrics?.end('wakeup', started, kind); }
+  }
+
+  function requestRefresh(cause, immediate = false) {
+    if (disposed || !config.enabled || scrolling || document.hidden || !width || !height) return;
+    refreshCause = cause;
+    if (refreshRaf) return;
+    if (immediate) {
+      draw(cause);
+      lastPaint = performance.now();
+      refreshCause = null;
     }
-    previous = now;
-    if (now - lastPaint >= 1000 / 30) { draw(); lastPaint = now; }
-    raf = requestAnimationFrame(frame);
+    refreshRaf = requestAnimationFrame(() => {
+      refreshRaf = 0;
+      const started = metrics?.begin();
+      const cause = refreshCause;
+      refreshCause = null;
+      try {
+        if (cause) { draw(cause); lastPaint = performance.now(); }
+      } finally { metrics?.end('refreshWakeup', started, cause); }
+    });
   }
 
   function sync() {
-    cancelAnimationFrame(raf);
-    raf = 0;
-    previous = null;
+    cancelContinuous();
+    cancelRefresh();
+    if (document.hidden || !config.enabled) leaveScrollPause();
     lastPaint = -Infinity;
     measuredAt = -Infinity;
     readingTextDirty = true;
-    if (!disposed && !scrolling && !document.hidden && width && height) {
+    observeScene(!disposed && config.enabled && !scrolling && !document.hidden);
+    if (!disposed && config.enabled && !scrolling && !document.hidden && width && height) {
       draw();
-      if (!reduced.matches) raf = requestAnimationFrame(frame);
+      scheduleContinuous();
     }
   }
 
@@ -780,6 +859,9 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     const next = normalizeLayerConfig(nextConfig);
     const changes = diffWhaleConfig(config, next);
     if (noChange(changes)) return;
+    const schedulerChanged = config.resourceMode !== next.resourceMode
+      || config.enabled !== next.enabled || (config.speed === 0) !== (next.speed === 0);
+    if (schedulerChanged) { cancelContinuous(); cancelRefresh(); }
     // The draw loop and the painter share this object, so live options such as
     // opacity and speed apply from the next frame without any rebuild.
     const sceneRebuilt = simulation.update(next);
@@ -789,8 +871,9 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     // abandoned quiet interval was the only thing that would have restored it.
     // Stop yielding here and reveal below, so the redraw in between happens
     // while hidden exactly like the ordinary resume path.
-    const wasPaused = scrolling && !config.pauseOnScroll;
-    if (wasPaused) leaveScrollPause();
+    const wasPaused = scrolling && (!config.pauseOnScroll || !config.enabled);
+    if (wasPaused) leaveScrollPause(false);
+    observeScene(config.enabled && !scrolling && !document.hidden);
 
     if (sceneRebuilt) {
       scene = simulation.scene;
@@ -804,8 +887,8 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     // the painter is rebuilt for it as well — not only for font and style.
     if (sceneRebuilt || changes.metrics) {
       painter = createWhalePainter(scene, config);
-      metrics = measureGlyphs();
-      if (width && height) grid = createDepthGrid(width, height, config.glyphSize, metrics);
+      glyphMetrics = measureGlyphs();
+      if (width && height) grid = createDepthGrid(width, height, config.glyphSize, glyphMetrics);
     } else if (changes.palette) {
       painter = createWhalePainter(scene, config);
     }
@@ -814,7 +897,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     if (changes.glass || changes.composer) {
       measuredAt = -Infinity;
       readingTextDirty = true;
-      if (!scrolling && width && height) measure();
+      if (config.enabled && !document.hidden && !scrolling && width && height) measure();
     }
 
     if (changes.palette) sceneryPalette = createInkPalette(config.color);
@@ -824,9 +907,12 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     if (!scrolling && !document.hidden && width && height) {
       // Repaint one frame now, so a change is visible even while reduced motion
       // keeps the animation loop stopped; otherwise the loop simply continues.
-      if (!reduced.matches && !raf) raf = requestAnimationFrame(frame);
-      draw();
+      scheduleContinuous();
+      draw('config');
       lastPaint = performance.now();
+    }
+    if (!config.enabled) {
+      cancelContinuous(); cancelRefresh();
     }
     if (wasPaused) revealLayer();
   }
@@ -834,18 +920,19 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   function finishScroll() {
     scrollTimer = 0;
     if (disposed) return;
-    leaveScrollPause();
+    leaveScrollPause(false);
     // Repaint while hidden before showing the new mask. Reset the clock so the
     // pause never becomes a catch-up leap in the school or a dive.
     sync();
     revealLayer();
   }
 
-  /** Stop yielding to scrolling without touching the canvas presentation. */
-  function leaveScrollPause() {
+  /** Release scroll-owned presentation immediately or after the caller's repaint. */
+  function leaveScrollPause(reveal = true) {
     clearTimeout(scrollTimer);
     scrollTimer = 0;
     scrolling = false;
+    if (reveal) revealLayer();
   }
 
   /** Show the layer again, fading in unless the system asked for no motion. */
@@ -858,7 +945,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
 
   /** Passive input handlers do no layout reads, text scans or Canvas drawing. */
   function onScroll(event) {
-    if (demo || disposed || document.hidden || event?.ctrlKey) return;
+    if (demo || disposed || !config.enabled || document.hidden || event?.ctrlKey) return;
     const target = event?.target;
     if (target && target !== document && target !== document.body && target !== document.documentElement
       && !readingRoots.some(root => root === target || root.contains?.(target))) return;
@@ -869,23 +956,25 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     if (!config.pauseOnScroll) {
       // A stopped animation loop needs its own coalesced redraw, otherwise the
       // mask would stay at the pre-scroll positions until something else moves.
-      if (reduced.matches) onForegroundChange();
+      if (!canAnimate()) onForegroundChange();
       return;
     }
     measuredAt = -Infinity;
     if (!scrolling) {
       scrolling = true;
-      cancelAnimationFrame(raf);
-      cancelAnimationFrame(foregroundRaf);
-      raf = foregroundRaf = 0;
-      previous = null;
+      observeScene(false);
+      cancelContinuous();
+      cancelRefresh();
       if (canvas.style) {
         canvas.style.transition = 'none';
         canvas.style.opacity = '0';
       }
     }
     clearTimeout(scrollTimer);
-    scrollTimer = setTimeout(finishScroll, SCROLL_IDLE_MS);
+    scrollTimer = setTimeout(() => {
+      const started = metrics?.begin();
+      try { finishScroll(); } finally { metrics?.end('scrollWakeup', started); }
+    }, SCROLL_IDLE_MS);
   }
 
   // Coalesce layout/content changes into one static redraw; scrolling owns the
@@ -893,11 +982,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   function onForegroundChange() {
     measuredAt = -Infinity;
     readingTextDirty = true;
-    if (disposed || scrolling || document.hidden || !reduced.matches || foregroundRaf) return;
-    foregroundRaf = requestAnimationFrame(() => {
-      foregroundRaf = 0;
-      if (!disposed && !document.hidden) { draw(); lastPaint = performance.now(); }
-    });
+    requestRefresh('foreground');
   }
 
   function resize() {
@@ -918,7 +1003,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     offsetX = nextOffsetX; offsetY = nextOffsetY;
     canvas.width = pixels.width; canvas.height = pixels.height;
     ink.setTransform(ratio, 0, 0, ratio, offsetX, offsetY);
-    grid = createDepthGrid(width, height, config.glyphSize, metrics);
+    grid = createDepthGrid(width, height, config.glyphSize, glyphMetrics);
     simulation.resize(width, height);
     measuredAt = -Infinity;
     sync();
@@ -926,14 +1011,28 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
 
   const observer = new ResizeObserver(resize);
   const themeObserver = new MutationObserver(sync);
-  const foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+  let foregroundObserver = null, observing = false;
   const readingObserver = demo ? null : new MutationObserver(records => {
     if (!records || records.some(record => record.target !== canvas)) onForegroundChange();
   });
-  readingObserver?.observe(document.body, { childList: true, characterData: true, subtree: true,
-    attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
-  observer.observe(canvas);
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
+  function observeScene(active) {
+    if (observing === active) return;
+    observing = active;
+    if (active) {
+      foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+      readingObserver?.observe(document.body, { childList: true, characterData: true, subtree: true,
+        attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
+      observer.observe(canvas);
+      themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
+    } else {
+      observer.disconnect();
+      foregroundObserver?.dispose();
+      foregroundObserver = null;
+      readingObserver?.disconnect();
+      themeObserver.disconnect();
+    }
+  }
+  observeScene(config.enabled && !document.hidden);
   document.addEventListener('visibilitychange', sync);
   reduced.addEventListener('change', sync);
   reducedTransparency.addEventListener('change', sync);
@@ -949,15 +1048,10 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
     spout.detach();
     simulation.dispose();
     disposed = true;
-    cancelAnimationFrame(raf);
-    cancelAnimationFrame(foregroundRaf);
-    foregroundRaf = 0;
-    raf = 0;
-    observer.disconnect();
-    foregroundObserver?.dispose();
-    readingObserver?.disconnect();
+    cancelContinuous();
+    cancelRefresh();
+    observeScene(false);
     readingProtection?.dispose();
-    themeObserver.disconnect();
     document.removeEventListener('visibilitychange', sync);
     reduced.removeEventListener('change', sync);
     reducedTransparency.removeEventListener('change', sync);
@@ -993,8 +1087,7 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
   }
   function setActivity(snapshot) {
     if (disposed) return;
-    simulation.setActivity(snapshot);
-    if (!document.hidden && width && height) draw();
+    if (simulation.setActivity(snapshot)) requestRefresh('activity', true);
   }
   function setDictation(snapshot, levelSource) {
     if (disposed) return;

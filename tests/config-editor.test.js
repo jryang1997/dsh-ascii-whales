@@ -3,6 +3,68 @@ import assert from 'node:assert/strict';
 import { createConfigEditor, changeConfigDraft } from '../src/config-editor.js';
 import { DEFAULTS, normalizeConfig } from '../src/model.js';
 
+test('scene failures and conflicts preserve the entire draft and require explicit reload to adopt external values', async () => {
+  for (const outcome of ['conflict', 'failed']) {
+    const form = memoryForm({ ...DEFAULTS, text: '旧鲸', glass: false, composerAvoid: true });
+    const editor = createConfigEditor(form.getSnapshot()).change('text', '待保存鲸').change('pauseOnScroll', true)
+      .change('futurePreference', 'keep').applyPreset('night');
+    form.replace({ revision: 9, value: { ...DEFAULTS, text: '外部鲸', count: 6 } });
+    const result = await editor.save(outcome === 'failed' ? { ...form, mutate: async () => { throw new Error('offline'); } } : form);
+    assert.equal(result.notice, outcome);
+    assert.equal(result.editor, editor);
+    assert.equal(result.editor.dirty, true);
+    assert.equal(result.editor.draft.futurePreference, 'keep');
+    assert.equal(result.editor.draft.text, '待保存鲸');
+    assert.equal(result.editor.draft.color, 'indigo');
+    assert.equal(result.editor.draft.pauseOnScroll, true);
+    assert.equal(result.editor.draft.composerAvoid, true);
+    assert.equal(form.getSnapshot().value.text, '外部鲸');
+    assert.equal(form.getSnapshot().revision, 9);
+    const reload = createConfigEditor(form.getSnapshot());
+    assert.equal(reload.draft.text, '外部鲸');
+    assert.equal(reload.draft.count, 6);
+    assert.equal(reload.dirty, false);
+  }
+});
+
+test('old configurations keep their scene values and migration while default scene differs from reset all', () => {
+  const editor = createConfigEditor({ value: { count: 7, speed: 1.25, opacity: 0.72, text: '旧鲸',
+    glass: false, composerAvoid: true, pauseOnScroll: true, color: 'azure', species: 'fin' }, revision: 3 });
+  assert.equal(editor.draft.count, 7);
+  assert.equal(editor.draft.speed, 1.25);
+  assert.equal(editor.draft.opacity, 0.72);
+  assert.equal(editor.draft.color, 'azure');
+  assert.equal(editor.dirty, false);
+  const scene = editor.applyPreset('default');
+  assert.equal(scene.draft.count, 3);
+  assert.equal(scene.draft.text, '旧鲸');
+  assert.equal(scene.draft.species, 'fin');
+  assert.equal(scene.draft.pauseOnScroll, true);
+  assert.equal(scene.draft.composerAvoid, true);
+  assert.equal(scene.draft.glass, false);
+  assert.deepEqual(editor.reset().draft, DEFAULTS);
+  assert.notDeepEqual(scene.draft, editor.reset().draft);
+  const legacy = createConfigEditor({ value: { composerGlass: true, count: 5 }, revision: 1 });
+  assert.equal(legacy.applyPreset('minimal').draft.glass, true);
+  assert.equal(legacy.applyPreset('minimal').draft.composerGlass, false);
+});
+
+test('a preference-only revision change rebases visual save without resetting or saving unrelated draft fields', async () => {
+  const form = memoryForm({ ...DEFAULTS, legendSeen: false });
+  const editor = createConfigEditor(form.getSnapshot()).change('text', 'Unsaved').applyPreset('rainy');
+  await form.mutate([{ op: 'set', path: ['legendSeen'], value: true }], 1);
+  assert.equal(form.getSnapshot().value.text, DEFAULTS.text);
+  const result = await editor.save(form);
+  assert.equal(result.notice, 'saved');
+  assert.equal(result.editor.draft.text, 'Unsaved');
+  assert.equal(result.editor.draft.rain, true);
+  assert.equal(form.getSnapshot().value.legendSeen, true);
+  assert.equal(form.writes[1].revision, 2);
+  assert.ok(form.writes[1].ops.every(op => op.path[0] !== 'legendSeen'));
+  await result.editor.reset().save(form);
+  assert.equal(form.getSnapshot().value.legendSeen, true);
+});
+
 function memoryForm(value = {}, revision = 1) {
   let snapshot = { status: 'ready', writable: true, value, revision };
   const writes = [];
@@ -20,6 +82,31 @@ function memoryForm(value = {}, revision = 1) {
     },
   };
 }
+
+test('choosing a scene updates only the draft, saves one difference set and adopts the saved revision', async () => {
+  const form = memoryForm({ ...DEFAULTS, text: '我的鲸', glass: false, composerAvoid: true });
+  const draft = createConfigEditor(form.getSnapshot()).change('text', '新鲸').applyPreset('rainy');
+  assert.equal(draft.draft.text, '新鲸');
+  assert.equal(draft.draft.composerAvoid, true);
+  assert.equal(draft.draft.glass, false);
+  assert.equal(draft.draft.rain, true);
+  assert.equal(draft.dirty, true);
+  assert.equal(form.getSnapshot().value.rain, false);
+  assert.equal(form.writes.length, 0);
+  const result = await draft.save(form);
+  assert.equal(result.notice, 'saved');
+  assert.equal(result.editor.dirty, false);
+  assert.deepEqual(form.writes, [{ revision: 1, ops: [
+    { op: 'set', path: ['text'], value: '新鲸' },
+    { op: 'set', path: ['speed'], value: 0.55 },
+    { op: 'set', path: ['opacity'], value: 0.55 },
+    { op: 'set', path: ['spout'], value: false },
+    { op: 'set', path: ['rain'], value: true },
+    { op: 'set', path: ['rainIntensity'], value: 0.35 },
+  ] }]);
+  await result.editor.applyPreset('minimal').save(form);
+  assert.equal(form.writes[1].revision, 2);
+});
 
 test('editing both entry points uses last-enabled-wins while legacy loading keeps glass priority', () => {
   const saved = { ...DEFAULTS, glass: true, composerAvoid: true };

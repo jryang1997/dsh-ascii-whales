@@ -4,6 +4,7 @@ import { createWaterField, resetWaterField, stepWater } from './water.js';
 import { createAtmosphereField, resizeAtmosphereField, stepAtmosphere } from './atmosphere.js';
 import { createActivityTracker } from './activity.js';
 import { createRainField, resizeRainField, stepRain, resetRainField } from './rain.js';
+import { resourcePolicy } from './resource-policy.js';
 import { EMPTY_DICTATION, gatherActive, normalizeDictation } from './dictation.js';
 import { createVoiceSeaField, resetVoiceSeaField, stepVoiceSea } from './voice-sea.js';
 
@@ -20,7 +21,7 @@ const dictationAnchorOf = value => value && ['left', 'top', 'width', 'height']
   : null;
 
 /** Owns the simulation clock, replacement ordering and surface effect history. */
-export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
+export function createWhaleSimulation(initialConfig, { seed = 0, metrics = null, onActivityChange } = {}) {
   let disposed = false;
   let activityTime = 0;
   let config = { ...initialConfig };
@@ -29,8 +30,12 @@ export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
   const water = createWaterField();
   const atmosphere = createAtmosphereField({ seed });
   const rain = createRainField({ seed });
+  let activityVersion = 0;
+  const activity = createActivityTracker({ onChange(value) {
+    activityVersion++;
+    onActivityChange?.(value);
+  } });
   const voiceSea = createVoiceSeaField();
-  const activity = createActivityTracker();
   // Dictation is an externally driven UI state, not a task entity: it lives on
   // the scene as a small directive the motion layer reads, and it never feeds
   // the activity seats or badges.
@@ -71,6 +76,8 @@ export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
         resizeScene(scene, previous.width > 0 ? previous.width : 1600,
           previous.height > 0 ? previous.height : 900);
         adoptSceneState(previous, scene);
+        scene.time = previous.time;
+        scene.accumulator = previous.accumulator;
       }
       if (rebuild || config.ripples !== next.ripples) resetWaterField(water);
       config = { ...next };
@@ -80,9 +87,11 @@ export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
       return rebuild;
     },
     setActivity(snapshot) {
-      if (disposed) return;
+      if (disposed) return false;
+      const before = activityVersion;
       activity.update(snapshot);
       activity.apply(scene.whales, activityTime, config.activity);
+      return before !== activityVersion;
     },
     setDictation(snapshot, levelSource) {
       if (disposed) return;
@@ -118,15 +127,22 @@ export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
     setObstacles(obstacles) { if (!disposed) setSceneObstacles(scene, obstacles); },
     advance(delta) {
       if (disposed) return 0;
+      const started = metrics?.begin();
       const before = scene.time;
       activity.apply(scene.whales, activityTime, config.activity);
-      stepScene(scene, delta, config.speed);
+      const policy = resourcePolicy(config.resourceMode);
+      stepScene(scene, delta, config.speed * policy.swimMultiplier, metrics, policy.motionTick);
       const elapsed = scene.time - before;
       activityTime += elapsed;
-      if (config.ripples) stepWater(water, scene, elapsed);
-      stepAtmosphere(atmosphere, elapsed);
+      activity.apply(scene.whales, activityTime, config.activity);
+      if (config.ripples) {
+        const waterStarted = metrics?.begin();
+        stepWater(water, scene, elapsed);
+        metrics?.end('waterUpdate', waterStarted);
+      }
+      stepAtmosphere(atmosphere, elapsed, metrics);
       stepRain(rain, elapsed, { enabled: config.rain, intensity: config.rainIntensity,
-        wind: config.wind, atmosphere });
+        wind: config.wind, atmosphere, metrics, integrationHz: policy.rainHz });
       // The voice swell follows the same simulation clock; a disabled switch lets
       // the live rings drain naturally instead of freezing them mid-swell.
       stepVoiceSea(voiceSea, elapsed, dictationLevel(), {
@@ -134,6 +150,7 @@ export function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
         x: dictationAnchor ? dictationAnchor.left + dictationAnchor.width / 2 : 0,
         y: dictationAnchor ? dictationAnchor.top + dictationAnchor.height / 2 : 0,
         width: scene.width, height: scene.height });
+      metrics?.end('advance', started);
       return elapsed;
     },
     dispose() { disposed = true; resetWaterField(water); resetRainField(rain); resetVoiceSeaField(voiceSea); scene = null; dictationAnchor = null; dictationLevel = () => 0; },

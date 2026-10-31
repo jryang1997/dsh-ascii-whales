@@ -37,7 +37,7 @@ function registration(t, { inject = true, available = undefined, answer = null, 
   const form = { getSnapshot: () => ({ status: 'ready', value }), subscribe: () => () => {} };
   const ctx = {
     configForms: { get: () => form },
-    locale: { register: () => () => {}, bind: () => key => key },
+    locale: { register: () => () => {}, bind: () => key => key, subscribe: () => () => {}, getSnapshot: () => 'en' },
     effect(callback) { const dispose = callback(); if (typeof dispose === 'function') cleanups.push(dispose); },
     get: name => name === 'dictation' ? available : undefined,
     slots: { inject: (_name, callback) => callback(), register: (options, component) => slots.set(options.name, component) },
@@ -47,10 +47,27 @@ function registration(t, { inject = true, available = undefined, answer = null, 
     createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     useSyncExternalStore: (_subscribe, snapshot) => snapshot(),
     useMemo: callback => callback(),
+    useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useRef: initial => ({ current: initial }),
+    useCallback: callback => callback,
     useEffect() {},
   };
   registerWhales(ctx, React, { en: {}, zh: {} });
-  const render = () => slots.get('shell.overlay')({ usePanelInfo: () => null }).props.children[0].props;
+  const render = () => {
+    // The overlay also renders legend and announcement siblings, so find the
+    // canvas component rather than assuming it is the first child.
+    const findCanvas = node => {
+      if (!node || typeof node !== 'object') return null;
+      if (node.type?.name === 'Canvas') return node;
+      const children = node.props?.children;
+      if (!Array.isArray(children)) return null;
+      for (const child of children) { const hit = findCanvas(child); if (hit) return hit; }
+      return null;
+    };
+    const canvas = findCanvas(slots.get('shell.overlay')({ usePanelInfo: () => null }));
+    if (!canvas) throw new Error('Overlay did not render the canvas');
+    return canvas.props;
+  };
   const unload = () => { for (const cleanup of cleanups.splice(0).reverse()) cleanup(); };
   t.after(() => {
     unload();

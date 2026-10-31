@@ -23,7 +23,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
 <article class="card"><h2>纯字符 · ASCII</h2><canvas data-style="glyphs" data-fill="ascii" aria-label="纯字符ASCII"></canvas><p>按明暗选择疏密不同的符号，使用等宽字体。</p></article>
 <article class="card"><h2>彩色字格 · ASCII</h2><canvas data-style="cells" data-fill="ascii" aria-label="彩色字格ASCII"></canvas><p>先绘深浅底格，再叠加 ASCII 字符，接近参考截图的构成。</p></article>
 </div><section><h2>巡游与内容框毛玻璃预览</h2><p>在「文字边缘效果」中选择关闭、微光、柔和模糊或毛玻璃。微光让鲸鱼隐去，模糊与毛玻璃保留文字背后的连续鲸影，关闭内容框毛玻璃也能使用。开启「内容框毛玻璃」后，消息卡片、输入框和右侧栏显示模糊鲸影，右侧栏的鲸影更淡。可在右侧输入备注、点击按钮检查交互。数量、大小和速度会更新同一群鲸鱼。「鱼群避让输入框」让鲸鱼绕开输入框，与内容框毛玻璃互斥。「海上落雨」与雨量控制细雨到密雨，雨向随海面风纹偏转；雨落海后的涟漪独立于游动尾流。「海面方格」给整片海面铺上与鲸体同源的浅色格线，浓度随背景浓度变化。实际插件保存设置后生效。</p>
-<div class="controls"><label>配色<select id="color"><option value="ocean">深海蓝</option><option value="azure">晴空蓝</option><option value="indigo">靛蓝</option><option value="rainbow">每鲸随机色</option></select></label><label>状态演示<select id="activityScene"><option value="none">自由巡游</option><option value="running">会话工作中</option><option value="team">子代理与后台任务</option><option value="waiting">等待你处理</option><option value="completed">后台任务完成</option><option value="failed">后台任务失败</option></select></label><label>渲染样式<select id="renderStyle"><option value="glyphs">纯字符</option><option value="cells" selected>彩色字格</option></select></label><label>填充内容<select id="fillMode"><option value="custom">自定义文字</option><option value="ascii" selected>ASCII</option></select></label><label>鱼身文字<input id="text" type="text" value="探索未至之境" maxlength="40"></label><label>鲸类<select id="species"><option value="mixed">混合鲸群</option><option value="blue">蓝鲸</option><option value="humpback">座头鲸</option><option value="sperm">抹香鲸</option><option value="fin">长须鲸</option><option value="bowhead">弓头鲸</option></select></label><label class="slider">数量<input id="count" type="range" min="1" max="8" step="1" value="3"><output id="countOut" for="count">3</output></label><label class="slider">鲸鱼大小<input id="whaleSize" type="range" min="0.55" max="1.55" step="0.05" value="1"><output id="whaleSizeOut" for="whaleSize">1.00</output></label><label class="slider">速度<input id="speed" type="range" min="0.3" max="2" step="0.05" value="0.65"><output id="speedOut" for="speed">0.65</output></label><label>文字边缘效果<select id="readingEffect"><option value="none">关闭</option><option value="glow">微光</option><option value="blur">柔和模糊</option><option value="frost" selected>毛玻璃</option></select></label><label><input id="glass" type="checkbox" checked>内容框毛玻璃</label><label><input id="dark" type="checkbox">深色背景</label><label><input id="composerAvoid" type="checkbox">鱼群避让输入框</label><label><input id="activity" type="checkbox" checked>跟随任务状态</label><label><input id="ripples" type="checkbox" checked>游动尾流与水花</label><label><input id="wind" type="checkbox" checked>海面风纹</label><label><input id="clouds" type="checkbox" checked>掠海云影</label><label><input id="seaGrid" type="checkbox" checked>海面方格</label><label><input id="rain" type="checkbox">海上落雨</label><label class="slider">雨量<input id="rainIntensity" type="range" min="0" max="1" step="0.01" value="0.45"><output id="rainIntensityOut" for="rainIntensity">45%</output></label><label><input id="pauseOnScroll" type="checkbox">滚动时暂停渲染</label><button id="pause" type="button">暂停</button> <span id="status" role="status"></span></div>
+<div class="controls"><label>资源档位<select id="resourceMode"><option value="standard">标准</option><option value="economy">省资源</option></select></label><label>配色<select id="color"><option value="ocean">深海蓝</option><option value="azure">晴空蓝</option><option value="indigo">靛蓝</option><option value="rainbow">每鲸随机色</option></select></label><label>状态演示<select id="activityScene"><option value="none">自由巡游</option><option value="running">会话工作中</option><option value="team">子代理与后台任务</option><option value="waiting">等待你处理</option><option value="completed">后台任务完成</option><option value="failed">后台任务失败</option></select></label><label>渲染样式<select id="renderStyle"><option value="glyphs">纯字符</option><option value="cells" selected>彩色字格</option></select></label><label>填充内容<select id="fillMode"><option value="custom">自定义文字</option><option value="ascii" selected>ASCII</option></select></label><label>鱼身文字<input id="text" type="text" value="探索未至之境" maxlength="40"></label><label>鲸类<select id="species"><option value="mixed">混合鲸群</option><option value="blue">蓝鲸</option><option value="humpback">座头鲸</option><option value="sperm">抹香鲸</option><option value="fin">长须鲸</option><option value="bowhead">弓头鲸</option></select></label><label class="slider">数量<input id="count" type="range" min="1" max="8" step="1" value="3"><output id="countOut" for="count">3</output></label><label class="slider">鲸鱼大小<input id="whaleSize" type="range" min="0.55" max="1.55" step="0.05" value="1"><output id="whaleSizeOut" for="whaleSize">1.00</output></label><label class="slider">速度<input id="speed" type="range" min="0.3" max="2" step="0.05" value="0.65"><output id="speedOut" for="speed">0.65</output></label><label>文字边缘效果<select id="readingEffect"><option value="none">关闭</option><option value="glow">微光</option><option value="blur">柔和模糊</option><option value="frost" selected>毛玻璃</option></select></label><label><input id="glass" type="checkbox" checked>内容框毛玻璃</label><label><input id="dark" type="checkbox">深色背景</label><label><input id="composerAvoid" type="checkbox">鱼群避让输入框</label><label><input id="activity" type="checkbox" checked>跟随任务状态</label><label><input id="ripples" type="checkbox" checked>游动尾流与水花</label><label><input id="wind" type="checkbox" checked>海面风纹</label><label><input id="clouds" type="checkbox" checked>掠海云影</label><label><input id="seaGrid" type="checkbox" checked>海面方格</label><label><input id="rain" type="checkbox">海上落雨</label><label class="slider">雨量<input id="rainIntensity" type="range" min="0" max="1" step="0.01" value="0.45"><output id="rainIntensityOut" for="rainIntensity">45%</output></label><label><input id="pauseOnScroll" type="checkbox">滚动时暂停渲染</label><button id="pause" type="button">暂停</button> <span id="status" role="status"></span></div>
 <div class="stage" id="stage" data-conversation-scroll><div class="flow" data-chat-flow><article class="reading-prose"><h3>鲸鱼从文字旁经过</h3><p>这段正文没有卡片背景。切换文字边缘效果，可以比较微光的隐去效果，以及模糊、毛玻璃保留的连续鲸影。关闭内容框毛玻璃也能比较。</p></article><article class="msg-card msg-card--mid"><h3>五种鲸类</h3><p>蓝鲸、座头鲸、抹香鲸、长须鲸、弓头鲸各有自己的头型、胸鳍与尾叶；拖动数量与大小可以对比它们在同一片海里的比例。</p></article><article class="msg-card msg-card--narrow"><h3>鱼群避让输入框</h3><p>另一选项：鲸鱼把输入框当成障碍绕开，不再从框内穿过。与内容框毛玻璃二选一。</p></article></div><div class="composer-seat" data-composer-seat><div class="composer-card" data-composer-card>给鲸鱼发一条消息，按 Enter 发送<span class="composer-note">预览用假输入框：座位 [data-composer-seat] 与卡片 [data-composer-card] 的结构和实际 DSH 一致</span></div></div><aside class="rightbar-preview" data-rightbar-col><div class="rightbar-panel"><h3>任务详情</h3><p>鲸影从磨砂玻璃后缓缓经过，侧栏中的文字保持清晰。</p><small>当前会话</small><p>文字蓝鲸 · 阅读体验</p><hr><label for="sidebarNote">任务备注</label><input id="sidebarNote" type="text" placeholder="在这里输入备注"><button type="button" onclick="this.textContent=this.textContent==='已标记'?'标记为已读':'已标记'">标记为已读</button><hr><small>正文与侧栏都可以正常选择文字、点击和输入。</small></div></aside><canvas id="live" aria-label="鲸鱼巡游动态预览"></canvas></div>
 <p class="hint">使用插件的正式渲染器：控件变化只调用 update()，不重建画布；暂停冻结最后一帧，恢复后从原地继续。系统减少动态效果时显示静态姿态，页面在后台时暂停。</p>
 <p class="hint">鲸鱼大小只改体长：0.55 约半身，1.00 默认，1.55 最大。内容框毛玻璃与鱼群避让二选一：开一个会自动关掉另一个。独立预览不替代实际 DSH 窗口的最终观感。</p></section><p class="hint">原版字格研究见 ASCII-RENDER-NOTES.md，鲸类图片依据见 WHALE-REFERENCES.md。</p></main>
@@ -999,7 +999,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     whale.rig.nodes.set(nodes);
     updateWhaleRig(whale);
   }
-  function motionConstrainStep(whale, x, y, heading, obstacles, width, height, approaching = false) {
+  function motionConstrainStep(whale, x, y, heading, obstacles, width, height, motionTick2, approaching = false) {
     if (!obstacles?.length) return false;
     const seamReach = whale.length * 0.6 + motionHullReach(whale);
     if (!approaching && Math.min(x, width - x, y, height - y) > seamReach) return false;
@@ -1087,10 +1087,10 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       }
       sample(low);
     }
-    whale.vx = (whale.x - x) / motionTick;
-    whale.vy = (whale.y - y) / motionTick;
+    whale.vx = (whale.x - x) / motionTick2;
+    whale.vy = (whale.y - y) / motionTick2;
     whale.speed = Math.hypot(whale.vx, whale.vy);
-    whale.turn = (whale.heading - heading) / motionTick;
+    whale.turn = (whale.heading - heading) / motionTick2;
     if (approaching && Math.abs(endHeading - heading) > 1e-7 && Math.abs(whale.heading - heading) < Math.abs(endHeading - heading) * 0.5) {
       whale._motion.gatherTurnClear = true;
     }
@@ -1149,7 +1149,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     const u = motionLimit((age - state.depthStartedAt) / state.depthDuration, 0, 1);
     whale.depth = state.depthFrom + (state.depthTarget - state.depthFrom) * u * u * (3 - 2 * u);
   }
-  function motionIntegrate(scene, speed) {
+  function motionIntegrate(scene, speed, motionTick2) {
     const whales = scene.whales, width = scene.width, height = scene.height;
     const size2 = motionLimit(motionFinite(scene.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling);
     const directive = scene.dictation && typeof scene.dictation === "object" ? scene.dictation : null;
@@ -1180,14 +1180,14 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
         }
       }
       const wants = directive.active === true && Boolean(directive.anchor) && Array.isArray(directive.slots);
-      directive.engage = stepEngage(directive.engage, wants, motionTick);
+      directive.engage = stepEngage(directive.engage, wants, motionTick2);
     }
     const schoolEngage = directive ? directive.engage : 0;
     const holdSlots = directive && Array.isArray(directive.slots) ? directive.slots : null;
     for (let i = 0; i < whales.length; i++) {
       const whale = whales[i], previousLength = whale.length;
       if (!(schoolEngage > 0 && holdSlots && holdSlots[i])) {
-        motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
+        motionCruiseDepth(whale, i, whale._motion.age + motionTick2 * speed);
       }
       motionGeometry(whale, width, height, whales.length, size2);
       const nodes = whale.rig?.nodes, ratio = whale.length / previousLength;
@@ -1254,7 +1254,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       const activityPace = activityKind === "running" ? 1.35 : activityKind === "waiting" ? 0.32 : activityKind === "idle" ? 0.62 : 1;
       const holdSlot = schoolEngage > 0 && holdSlots ? holdSlots[i] || null : null;
       const holdEngage = holdSlot ? schoolEngage : 0;
-      const travelTick = motionTick * speed;
+      const travelTick = motionTick2 * speed;
       state.age += travelTick;
       motionPrepareDive(
         whale,
@@ -1379,7 +1379,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
           const hull = motionBodyHull(whale);
           const obstacle = { x: card.left, y: card.top, width: card.width, height: card.height, radius: 0 };
           const turnCost = (direction) => {
-            const yaw = direction * GATHER.turnRate * motionTick * 4;
+            const yaw = direction * GATHER.turnRate * motionTick2 * 4;
             const c = Math.cos(yaw), s = Math.sin(yaw);
             let cost = -Infinity;
             for (let at = 0; at < hull.length; at += 3) {
@@ -1411,7 +1411,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       }
       const requestedTurn = motionLimit(steeringError * 1.1, -turnLimit, turnLimit);
       const turnResponse = 1.7 + (1 / 0.06 - 1.7) * bearingHold;
-      const response = 1 - Math.exp(-motionTick * turnResponse);
+      const response = 1 - Math.exp(-motionTick2 * turnResponse);
       if (holdEngage > 0) {
         state.gatherYaw = motionFinite(state.gatherYaw, whale.turn);
         state.gatherYaw += (requestedTurn - state.gatherYaw) * response;
@@ -1421,9 +1421,9 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
         whale.turn += (requestedTurn - whale.turn) * response;
       }
       whale.turn = motionLimit(whale.turn, -turnLimit, turnLimit);
-      whale.heading += whale.turn * motionTick;
+      whale.heading += whale.turn * motionTick2;
       const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - seamBrake) * (1 - 0.12 * Math.abs(whale.turn) / Math.max(0.01, turnLimit)) * (holdEngage > 0 ? 1 - holdEngage * (1 - holdBrake) : 1);
-      whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + seamBrake * 3.2)));
+      whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick2 * (0.8 + seamBrake * 3.2)));
       const facingBrake = gatherTravel && !gatherClearing ? Math.max(0.2, Math.cos(motionAngle(whale.heading, gatherFacing))) : 1;
       const travelBlend = holdEngage * facingBrake;
       const velocityX = Math.cos(whale.heading) * (1 - holdEngage) + (gatherTravel?.x ?? 0) * travelBlend;
@@ -1431,9 +1431,9 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       const driveSpeed = gatherClearing ? cruise : whale.speed;
       whale.vx = velocityX * driveSpeed;
       whale.vy = velocityY * driveSpeed;
-      whale.x += whale.vx * motionTick;
-      whale.y += whale.vy * motionTick;
-      if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height, holdEngage > 0)) updateWhaleRig(whale);
+      whale.x += whale.vx * motionTick2;
+      whale.y += whale.vy * motionTick2;
+      if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height, motionTick2, holdEngage > 0)) updateWhaleRig(whale);
       if (obstacles && obstacles.length) motionPushOut(whale, obstacles, width, height);
       motionFoldWhale(whale, width, height);
       const effort = whale.speed / Math.max(1, state.cruise * environmentSpeed);
@@ -1452,7 +1452,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     if (directive && wasEngaging && directive.engage === 0) {
       for (let i = 0; i < whales.length; i++) motionTarget(whales[i], width, height, false, obstacles);
     }
-    scene.time += motionTick;
+    scene.time += motionTick2;
   }
   function motionDiveBearingHold(dive, age) {
     if (Number.isFinite(dive.returnStartedAt)) return 1;
@@ -1654,7 +1654,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     const submergence = u < 0.65 ? 1 - 0.8 * diveSmoothstep(u / 0.65) : 0.2 * (1 - diveSmoothstep((u - 0.65) / 0.35));
     return { submergence, pitch, noseFirst: submergence > 0, depth, tailKick: 0, arch };
   }
-  function stepScene(scene, dt, speed = 1) {
+  function stepScene(scene, dt, speed = 1, metrics = null, integrationTick = motionTick) {
     if (!Number.isFinite(dt) || dt <= 0) return scene;
     speed = motionLimit(motionFinite(speed, 1), 0, 3);
     if (speed === 0) return scene;
@@ -1662,9 +1662,11 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       resizeScene(scene, scene.width || 1600, scene.height || 900);
     }
     scene.accumulator = motionFinite(scene.accumulator, 0) + Math.min(dt, 0.25);
-    while (scene.accumulator + 1e-10 >= motionTick) {
-      motionIntegrate(scene, speed);
-      scene.accumulator = Math.max(0, scene.accumulator - motionTick);
+    while (scene.accumulator + 1e-10 >= integrationTick) {
+      const started = metrics?.begin();
+      motionIntegrate(scene, speed, integrationTick);
+      metrics?.end("motionStep", started);
+      scene.accumulator = Math.max(0, scene.accumulator - integrationTick);
     }
     return scene;
   }
@@ -1782,6 +1784,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
   // src/model.js
   var FIELDS = Object.freeze({
     enabled: { kind: "boolean", default: true },
+    resourceMode: { kind: "enum", values: ["standard", "economy"], default: "standard" },
     count: { kind: "number", min: 1, max: 8, step: 1, default: 3 },
     species: { kind: "enum", values: ["mixed", ...SPECIES_IDS], default: "mixed" },
     renderStyle: { kind: "enum", values: ["glyphs", "cells"], default: "glyphs" },
@@ -2324,6 +2327,27 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     const horizontal = edgeAttenuation(x, side) * edgeAttenuation(width - x, side);
     const central = quietCenter ? 1 - 0.25 * Math.exp(-(((x / width - 0.5) / 0.29) ** 2)) * smooth(y / height / 0.18) : 1;
     return clamp2(vertical * horizontal * central, 0, 1);
+  }
+
+  // src/resource-policy.js
+  var POLICIES = Object.freeze({
+    standard: Object.freeze({
+      scheduler: "raf",
+      drawIntervalMs: 1e3 / 30,
+      motionTick: 1 / 60,
+      rainHz: 60,
+      swimMultiplier: 1
+    }),
+    economy: Object.freeze({
+      scheduler: "timer",
+      drawIntervalMs: 1e3 / 15,
+      motionTick: 1 / 30,
+      rainHz: 15,
+      swimMultiplier: 0.75
+    })
+  });
+  function resourcePolicy(mode) {
+    return POLICIES[mode] || POLICIES.standard;
   }
 
   // src/glass.js
@@ -3260,8 +3284,12 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     field.height = Math.max(0, atmosFinite(height, 0));
     return field;
   }
-  function stepAtmosphere(field, delta2) {
-    if (field && Number.isFinite(delta2) && delta2 > 0) field.time += delta2;
+  function stepAtmosphere(field, delta2, metrics = null) {
+    if (field && Number.isFinite(delta2) && delta2 > 0) {
+      const started = metrics?.begin();
+      field.time += delta2;
+      metrics?.end("atmosphereUpdate", started);
+    }
     return field;
   }
   function atmosphereWindAt(field, x = 0, y = 0, out = {}) {
@@ -3514,24 +3542,56 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
   }
 
   // src/activity.js
-  var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]) });
-  var emptyJobs = Object.freeze({ rows: Object.freeze({}) });
+  var unavailable = Object.freeze({ currentSession: "unavailable", liveStatus: "unavailable", jobs: "unavailable" });
+  var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]), availability: unavailable });
+  var unknownJobs = Object.freeze({ rows: Object.freeze({}) });
+  var emptyJobs = Object.freeze({ ...unknownJobs, available: false });
   var rank = (entity) => entity.kind === "waiting" ? 0 : entity.kind === "failed" ? 1 : entity.kind === "completed" ? 2 : entity.kind === "running" ? 3 : 4;
-  function createActivityTracker() {
+  function createActivityTracker({ onChange } = {}) {
     let snapshot = EMPTY_ACTIVITY, scope = null, seats = [], now = 0;
     let dirty = true, appliedWhales = null, appliedEnabled = null, nextExpiry = Infinity;
     const runningJobs = /* @__PURE__ */ new Set(), terminal = /* @__PURE__ */ new Map();
+    let previousKinds = /* @__PURE__ */ new Map(), transitions = [], serial = 0, published = "";
+    function publish(entities, badges, overflow, enabled) {
+      const value = {
+        scope: enabled ? scope : null,
+        enabled,
+        availability: snapshot.availability ?? unavailable,
+        entities,
+        seats: badges,
+        overflow
+      };
+      const signature = JSON.stringify(value);
+      if (signature === published && !transitions.length) return;
+      published = signature;
+      const freezeRows = (rows) => Object.freeze(rows.map((row) => row ? Object.freeze({ ...row }) : null));
+      onChange?.(Object.freeze({
+        ...value,
+        availability: Object.freeze({ ...value.availability }),
+        entities: freezeRows(entities),
+        seats: freezeRows(badges),
+        overflow: freezeRows(overflow),
+        transitions: freezeRows(transitions)
+      }));
+      transitions = [];
+    }
     function update(next = EMPTY_ACTIVITY) {
-      if (next.scope !== scope) {
+      const changedScope = next.scope !== scope;
+      if (changedScope) {
         scope = next.scope;
         seats = [];
         runningJobs.clear();
         terminal.clear();
+        previousKinds.clear();
+        transitions = [];
       }
       snapshot = next;
       dirty = true;
       const present = /* @__PURE__ */ new Set();
       for (const entity of snapshot.entities) {
+        if (!changedScope && entity.kind === "waiting" && previousKinds.get(entity.key) !== "waiting") {
+          transitions.push({ ...entity, event: ++serial });
+        }
         if (entity.type !== "job") continue;
         present.add(entity.key);
         if (entity.kind === "running") {
@@ -3539,26 +3599,39 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
           terminal.delete(entity.key);
         } else if (runningJobs.delete(entity.key) && (entity.kind === "completed" || entity.kind === "failed")) {
           terminal.set(entity.key, { ...entity, until: now + 6 });
+          transitions.push({ ...entity, event: ++serial });
+        } else if (terminal.has(entity.key)) {
+          terminal.set(entity.key, { ...terminal.get(entity.key), label: entity.label });
         }
       }
+      previousKinds = new Map(snapshot.entities.map((entity) => [entity.key, entity.kind]));
       for (const key of runningJobs) if (!present.has(key)) runningJobs.delete(key);
       for (const key of terminal.keys()) if (!present.has(key)) terminal.delete(key);
     }
     function apply2(whales, time, enabled = true) {
       now = time;
-      if (!dirty && appliedWhales === whales && appliedEnabled === enabled && now < nextExpiry) return;
+      if (!dirty && appliedWhales === whales && appliedEnabled === enabled && now + 1e-9 < nextExpiry) return;
       dirty = false;
       appliedWhales = whales;
       appliedEnabled = enabled;
       if (!enabled || !scope) {
         for (const whale of whales) delete whale.activity;
+        transitions = [];
+        nextExpiry = Infinity;
+        if (!enabled) {
+          runningJobs.clear();
+          terminal.clear();
+          previousKinds.clear();
+        }
+        publish([], [], [], enabled);
         return;
       }
-      for (const [key, entity] of terminal) if (entity.until <= now) terminal.delete(key);
+      for (const [key, entity] of terminal) if (entity.until <= now + 1e-9) terminal.delete(key);
       nextExpiry = Infinity;
       for (const entity of terminal.values()) nextExpiry = Math.min(nextExpiry, entity.until);
-      const candidates = snapshot.entities.filter((entity) => entity.type !== "job" || entity.kind === "running");
-      candidates.push(...terminal.values());
+      const current = new Map(snapshot.entities.filter((entity) => entity.type !== "job" || !["completed", "failed"].includes(entity.kind)).map((entity) => [entity.key, entity]));
+      for (const entity of terminal.values()) current.set(entity.key, entity);
+      const candidates = [...current.values()];
       const primary = candidates.find((entity) => entity.primary);
       const rest = candidates.filter((entity) => !entity.primary).sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
       const chosen = primary ? [primary, ...rest.slice(0, Math.max(0, whales.length - 1))] : rest.slice(0, whales.length);
@@ -3571,7 +3644,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
         seats[index] = entity.key;
         seated.add(entity.key);
       }
-      const overflow = candidates.filter((entity) => !seated.has(entity.key) && entity.kind !== "idle");
+      const overflow = candidates.filter((entity) => !seated.has(entity.key));
       const urgent = overflow.sort((a, b) => rank(a) - rank(b))[0];
       for (let i = 0; i < whales.length; i++) {
         const entity = wanted.get(seats[i]);
@@ -3585,6 +3658,12 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
           ...urgent && rank(urgent) < rank(entity) ? { kind: urgent.kind, attention: urgent.label } : {}
         } : entity;
       }
+      publish(
+        candidates.map(({ until, ...entity }) => entity),
+        whales.map((whale) => whale.activity ?? null),
+        overflow.map(({ until, ...entity }) => entity),
+        enabled
+      );
     }
     return { update, apply: apply2 };
   }
@@ -3595,10 +3674,12 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     ink.textBaseline = "middle";
     for (const whale of whales) {
       const activity = whale.activity;
-      if (!activity || activity.kind === "idle") continue;
-      const symbol = activity.kind === "waiting" ? "!" : activity.kind === "failed" ? "×" : activity.kind === "completed" ? "✓" : "···";
-      const label = activity.kind === "running" ? "" : ` ${Array.from(activity.attention ?? activity.label).slice(0, 18).join("")}`;
-      const text = `${symbol}${label}${activity.overflow ? ` +${activity.overflow}` : ""}`;
+      if (!activity) continue;
+      const quiet = activity.kind === "idle" || activity.kind === "unavailable";
+      if (quiet && !activity.overflow) continue;
+      const symbol = quiet ? "" : activity.kind === "waiting" ? "!" : activity.kind === "failed" ? "×" : activity.kind === "completed" ? "✓" : "···";
+      const label = quiet || activity.kind === "running" ? "" : ` ${Array.from(activity.attention ?? activity.label).slice(0, 18).join("")}`;
+      const text = `${symbol}${label}${activity.overflow ? ` +${activity.overflow}` : ""}`.trim();
       ink.fillStyle = activity.kind === "waiting" ? dark ? "#ffd27d" : "#875000" : activity.kind === "failed" ? dark ? "#ffaaaa" : "#a82b36" : activity.kind === "completed" ? dark ? "#9ee6c5" : "#17654e" : dark ? "#a9c6d6" : "#42667a";
       for (const ox of [-width, 0, width]) for (const oy of [-height, 0, height]) {
         const x = whale.x + ox, y = whale.y + oy - whale.bodyRadius - 16;
@@ -3780,13 +3861,23 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       spawn(field, state, options, Math.max(0, age));
     }
   }
-  function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere } = {}) {
+  function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere, metrics = null, integrationHz = 60 } = {}) {
     const state = storage.get(field);
     if (!state || !(Number.isFinite(delta2) && delta2 > 0 && field.width > 0 && field.height > 0)) return field;
+    const started = metrics?.begin();
     const target = enabled ? clamp4(finite3(intensity, 0.45)) : 0, options = { wind, atmosphere };
-    if (delta2 > 2) advance(field, state, delta2 - 2, options, target, false);
-    const window2 = Math.min(delta2, 2), steps = Math.ceil(window2 * 60), dt = window2 / steps;
-    for (let i = 0; i < steps; i++) advance(field, state, dt, options, target, true);
+    if (delta2 > 2) {
+      const stepStarted = metrics?.begin();
+      advance(field, state, delta2 - 2, options, target, false);
+      metrics?.end("rainStep", stepStarted);
+    }
+    const window2 = Math.min(delta2, 2), steps = Math.max(1, Math.ceil(window2 * integrationHz - (integrationHz === 60 ? 0 : 1e-10))), dt = window2 / steps;
+    for (let i = 0; i < steps; i++) {
+      const stepStarted = metrics?.begin();
+      advance(field, state, dt, options, target, true);
+      metrics?.end("rainStep", stepStarted);
+    }
+    metrics?.end("rainUpdate", started);
     return field;
   }
   function maskAt(segments, count, fade, width, height, thickness) {
@@ -4203,7 +4294,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     return sceneConfigKeys.some((key) => previous[key] !== next[key]);
   }
   var dictationAnchorOf = (value) => value && ["left", "top", "width", "height"].every((key) => Number.isFinite(value[key])) && value.width > 0 && value.height > 0 ? { left: value.left, top: value.top, width: value.width, height: value.height } : null;
-  function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
+  function createWhaleSimulation(initialConfig, { seed = 0, metrics = null, onActivityChange } = {}) {
     let disposed = false;
     let activityTime = 0;
     let config = { ...initialConfig };
@@ -4212,8 +4303,12 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     const water = createWaterField();
     const atmosphere = createAtmosphereField({ seed });
     const rain = createRainField({ seed });
+    let activityVersion = 0;
+    const activity = createActivityTracker({ onChange(value) {
+      activityVersion++;
+      onActivityChange?.(value);
+    } });
     const voiceSea = createVoiceSeaField();
-    const activity = createActivityTracker();
     let dictation = EMPTY_DICTATION;
     let dictationAnchor = null;
     let dictationLevel2 = () => 0;
@@ -4257,6 +4352,8 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
             previous.height > 0 ? previous.height : 900
           );
           adoptSceneState(previous, scene);
+          scene.time = previous.time;
+          scene.accumulator = previous.accumulator;
         }
         if (rebuild || config.ripples !== next.ripples) resetWaterField(water);
         config = { ...next };
@@ -4266,9 +4363,11 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
         return rebuild;
       },
       setActivity(snapshot) {
-        if (disposed) return;
+        if (disposed) return false;
+        const before = activityVersion;
         activity.update(snapshot);
         activity.apply(scene.whales, activityTime, config.activity);
+        return before !== activityVersion;
       },
       setDictation(snapshot, levelSource) {
         if (disposed) return;
@@ -4304,18 +4403,27 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       },
       advance(delta2) {
         if (disposed) return 0;
+        const started = metrics?.begin();
         const before = scene.time;
         activity.apply(scene.whales, activityTime, config.activity);
-        stepScene(scene, delta2, config.speed);
+        const policy = resourcePolicy(config.resourceMode);
+        stepScene(scene, delta2, config.speed * policy.swimMultiplier, metrics, policy.motionTick);
         const elapsed = scene.time - before;
         activityTime += elapsed;
-        if (config.ripples) stepWater(water, scene, elapsed);
-        stepAtmosphere(atmosphere, elapsed);
+        activity.apply(scene.whales, activityTime, config.activity);
+        if (config.ripples) {
+          const waterStarted = metrics?.begin();
+          stepWater(water, scene, elapsed);
+          metrics?.end("waterUpdate", waterStarted);
+        }
+        stepAtmosphere(atmosphere, elapsed, metrics);
         stepRain(rain, elapsed, {
           enabled: config.rain,
           intensity: config.rainIntensity,
           wind: config.wind,
-          atmosphere
+          atmosphere,
+          metrics,
+          integrationHz: policy.rainHz
         });
         stepVoiceSea(voiceSea, elapsed, dictationLevel2(), {
           enabled: dictationEnabled && dictation.phase === "recording",
@@ -4324,6 +4432,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
           width: scene.width,
           height: scene.height
         });
+        metrics?.end("advance", started);
         return elapsed;
       },
       dispose() {
@@ -5161,7 +5270,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
   var PALETTE_KEYS = Object.freeze(["color"]);
   var GLASS_KEYS = Object.freeze(["glass", "glassStrength", "readingEffect"]);
   var COMPOSER_KEYS = Object.freeze(["composerGlass", "composerAvoid"]);
-  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "seaGrid", "wind", "clouds", "rain", "rainIntensity", "activity", "dictationEcho", "pauseOnScroll"]);
+  var LIVE_KEYS = Object.freeze(["resourceMode", "enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "seaGrid", "wind", "clouds", "rain", "rainIntensity", "activity", "dictationEcho", "pauseOnScroll"]);
   var anyChanged = (keys, previous, next) => keys.some((key) => previous[key] !== next[key]);
   var noChange = (changes) => !changes.scene && !changes.metrics && !changes.palette && !changes.glass && !changes.composer && !changes.live;
   function diffWhaleConfig(previous, next) {
@@ -5337,10 +5446,11 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     const config = normalizeLayerConfig(initialConfig);
     const demo = options.demoCard || null;
     const readingProtection = createReadingProtection();
-    const scenerySeed = Math.floor(Math.random() * 4294967296) >>> 0;
+    const metrics = options.metrics || null;
+    const scenerySeed = options.seed ?? Math.floor(Math.random() * 4294967296) >>> 0;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reducedTransparency = window.matchMedia("(prefers-reduced-transparency: reduce)");
-    const simulation = createWhaleSimulation(config, { seed: scenerySeed });
+    const simulation = createWhaleSimulation(config, { seed: scenerySeed, metrics, onActivityChange: options.onActivityChange });
     let scene = simulation.scene;
     const { water, atmosphere, rain, voiceSea } = simulation;
     let sceneryPalette = createInkPalette(config.color);
@@ -5348,21 +5458,22 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
     let painter = createWhalePainter(scene, config);
     ink.font = painter.font;
-    let metrics = measureGlyphs();
+    let glyphMetrics = measureGlyphs();
     let width = 0, height = 0, ratio = 1, grid = null;
     let offsetX = 0, offsetY = 0;
     const viewport = options.viewport;
     let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
     let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
     let panes = [], tone = null, readingLayout = null, foreground = null, sidebarForegrounds = [];
+    let scheduled = null, refreshRaf = 0, refreshCause = null;
     let composerAnchor = null;
-    let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+    let previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
     let readingTextDirty = true, readingRoots = [], scrolling = false, scrollTimer = 0;
     const originalOpacity = canvas.style?.opacity ?? "", originalTransition = canvas.style?.transition ?? "";
     const SCROLL_IDLE_MS = 140;
     const spout = attachSpout(canvas, () => ({
       enabled: config.spout,
-      reduced: reduced.matches,
+      reduced: reduced.matches || config.speed === 0,
       hidden: document.hidden,
       opacity: config.opacity,
       quietCenter: config.quietCenter,
@@ -5505,6 +5616,15 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       applySceneObstacles();
     }
     function measure() {
+      if (!metrics) return measureContent();
+      const started = metrics.begin();
+      try {
+        return measureContent();
+      } finally {
+        metrics.end("layout", started, demo ? "demo" : "dom");
+      }
+    }
+    function measureContent() {
       measuredAt = performance.now();
       panes = [];
       tone = null;
@@ -5561,8 +5681,14 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
         composer: composer ? composer.rect : null
       });
     }
-    function draw() {
-      if (scrolling || !width || !height || !scene || !grid) return;
+    function draw(cause = "sync") {
+      if (disposed || !config.enabled || document.hidden || scrolling || !width || !height || !scene || !grid) return;
+      if (!metrics) return drawContent();
+      const started = metrics.begin();
+      drawContent();
+      metrics.end("draw", started, cause);
+    }
+    function drawContent() {
       if (performance.now() - measuredAt > MEASURE_INTERVAL) measure();
       if (viewport) {
         ink.setTransform(1, 0, 0, 1, 0, 0);
@@ -5638,7 +5764,9 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       drawRain(ink, rain, { ...rainScenery, phase: "surface" });
       paintGlyphs(ink, fade);
       drawRain(ink, rain, { ...rainScenery, phase: "fall" });
+      const spoutStarted = metrics?.begin();
       spout.paint(ink, fade);
+      metrics?.end("spoutUpdate", spoutStarted);
       if (config.activity) drawActivityBadges(ink, scene.whales, width, height, {
         dark: document.body.hasAttribute("data-ds-dark-theme"),
         opacity: config.opacity,
@@ -5770,29 +5898,81 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
         ink.fill();
       }
     }
+    function canAnimate() {
+      return !disposed && config.enabled && config.speed > 0 && !scrolling && !document.hidden && !reduced.matches && width > 0 && height > 0 && scene;
+    }
+    function cancelContinuous() {
+      if (scheduled?.kind === "raf") cancelAnimationFrame(scheduled.handle);
+      else if (scheduled?.kind === "timer") clearTimeout(scheduled.handle);
+      scheduled = null;
+      previous = null;
+    }
+    function cancelRefresh() {
+      cancelAnimationFrame(refreshRaf);
+      refreshRaf = 0;
+      refreshCause = null;
+    }
+    function scheduleContinuous() {
+      if (scheduled || !canAnimate()) return;
+      const policy = resourcePolicy(config.resourceMode);
+      if (policy.scheduler === "timer") {
+        if (previous === null) previous = performance.now();
+        scheduled = { kind: "timer", handle: setTimeout(() => frame(performance.now()), policy.drawIntervalMs) };
+      } else scheduled = { kind: "raf", handle: requestAnimationFrame(frame) };
+    }
     function frame(now) {
-      raf = 0;
-      if (disposed || scrolling || document.hidden || reduced.matches || !width || !height || !scene) return;
-      if (previous !== null) {
-        simulation.advance(Math.min(0.1, (now - previous) / 1e3));
+      const started = metrics?.begin();
+      const kind = scheduled?.kind;
+      scheduled = null;
+      try {
+        if (!canAnimate()) return;
+        if (previous !== null) simulation.advance(Math.min(0.1, (now - previous) / 1e3));
+        previous = now;
+        const paintAt = performance.now();
+        if (paintAt - lastPaint >= resourcePolicy(config.resourceMode).drawIntervalMs - 1e-7) {
+          draw("animation");
+          lastPaint = paintAt;
+        }
+        scheduleContinuous();
+      } finally {
+        metrics?.end("wakeup", started, kind);
       }
-      previous = now;
-      if (now - lastPaint >= 1e3 / 30) {
-        draw();
-        lastPaint = now;
+    }
+    function requestRefresh(cause, immediate = false) {
+      if (disposed || !config.enabled || scrolling || document.hidden || !width || !height) return;
+      refreshCause = cause;
+      if (refreshRaf) return;
+      if (immediate) {
+        draw(cause);
+        lastPaint = performance.now();
+        refreshCause = null;
       }
-      raf = requestAnimationFrame(frame);
+      refreshRaf = requestAnimationFrame(() => {
+        refreshRaf = 0;
+        const started = metrics?.begin();
+        const cause2 = refreshCause;
+        refreshCause = null;
+        try {
+          if (cause2) {
+            draw(cause2);
+            lastPaint = performance.now();
+          }
+        } finally {
+          metrics?.end("refreshWakeup", started, cause2);
+        }
+      });
     }
     function sync() {
-      cancelAnimationFrame(raf);
-      raf = 0;
-      previous = null;
+      cancelContinuous();
+      cancelRefresh();
+      if (document.hidden || !config.enabled) leaveScrollPause();
       lastPaint = -Infinity;
       measuredAt = -Infinity;
       readingTextDirty = true;
-      if (!disposed && !scrolling && !document.hidden && width && height) {
+      observeScene(!disposed && config.enabled && !scrolling && !document.hidden);
+      if (!disposed && config.enabled && !scrolling && !document.hidden && width && height) {
         draw();
-        if (!reduced.matches) raf = requestAnimationFrame(frame);
+        scheduleContinuous();
       }
     }
     function update(nextConfig) {
@@ -5800,11 +5980,17 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       const next = normalizeLayerConfig(nextConfig);
       const changes = diffWhaleConfig(config, next);
       if (noChange(changes)) return;
+      const schedulerChanged = config.resourceMode !== next.resourceMode || config.enabled !== next.enabled || config.speed === 0 !== (next.speed === 0);
+      if (schedulerChanged) {
+        cancelContinuous();
+        cancelRefresh();
+      }
       const sceneRebuilt = simulation.update(next);
       Object.assign(config, next);
       if (config.readingEffect === "none") readingProtection.dispose();
-      const wasPaused = scrolling && !config.pauseOnScroll;
-      if (wasPaused) leaveScrollPause();
+      const wasPaused = scrolling && (!config.pauseOnScroll || !config.enabled);
+      if (wasPaused) leaveScrollPause(false);
+      observeScene(config.enabled && !scrolling && !document.hidden);
       if (sceneRebuilt) {
         scene = simulation.scene;
         poses = scene.whales.map(() => ({}));
@@ -5813,37 +5999,42 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       }
       if (sceneRebuilt || changes.metrics) {
         painter = createWhalePainter(scene, config);
-        metrics = measureGlyphs();
-        if (width && height) grid = createDepthGrid(width, height, config.glyphSize, metrics);
+        glyphMetrics = measureGlyphs();
+        if (width && height) grid = createDepthGrid(width, height, config.glyphSize, glyphMetrics);
       } else if (changes.palette) {
         painter = createWhalePainter(scene, config);
       }
       if (changes.glass || changes.composer) {
         measuredAt = -Infinity;
         readingTextDirty = true;
-        if (!scrolling && width && height) measure();
+        if (config.enabled && !document.hidden && !scrolling && width && height) measure();
       }
       if (changes.palette) sceneryPalette = createInkPalette(config.color);
       if (viewport) resize();
       lastPaint = -Infinity;
       if (!scrolling && !document.hidden && width && height) {
-        if (!reduced.matches && !raf) raf = requestAnimationFrame(frame);
-        draw();
+        scheduleContinuous();
+        draw("config");
         lastPaint = performance.now();
+      }
+      if (!config.enabled) {
+        cancelContinuous();
+        cancelRefresh();
       }
       if (wasPaused) revealLayer();
     }
     function finishScroll() {
       scrollTimer = 0;
       if (disposed) return;
-      leaveScrollPause();
+      leaveScrollPause(false);
       sync();
       revealLayer();
     }
-    function leaveScrollPause() {
+    function leaveScrollPause(reveal = true) {
       clearTimeout(scrollTimer);
       scrollTimer = 0;
       scrolling = false;
+      if (reveal) revealLayer();
     }
     function revealLayer() {
       if (canvas.style) {
@@ -5852,40 +6043,39 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       }
     }
     function onScroll(event) {
-      if (demo || disposed || document.hidden || event?.ctrlKey) return;
+      if (demo || disposed || !config.enabled || document.hidden || event?.ctrlKey) return;
       const target = event?.target;
       if (target && target !== document && target !== document.body && target !== document.documentElement && !readingRoots.some((root) => root === target || root.contains?.(target))) return;
       readingTextDirty = true;
       if (!config.pauseOnScroll) {
-        if (reduced.matches) onForegroundChange();
+        if (!canAnimate()) onForegroundChange();
         return;
       }
       measuredAt = -Infinity;
       if (!scrolling) {
         scrolling = true;
-        cancelAnimationFrame(raf);
-        cancelAnimationFrame(foregroundRaf);
-        raf = foregroundRaf = 0;
-        previous = null;
+        observeScene(false);
+        cancelContinuous();
+        cancelRefresh();
         if (canvas.style) {
           canvas.style.transition = "none";
           canvas.style.opacity = "0";
         }
       }
       clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(finishScroll, SCROLL_IDLE_MS);
+      scrollTimer = setTimeout(() => {
+        const started = metrics?.begin();
+        try {
+          finishScroll();
+        } finally {
+          metrics?.end("scrollWakeup", started);
+        }
+      }, SCROLL_IDLE_MS);
     }
     function onForegroundChange() {
       measuredAt = -Infinity;
       readingTextDirty = true;
-      if (disposed || scrolling || document.hidden || !reduced.matches || foregroundRaf) return;
-      foregroundRaf = requestAnimationFrame(() => {
-        foregroundRaf = 0;
-        if (!disposed && !document.hidden) {
-          draw();
-          lastPaint = performance.now();
-        }
-      });
+      requestRefresh("foreground");
     }
     function resize() {
       const rect = canvas.getBoundingClientRect();
@@ -5908,26 +6098,40 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       canvas.width = pixels.width;
       canvas.height = pixels.height;
       ink.setTransform(ratio, 0, 0, ratio, offsetX, offsetY);
-      grid = createDepthGrid(width, height, config.glyphSize, metrics);
+      grid = createDepthGrid(width, height, config.glyphSize, glyphMetrics);
       simulation.resize(width, height);
       measuredAt = -Infinity;
       sync();
     }
     const observer = new ResizeObserver(resize);
     const themeObserver = new MutationObserver(sync);
-    const foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+    let foregroundObserver = null, observing = false;
     const readingObserver = demo ? null : new MutationObserver((records) => {
       if (!records || records.some((record) => record.target !== canvas)) onForegroundChange();
     });
-    readingObserver?.observe(document.body, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["class", "style", "hidden"]
-    });
-    observer.observe(canvas);
-    themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+    function observeScene(active) {
+      if (observing === active) return;
+      observing = active;
+      if (active) {
+        foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+        readingObserver?.observe(document.body, {
+          childList: true,
+          characterData: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["class", "style", "hidden"]
+        });
+        observer.observe(canvas);
+        themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+      } else {
+        observer.disconnect();
+        foregroundObserver?.dispose();
+        foregroundObserver = null;
+        readingObserver?.disconnect();
+        themeObserver.disconnect();
+      }
+    }
+    observeScene(config.enabled && !document.hidden);
     document.addEventListener("visibilitychange", sync);
     reduced.addEventListener("change", sync);
     reducedTransparency.addEventListener("change", sync);
@@ -5943,15 +6147,10 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
       spout.detach();
       simulation.dispose();
       disposed = true;
-      cancelAnimationFrame(raf);
-      cancelAnimationFrame(foregroundRaf);
-      foregroundRaf = 0;
-      raf = 0;
-      observer.disconnect();
-      foregroundObserver?.dispose();
-      readingObserver?.disconnect();
+      cancelContinuous();
+      cancelRefresh();
+      observeScene(false);
       readingProtection?.dispose();
-      themeObserver.disconnect();
       document.removeEventListener("visibilitychange", sync);
       reduced.removeEventListener("change", sync);
       reducedTransparency.removeEventListener("change", sync);
@@ -5987,8 +6186,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     }
     function setActivity(snapshot) {
       if (disposed) return;
-      simulation.setActivity(snapshot);
-      if (!document.hidden && width && height) draw();
+      if (simulation.setActivity(snapshot)) requestRefresh("activity", true);
     }
     function setDictation(snapshot, levelSource) {
       if (disposed) return;
@@ -5997,6 +6195,14 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     }
     return { update, setActivity, setDictation, dispose };
   }
+
+  // src/presets.js
+  var PRESETS = Object.freeze({
+    default: Object.freeze({ count: 3, speed: 0.65, opacity: 0.6, color: "ocean", wind: true, clouds: true, ripples: true, spout: true, rain: false, rainIntensity: 0.45 }),
+    rainy: Object.freeze({ count: 3, speed: 0.55, opacity: 0.55, color: "ocean", wind: true, clouds: true, ripples: true, spout: false, rain: true, rainIntensity: 0.35 }),
+    minimal: Object.freeze({ count: 1, speed: 0.4, opacity: 0.35, color: "ocean", wind: false, clouds: false, ripples: false, spout: false, rain: false, rainIntensity: 0.45 }),
+    night: Object.freeze({ count: 3, speed: 0.5, opacity: 0.45, color: "indigo", wind: true, clouds: true, ripples: true, spout: true, rain: false, rainIntensity: 0.45 })
+  });
 
   // src/config-editor.js
   var exclusiveConfig = { glass: "composerAvoid", composerAvoid: "glass" };
@@ -6023,6 +6229,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
   function readConfig() {
     return {
       ...DEFAULTS,
+      resourceMode: el("resourceMode").value,
       species: el("species").value,
       renderStyle: el("renderStyle").value,
       fillMode: el("fillMode").value,
@@ -6121,7 +6328,7 @@ body.dark .rightbar-panel{background:#202730;border-color:#384654;color:#d1dfeb}
     for (const key of ["glass", "composerAvoid"]) el(key).checked = next[key];
     apply();
   }
-  for (const id of ["readingEffect", "renderStyle", "fillMode", "text", "species", "count", "whaleSize", "speed", "color", "rainIntensity"]) {
+  for (const id of ["resourceMode", "readingEffect", "renderStyle", "fillMode", "text", "species", "count", "whaleSize", "speed", "color", "rainIntensity"]) {
     el(id).addEventListener("input", apply);
     el(id).addEventListener("change", apply);
   }

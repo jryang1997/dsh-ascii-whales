@@ -1,5 +1,7 @@
 # 俯瞰 ASCII 海面的风纹与云影
 
+文中指向 `.scratch/` 的链接是本机证据路径，仅在本机存在，不随仓库或安装包发布。
+
 ## 明确
 
 - NOAA 对海面 surface slicks 的直接说明将它们描述为狭长、蜿蜒的光滑水面条带，并指出聚集物可抑制细小涟漪。内部波、锋面与 Langmuir cells 都可能造成这类结构。因此可以借用海面条带表现风的方向感，但不能把所有短弯痕都称为真实毛细波或断言只由风形成。[NOAA 原文](https://www.integratedecosystemassessment.noaa.gov/regions/hawaii/important-habitat-surface-slicks)

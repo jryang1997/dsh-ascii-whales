@@ -1075,7 +1075,7 @@
     whale.rig.nodes.set(nodes);
     updateWhaleRig(whale);
   }
-  function motionConstrainStep(whale, x, y, heading, obstacles, width, height, approaching = false) {
+  function motionConstrainStep(whale, x, y, heading, obstacles, width, height, motionTick2, approaching = false) {
     if (!obstacles?.length) return false;
     const seamReach = whale.length * 0.6 + motionHullReach(whale);
     if (!approaching && Math.min(x, width - x, y, height - y) > seamReach) return false;
@@ -1163,10 +1163,10 @@
       }
       sample(low);
     }
-    whale.vx = (whale.x - x) / motionTick;
-    whale.vy = (whale.y - y) / motionTick;
+    whale.vx = (whale.x - x) / motionTick2;
+    whale.vy = (whale.y - y) / motionTick2;
     whale.speed = Math.hypot(whale.vx, whale.vy);
-    whale.turn = (whale.heading - heading) / motionTick;
+    whale.turn = (whale.heading - heading) / motionTick2;
     if (approaching && Math.abs(endHeading - heading) > 1e-7 && Math.abs(whale.heading - heading) < Math.abs(endHeading - heading) * 0.5) {
       whale._motion.gatherTurnClear = true;
     }
@@ -1225,7 +1225,7 @@
     const u = motionLimit((age - state.depthStartedAt) / state.depthDuration, 0, 1);
     whale.depth = state.depthFrom + (state.depthTarget - state.depthFrom) * u * u * (3 - 2 * u);
   }
-  function motionIntegrate(scene, speed) {
+  function motionIntegrate(scene, speed, motionTick2) {
     const whales = scene.whales, width = scene.width, height = scene.height;
     const size2 = motionLimit(motionFinite(scene.whaleSize, 1), motionWhaleSizeFloor, motionWhaleSizeCeiling);
     const directive = scene.dictation && typeof scene.dictation === "object" ? scene.dictation : null;
@@ -1256,14 +1256,14 @@
         }
       }
       const wants = directive.active === true && Boolean(directive.anchor) && Array.isArray(directive.slots);
-      directive.engage = stepEngage(directive.engage, wants, motionTick);
+      directive.engage = stepEngage(directive.engage, wants, motionTick2);
     }
     const schoolEngage = directive ? directive.engage : 0;
     const holdSlots = directive && Array.isArray(directive.slots) ? directive.slots : null;
     for (let i = 0; i < whales.length; i++) {
       const whale = whales[i], previousLength = whale.length;
       if (!(schoolEngage > 0 && holdSlots && holdSlots[i])) {
-        motionCruiseDepth(whale, i, whale._motion.age + motionTick * speed);
+        motionCruiseDepth(whale, i, whale._motion.age + motionTick2 * speed);
       }
       motionGeometry(whale, width, height, whales.length, size2);
       const nodes = whale.rig?.nodes, ratio = whale.length / previousLength;
@@ -1330,7 +1330,7 @@
       const activityPace = activityKind === "running" ? 1.35 : activityKind === "waiting" ? 0.32 : activityKind === "idle" ? 0.62 : 1;
       const holdSlot = schoolEngage > 0 && holdSlots ? holdSlots[i] || null : null;
       const holdEngage = holdSlot ? schoolEngage : 0;
-      const travelTick = motionTick * speed;
+      const travelTick = motionTick2 * speed;
       state.age += travelTick;
       motionPrepareDive(
         whale,
@@ -1455,7 +1455,7 @@
           const hull = motionBodyHull(whale);
           const obstacle = { x: card.left, y: card.top, width: card.width, height: card.height, radius: 0 };
           const turnCost = (direction) => {
-            const yaw = direction * GATHER.turnRate * motionTick * 4;
+            const yaw = direction * GATHER.turnRate * motionTick2 * 4;
             const c = Math.cos(yaw), s = Math.sin(yaw);
             let cost = -Infinity;
             for (let at = 0; at < hull.length; at += 3) {
@@ -1487,7 +1487,7 @@
       }
       const requestedTurn = motionLimit(steeringError * 1.1, -turnLimit, turnLimit);
       const turnResponse = 1.7 + (1 / 0.06 - 1.7) * bearingHold;
-      const response = 1 - Math.exp(-motionTick * turnResponse);
+      const response = 1 - Math.exp(-motionTick2 * turnResponse);
       if (holdEngage > 0) {
         state.gatherYaw = motionFinite(state.gatherYaw, whale.turn);
         state.gatherYaw += (requestedTurn - state.gatherYaw) * response;
@@ -1497,9 +1497,9 @@
         whale.turn += (requestedTurn - whale.turn) * response;
       }
       whale.turn = motionLimit(whale.turn, -turnLimit, turnLimit);
-      whale.heading += whale.turn * motionTick;
+      whale.heading += whale.turn * motionTick2;
       const targetSpeed = cruise * (1 - force.caution * 0.3) * (1 - seamBrake) * (1 - 0.12 * Math.abs(whale.turn) / Math.max(0.01, turnLimit)) * (holdEngage > 0 ? 1 - holdEngage * (1 - holdBrake) : 1);
-      whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick * (0.8 + seamBrake * 3.2)));
+      whale.speed += (targetSpeed - whale.speed) * (1 - Math.exp(-motionTick2 * (0.8 + seamBrake * 3.2)));
       const facingBrake = gatherTravel && !gatherClearing ? Math.max(0.2, Math.cos(motionAngle(whale.heading, gatherFacing))) : 1;
       const travelBlend = holdEngage * facingBrake;
       const velocityX = Math.cos(whale.heading) * (1 - holdEngage) + (gatherTravel?.x ?? 0) * travelBlend;
@@ -1507,9 +1507,9 @@
       const driveSpeed = gatherClearing ? cruise : whale.speed;
       whale.vx = velocityX * driveSpeed;
       whale.vy = velocityY * driveSpeed;
-      whale.x += whale.vx * motionTick;
-      whale.y += whale.vy * motionTick;
-      if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height, holdEngage > 0)) updateWhaleRig(whale);
+      whale.x += whale.vx * motionTick2;
+      whale.y += whale.vy * motionTick2;
+      if (!motionConstrainStep(whale, startX, startY, startHeading, obstacles, width, height, motionTick2, holdEngage > 0)) updateWhaleRig(whale);
       if (obstacles && obstacles.length) motionPushOut(whale, obstacles, width, height);
       motionFoldWhale(whale, width, height);
       const effort = whale.speed / Math.max(1, state.cruise * environmentSpeed);
@@ -1528,7 +1528,7 @@
     if (directive && wasEngaging && directive.engage === 0) {
       for (let i = 0; i < whales.length; i++) motionTarget(whales[i], width, height, false, obstacles);
     }
-    scene.time += motionTick;
+    scene.time += motionTick2;
   }
   function motionDiveBearingHold(dive, age) {
     if (Number.isFinite(dive.returnStartedAt)) return 1;
@@ -1730,7 +1730,7 @@
     const submergence = u < 0.65 ? 1 - 0.8 * diveSmoothstep(u / 0.65) : 0.2 * (1 - diveSmoothstep((u - 0.65) / 0.35));
     return { submergence, pitch, noseFirst: submergence > 0, depth, tailKick: 0, arch };
   }
-  function stepScene(scene, dt, speed = 1) {
+  function stepScene(scene, dt, speed = 1, metrics = null, integrationTick = motionTick) {
     if (!Number.isFinite(dt) || dt <= 0) return scene;
     speed = motionLimit(motionFinite(speed, 1), 0, 3);
     if (speed === 0) return scene;
@@ -1738,9 +1738,11 @@
       resizeScene(scene, scene.width || 1600, scene.height || 900);
     }
     scene.accumulator = motionFinite(scene.accumulator, 0) + Math.min(dt, 0.25);
-    while (scene.accumulator + 1e-10 >= motionTick) {
-      motionIntegrate(scene, speed);
-      scene.accumulator = Math.max(0, scene.accumulator - motionTick);
+    while (scene.accumulator + 1e-10 >= integrationTick) {
+      const started = metrics?.begin();
+      motionIntegrate(scene, speed, integrationTick);
+      metrics?.end("motionStep", started);
+      scene.accumulator = Math.max(0, scene.accumulator - integrationTick);
     }
     return scene;
   }
@@ -1858,6 +1860,7 @@
   // src/model.js
   var FIELDS = Object.freeze({
     enabled: { kind: "boolean", default: true },
+    resourceMode: { kind: "enum", values: ["standard", "economy"], default: "standard" },
     count: { kind: "number", min: 1, max: 8, step: 1, default: 3 },
     species: { kind: "enum", values: ["mixed", ...SPECIES_IDS], default: "mixed" },
     renderStyle: { kind: "enum", values: ["glyphs", "cells"], default: "glyphs" },
@@ -2405,6 +2408,31 @@
     return clamp2(vertical * horizontal * central, 0, 1);
   }
 
+  // src/presets.js
+  var PRESETS = Object.freeze({
+    default: Object.freeze({ count: 3, speed: 0.65, opacity: 0.6, color: "ocean", wind: true, clouds: true, ripples: true, spout: true, rain: false, rainIntensity: 0.45 }),
+    rainy: Object.freeze({ count: 3, speed: 0.55, opacity: 0.55, color: "ocean", wind: true, clouds: true, ripples: true, spout: false, rain: true, rainIntensity: 0.35 }),
+    minimal: Object.freeze({ count: 1, speed: 0.4, opacity: 0.35, color: "ocean", wind: false, clouds: false, ripples: false, spout: false, rain: false, rainIntensity: 0.45 }),
+    night: Object.freeze({ count: 3, speed: 0.5, opacity: 0.45, color: "indigo", wind: true, clouds: true, ripples: true, spout: true, rain: false, rainIntensity: 0.45 })
+  });
+  function applyPreset(draft, id) {
+    if (!Object.hasOwn(PRESETS, id)) throw new RangeError(`Unknown scene: ${id}`);
+    return { ...draft, ...PRESETS[id] };
+  }
+  function matchPreset(draft) {
+    const values = { ...draft };
+    for (const key of Object.keys(PRESETS.default)) {
+      if (FIELDS[key].kind !== "number" || values[key] === void 0) continue;
+      if (values[key] === "" || !Number.isFinite(Number(values[key]))) return "custom";
+      values[key] = Number(values[key]);
+    }
+    const config = normalizeConfig(values);
+    return Object.entries(PRESETS).find(([, scene]) => Object.entries(scene).every(([key, value]) => {
+      const field = FIELDS[key];
+      return field.kind === "number" ? Math.round((config[key] - field.min) / field.step) === Math.round((value - field.min) / field.step) : config[key] === value;
+    }))?.[0] ?? "custom";
+  }
+
   // src/config-editor.js
   var exclusiveConfig = { glass: "composerAvoid", composerAvoid: "glass" };
   function changeConfigDraft(draft, key, value) {
@@ -2421,6 +2449,9 @@
       change(key, value) {
         return configEditorState(base, changeConfigDraft(draft, key, value), revision);
       },
+      applyPreset(id) {
+        return configEditorState(base, applyPreset(draft, id), revision);
+      },
       reset() {
         return configEditorState(base, { ...DEFAULTS }, revision);
       },
@@ -2435,7 +2466,10 @@
         const ops = Object.keys(FIELDS).filter((key) => values[key] !== base[key]).map((key) => ({ op: "set", path: [key], value: values[key] }));
         if (!ops.length) return { editor, notice: "" };
         try {
-          if (await form.mutate(ops, revision)) {
+          const latest = form.getSnapshot();
+          const saved = normalizeConfig(latest.value);
+          const unchanged = latest.status === "ready" && Object.keys(FIELDS).every((key) => saved[key] === base[key]);
+          if (await form.mutate(ops, unchanged ? latest.revision : revision)) {
             return { editor: createConfigEditor(form.getSnapshot()), notice: "saved" };
           }
           return { editor, notice: "conflict" };
@@ -2449,6 +2483,27 @@
   function createConfigEditor(snapshot) {
     const base = normalizeConfig(snapshot.value);
     return configEditorState(base, { ...base }, snapshot.revision);
+  }
+
+  // src/resource-policy.js
+  var POLICIES = Object.freeze({
+    standard: Object.freeze({
+      scheduler: "raf",
+      drawIntervalMs: 1e3 / 30,
+      motionTick: 1 / 60,
+      rainHz: 60,
+      swimMultiplier: 1
+    }),
+    economy: Object.freeze({
+      scheduler: "timer",
+      drawIntervalMs: 1e3 / 15,
+      motionTick: 1 / 30,
+      rainHz: 15,
+      swimMultiplier: 0.75
+    })
+  });
+  function resourcePolicy(mode) {
+    return POLICIES[mode] || POLICIES.standard;
   }
 
   // src/glass.js
@@ -3349,8 +3404,12 @@
     field.height = Math.max(0, atmosFinite(height, 0));
     return field;
   }
-  function stepAtmosphere(field, delta2) {
-    if (field && Number.isFinite(delta2) && delta2 > 0) field.time += delta2;
+  function stepAtmosphere(field, delta2, metrics = null) {
+    if (field && Number.isFinite(delta2) && delta2 > 0) {
+      const started = metrics?.begin();
+      field.time += delta2;
+      metrics?.end("atmosphereUpdate", started);
+    }
     return field;
   }
   function atmosphereWindAt(field, x = 0, y = 0, out = {}) {
@@ -3603,11 +3662,13 @@
   }
 
   // src/activity.js
-  var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]) });
-  var emptyJobs = Object.freeze({ rows: Object.freeze({}) });
+  var unavailable = Object.freeze({ currentSession: "unavailable", liveStatus: "unavailable", jobs: "unavailable" });
+  var EMPTY_ACTIVITY = Object.freeze({ scope: null, entities: Object.freeze([]), availability: unavailable });
+  var unknownJobs = Object.freeze({ rows: Object.freeze({}) });
+  var emptyJobs = Object.freeze({ ...unknownJobs, available: false });
   var rank = (entity) => entity.kind === "waiting" ? 0 : entity.kind === "failed" ? 1 : entity.kind === "completed" ? 2 : entity.kind === "running" ? 3 : 4;
   var record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-  var sessionKind = (row, status) => status?.pendingInteraction ? "waiting" : (status?.running ?? row?.running) === true ? "running" : "idle";
+  var sessionKind = (row, status) => status?.pendingInteraction ? "waiting" : (status?.running ?? row?.running) === true ? "running" : typeof status?.running === "boolean" ? "idle" : "unavailable";
   function currentSessionId(list) {
     return Object.values(list?.byId ?? {}).find((row) => (row?.retainedBy?.mainView ?? 0) > 0)?.id ?? null;
   }
@@ -3633,42 +3694,80 @@
     const entities = [];
     for (const [id, row] of rows) {
       if (!record(row) || typeof id !== "string") continue;
-      const kind = sessionKind(row, statuses?.get?.(id));
-      if (!related.has(id) && kind === "idle") continue;
+      const status = statuses?.get?.(id);
+      const kind = sessionKind(row, status);
+      if (!related.has(id) && kind !== "running" && kind !== "waiting") continue;
       entities.push({
         key: `session:${id}`,
         type: row.origin === "subagent" || row.parentId ? "subagent" : "session",
-        label: String(row.displayTitle ?? row.title ?? id),
+        label: String(row.displayTitle ?? row.title ?? "").trim(),
         kind,
-        primary: id === scope
+        primary: id === scope,
+        waitingAvailable: record(status)
       });
     }
+    const jobRows = record(jobs?.rows) && Object.hasOwn(jobs.rows, scope) && Array.isArray(jobs.rows[scope]) ? jobs.rows[scope] : null;
+    const jobsAvailability = jobs?.available === false ? "unavailable" : jobRows ? "available" : "unknown";
     const seen = /* @__PURE__ */ new Set();
-    for (const job of jobs?.rows?.[scope] ?? []) {
+    for (const job of jobsAvailability === "available" ? jobRows : []) {
       if (!record(job) || typeof job.id !== "string" && typeof job.id !== "number") continue;
       const key = `job:${job.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const kind = job.status === "running" || job.status === "stopping" ? "running" : job.status === "completed" ? "completed" : job.status === "failed" ? "failed" : "idle";
-      entities.push({ key, type: "job", label: String(job.label ?? job.id), kind, primary: false });
+      const kind = job.status === "running" || job.status === "stopping" ? "running" : job.status === "completed" ? "completed" : job.status === "failed" ? "failed" : ["killed", "cancelled", "stopped"].includes(job.status) ? "idle" : "unavailable";
+      entities.push({ key, type: "job", label: String(job.label ?? "").trim(), kind, primary: false });
     }
-    return { scope, entities };
+    return { scope, entities, availability: {
+      currentSession: "available",
+      liveStatus: typeof statuses?.get === "function" ? "available" : "unavailable",
+      jobs: jobsAvailability
+    } };
   }
-  function createActivityTracker() {
+  function createActivityTracker({ onChange } = {}) {
     let snapshot = EMPTY_ACTIVITY, scope = null, seats = [], now = 0;
     let dirty = true, appliedWhales = null, appliedEnabled = null, nextExpiry = Infinity;
     const runningJobs = /* @__PURE__ */ new Set(), terminal = /* @__PURE__ */ new Map();
+    let previousKinds = /* @__PURE__ */ new Map(), transitions = [], serial = 0, published = "";
+    function publish(entities, badges, overflow, enabled) {
+      const value = {
+        scope: enabled ? scope : null,
+        enabled,
+        availability: snapshot.availability ?? unavailable,
+        entities,
+        seats: badges,
+        overflow
+      };
+      const signature = JSON.stringify(value);
+      if (signature === published && !transitions.length) return;
+      published = signature;
+      const freezeRows = (rows) => Object.freeze(rows.map((row) => row ? Object.freeze({ ...row }) : null));
+      onChange?.(Object.freeze({
+        ...value,
+        availability: Object.freeze({ ...value.availability }),
+        entities: freezeRows(entities),
+        seats: freezeRows(badges),
+        overflow: freezeRows(overflow),
+        transitions: freezeRows(transitions)
+      }));
+      transitions = [];
+    }
     function update(next = EMPTY_ACTIVITY) {
-      if (next.scope !== scope) {
+      const changedScope = next.scope !== scope;
+      if (changedScope) {
         scope = next.scope;
         seats = [];
         runningJobs.clear();
         terminal.clear();
+        previousKinds.clear();
+        transitions = [];
       }
       snapshot = next;
       dirty = true;
       const present = /* @__PURE__ */ new Set();
       for (const entity of snapshot.entities) {
+        if (!changedScope && entity.kind === "waiting" && previousKinds.get(entity.key) !== "waiting") {
+          transitions.push({ ...entity, event: ++serial });
+        }
         if (entity.type !== "job") continue;
         present.add(entity.key);
         if (entity.kind === "running") {
@@ -3676,26 +3775,39 @@
           terminal.delete(entity.key);
         } else if (runningJobs.delete(entity.key) && (entity.kind === "completed" || entity.kind === "failed")) {
           terminal.set(entity.key, { ...entity, until: now + 6 });
+          transitions.push({ ...entity, event: ++serial });
+        } else if (terminal.has(entity.key)) {
+          terminal.set(entity.key, { ...terminal.get(entity.key), label: entity.label });
         }
       }
+      previousKinds = new Map(snapshot.entities.map((entity) => [entity.key, entity.kind]));
       for (const key of runningJobs) if (!present.has(key)) runningJobs.delete(key);
       for (const key of terminal.keys()) if (!present.has(key)) terminal.delete(key);
     }
     function apply(whales, time, enabled = true) {
       now = time;
-      if (!dirty && appliedWhales === whales && appliedEnabled === enabled && now < nextExpiry) return;
+      if (!dirty && appliedWhales === whales && appliedEnabled === enabled && now + 1e-9 < nextExpiry) return;
       dirty = false;
       appliedWhales = whales;
       appliedEnabled = enabled;
       if (!enabled || !scope) {
         for (const whale of whales) delete whale.activity;
+        transitions = [];
+        nextExpiry = Infinity;
+        if (!enabled) {
+          runningJobs.clear();
+          terminal.clear();
+          previousKinds.clear();
+        }
+        publish([], [], [], enabled);
         return;
       }
-      for (const [key, entity] of terminal) if (entity.until <= now) terminal.delete(key);
+      for (const [key, entity] of terminal) if (entity.until <= now + 1e-9) terminal.delete(key);
       nextExpiry = Infinity;
       for (const entity of terminal.values()) nextExpiry = Math.min(nextExpiry, entity.until);
-      const candidates = snapshot.entities.filter((entity) => entity.type !== "job" || entity.kind === "running");
-      candidates.push(...terminal.values());
+      const current = new Map(snapshot.entities.filter((entity) => entity.type !== "job" || !["completed", "failed"].includes(entity.kind)).map((entity) => [entity.key, entity]));
+      for (const entity of terminal.values()) current.set(entity.key, entity);
+      const candidates = [...current.values()];
       const primary = candidates.find((entity) => entity.primary);
       const rest = candidates.filter((entity) => !entity.primary).sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
       const chosen = primary ? [primary, ...rest.slice(0, Math.max(0, whales.length - 1))] : rest.slice(0, whales.length);
@@ -3708,7 +3820,7 @@
         seats[index] = entity.key;
         seated.add(entity.key);
       }
-      const overflow = candidates.filter((entity) => !seated.has(entity.key) && entity.kind !== "idle");
+      const overflow = candidates.filter((entity) => !seated.has(entity.key));
       const urgent = overflow.sort((a, b) => rank(a) - rank(b))[0];
       for (let i = 0; i < whales.length; i++) {
         const entity = wanted.get(seats[i]);
@@ -3722,6 +3834,12 @@
           ...urgent && rank(urgent) < rank(entity) ? { kind: urgent.kind, attention: urgent.label } : {}
         } : entity;
       }
+      publish(
+        candidates.map(({ until, ...entity }) => entity),
+        whales.map((whale) => whale.activity ?? null),
+        overflow.map(({ until, ...entity }) => entity),
+        enabled
+      );
     }
     return { update, apply };
   }
@@ -3729,22 +3847,29 @@
     let service = null, scope = null, release = null, unsubscribe = null, snapshot = emptyJobs;
     const listeners = /* @__PURE__ */ new Set();
     const publish = () => {
-      snapshot = service?.state.getSnapshot() ?? emptyJobs;
+      snapshot = scope && service ? service.state.getSnapshot() ?? unknownJobs : emptyJobs;
       for (const listener of listeners) listener();
     };
+    function connect() {
+      release?.();
+      unsubscribe?.();
+      release = unsubscribe = null;
+      if (scope && service) {
+        unsubscribe = service.state.subscribe(publish);
+        release = service.watchRows(scope);
+      }
+      publish();
+    }
     function watch(next) {
       if (next === scope) return;
-      release?.();
-      release = null;
       scope = next;
-      if (scope && service) release = service.watchRows(scope);
+      connect();
     }
     function attach(next) {
       service = next;
-      unsubscribe = service.state.subscribe(publish);
-      if (scope) release = service.watchRows(scope);
-      publish();
+      connect();
       return () => {
+        if (service !== next) return;
         release?.();
         unsubscribe?.();
         release = unsubscribe = null;
@@ -3769,10 +3894,12 @@
     ink.textBaseline = "middle";
     for (const whale of whales) {
       const activity = whale.activity;
-      if (!activity || activity.kind === "idle") continue;
-      const symbol = activity.kind === "waiting" ? "!" : activity.kind === "failed" ? "×" : activity.kind === "completed" ? "✓" : "···";
-      const label = activity.kind === "running" ? "" : ` ${Array.from(activity.attention ?? activity.label).slice(0, 18).join("")}`;
-      const text = `${symbol}${label}${activity.overflow ? ` +${activity.overflow}` : ""}`;
+      if (!activity) continue;
+      const quiet = activity.kind === "idle" || activity.kind === "unavailable";
+      if (quiet && !activity.overflow) continue;
+      const symbol = quiet ? "" : activity.kind === "waiting" ? "!" : activity.kind === "failed" ? "×" : activity.kind === "completed" ? "✓" : "···";
+      const label = quiet || activity.kind === "running" ? "" : ` ${Array.from(activity.attention ?? activity.label).slice(0, 18).join("")}`;
+      const text = `${symbol}${label}${activity.overflow ? ` +${activity.overflow}` : ""}`.trim();
       ink.fillStyle = activity.kind === "waiting" ? dark ? "#ffd27d" : "#875000" : activity.kind === "failed" ? dark ? "#ffaaaa" : "#a82b36" : activity.kind === "completed" ? dark ? "#9ee6c5" : "#17654e" : dark ? "#a9c6d6" : "#42667a";
       for (const ox of [-width, 0, width]) for (const oy of [-height, 0, height]) {
         const x = whale.x + ox, y = whale.y + oy - whale.bodyRadius - 16;
@@ -3954,13 +4081,23 @@
       spawn(field, state, options, Math.max(0, age));
     }
   }
-  function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere } = {}) {
+  function stepRain(field, delta2, { enabled = false, intensity = 0.45, wind = true, atmosphere, metrics = null, integrationHz = 60 } = {}) {
     const state = storage.get(field);
     if (!state || !(Number.isFinite(delta2) && delta2 > 0 && field.width > 0 && field.height > 0)) return field;
+    const started = metrics?.begin();
     const target = enabled ? clamp4(finite3(intensity, 0.45)) : 0, options = { wind, atmosphere };
-    if (delta2 > 2) advance(field, state, delta2 - 2, options, target, false);
-    const window2 = Math.min(delta2, 2), steps = Math.ceil(window2 * 60), dt = window2 / steps;
-    for (let i = 0; i < steps; i++) advance(field, state, dt, options, target, true);
+    if (delta2 > 2) {
+      const stepStarted = metrics?.begin();
+      advance(field, state, delta2 - 2, options, target, false);
+      metrics?.end("rainStep", stepStarted);
+    }
+    const window2 = Math.min(delta2, 2), steps = Math.max(1, Math.ceil(window2 * integrationHz - (integrationHz === 60 ? 0 : 1e-10))), dt = window2 / steps;
+    for (let i = 0; i < steps; i++) {
+      const stepStarted = metrics?.begin();
+      advance(field, state, dt, options, target, true);
+      metrics?.end("rainStep", stepStarted);
+    }
+    metrics?.end("rainUpdate", started);
     return field;
   }
   function maskAt(segments, count, fade, width, height, thickness) {
@@ -4377,7 +4514,7 @@
     return sceneConfigKeys.some((key) => previous[key] !== next[key]);
   }
   var dictationAnchorOf = (value) => value && ["left", "top", "width", "height"].every((key) => Number.isFinite(value[key])) && value.width > 0 && value.height > 0 ? { left: value.left, top: value.top, width: value.width, height: value.height } : null;
-  function createWhaleSimulation(initialConfig, { seed = 0 } = {}) {
+  function createWhaleSimulation(initialConfig, { seed = 0, metrics = null, onActivityChange } = {}) {
     let disposed = false;
     let activityTime = 0;
     let config = { ...initialConfig };
@@ -4386,8 +4523,12 @@
     const water = createWaterField();
     const atmosphere = createAtmosphereField({ seed });
     const rain = createRainField({ seed });
+    let activityVersion = 0;
+    const activity = createActivityTracker({ onChange(value) {
+      activityVersion++;
+      onActivityChange?.(value);
+    } });
     const voiceSea = createVoiceSeaField();
-    const activity = createActivityTracker();
     let dictation = EMPTY_DICTATION;
     let dictationAnchor = null;
     let dictationLevel = () => 0;
@@ -4431,6 +4572,8 @@
             previous.height > 0 ? previous.height : 900
           );
           adoptSceneState(previous, scene);
+          scene.time = previous.time;
+          scene.accumulator = previous.accumulator;
         }
         if (rebuild || config.ripples !== next.ripples) resetWaterField(water);
         config = { ...next };
@@ -4440,9 +4583,11 @@
         return rebuild;
       },
       setActivity(snapshot) {
-        if (disposed) return;
+        if (disposed) return false;
+        const before = activityVersion;
         activity.update(snapshot);
         activity.apply(scene.whales, activityTime, config.activity);
+        return before !== activityVersion;
       },
       setDictation(snapshot, levelSource) {
         if (disposed) return;
@@ -4478,18 +4623,27 @@
       },
       advance(delta2) {
         if (disposed) return 0;
+        const started = metrics?.begin();
         const before = scene.time;
         activity.apply(scene.whales, activityTime, config.activity);
-        stepScene(scene, delta2, config.speed);
+        const policy = resourcePolicy(config.resourceMode);
+        stepScene(scene, delta2, config.speed * policy.swimMultiplier, metrics, policy.motionTick);
         const elapsed = scene.time - before;
         activityTime += elapsed;
-        if (config.ripples) stepWater(water, scene, elapsed);
-        stepAtmosphere(atmosphere, elapsed);
+        activity.apply(scene.whales, activityTime, config.activity);
+        if (config.ripples) {
+          const waterStarted = metrics?.begin();
+          stepWater(water, scene, elapsed);
+          metrics?.end("waterUpdate", waterStarted);
+        }
+        stepAtmosphere(atmosphere, elapsed, metrics);
         stepRain(rain, elapsed, {
           enabled: config.rain,
           intensity: config.rainIntensity,
           wind: config.wind,
-          atmosphere
+          atmosphere,
+          metrics,
+          integrationHz: policy.rainHz
         });
         stepVoiceSea(voiceSea, elapsed, dictationLevel(), {
           enabled: dictationEnabled && dictation.phase === "recording",
@@ -4498,6 +4652,7 @@
           width: scene.width,
           height: scene.height
         });
+        metrics?.end("advance", started);
         return elapsed;
       },
       dispose() {
@@ -5335,7 +5490,7 @@
   var PALETTE_KEYS = Object.freeze(["color"]);
   var GLASS_KEYS = Object.freeze(["glass", "glassStrength", "readingEffect"]);
   var COMPOSER_KEYS = Object.freeze(["composerGlass", "composerAvoid"]);
-  var LIVE_KEYS = Object.freeze(["enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "seaGrid", "wind", "clouds", "rain", "rainIntensity", "activity", "dictationEcho", "pauseOnScroll"]);
+  var LIVE_KEYS = Object.freeze(["resourceMode", "enabled", "speed", "opacity", "quietCenter", "leftInset", "spout", "ripples", "seaGrid", "wind", "clouds", "rain", "rainIntensity", "activity", "dictationEcho", "pauseOnScroll"]);
   var anyChanged = (keys, previous, next) => keys.some((key) => previous[key] !== next[key]);
   var noChange = (changes) => !changes.scene && !changes.metrics && !changes.palette && !changes.glass && !changes.composer && !changes.live;
   function diffWhaleConfig(previous, next) {
@@ -5511,10 +5666,11 @@
     const config = normalizeLayerConfig(initialConfig);
     const demo = options.demoCard || null;
     const readingProtection = createReadingProtection();
-    const scenerySeed = Math.floor(Math.random() * 4294967296) >>> 0;
+    const metrics = options.metrics || null;
+    const scenerySeed = options.seed ?? Math.floor(Math.random() * 4294967296) >>> 0;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     const reducedTransparency = window.matchMedia("(prefers-reduced-transparency: reduce)");
-    const simulation = createWhaleSimulation(config, { seed: scenerySeed });
+    const simulation = createWhaleSimulation(config, { seed: scenerySeed, metrics, onActivityChange: options.onActivityChange });
     let scene = simulation.scene;
     const { water, atmosphere, rain, voiceSea } = simulation;
     let sceneryPalette = createInkPalette(config.color);
@@ -5522,21 +5678,22 @@
     let projected = scene.particles.map((_, particleIndex) => ({ particleIndex }));
     let painter = createWhalePainter(scene, config);
     ink.font = painter.font;
-    let metrics = measureGlyphs();
+    let glyphMetrics = measureGlyphs();
     let width = 0, height = 0, ratio = 1, grid = null;
     let offsetX = 0, offsetY = 0;
     const viewport = options.viewport;
     let sea = null, seaInk = null, blurredSea = null, blurredSeaInk = null;
     let seaFactor = 0, seaPad = 0, seaBlurRadius = 0, blurSupport = false;
     let panes = [], tone = null, readingLayout = null, foreground = null, sidebarForegrounds = [];
+    let scheduled = null, refreshRaf = 0, refreshCause = null;
     let composerAnchor = null;
-    let raf = 0, foregroundRaf = 0, previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
+    let previous = null, lastPaint = -Infinity, measuredAt = -Infinity, disposed = false;
     let readingTextDirty = true, readingRoots = [], scrolling = false, scrollTimer = 0;
     const originalOpacity = canvas.style?.opacity ?? "", originalTransition = canvas.style?.transition ?? "";
     const SCROLL_IDLE_MS = 140;
     const spout = attachSpout(canvas, () => ({
       enabled: config.spout,
-      reduced: reduced.matches,
+      reduced: reduced.matches || config.speed === 0,
       hidden: document.hidden,
       opacity: config.opacity,
       quietCenter: config.quietCenter,
@@ -5679,6 +5836,15 @@
       applySceneObstacles();
     }
     function measure() {
+      if (!metrics) return measureContent();
+      const started = metrics.begin();
+      try {
+        return measureContent();
+      } finally {
+        metrics.end("layout", started, demo ? "demo" : "dom");
+      }
+    }
+    function measureContent() {
       measuredAt = performance.now();
       panes = [];
       tone = null;
@@ -5735,8 +5901,14 @@
         composer: composer ? composer.rect : null
       });
     }
-    function draw() {
-      if (scrolling || !width || !height || !scene || !grid) return;
+    function draw(cause = "sync") {
+      if (disposed || !config.enabled || document.hidden || scrolling || !width || !height || !scene || !grid) return;
+      if (!metrics) return drawContent();
+      const started = metrics.begin();
+      drawContent();
+      metrics.end("draw", started, cause);
+    }
+    function drawContent() {
       if (performance.now() - measuredAt > MEASURE_INTERVAL) measure();
       if (viewport) {
         ink.setTransform(1, 0, 0, 1, 0, 0);
@@ -5812,7 +5984,9 @@
       drawRain(ink, rain, { ...rainScenery, phase: "surface" });
       paintGlyphs(ink, fade);
       drawRain(ink, rain, { ...rainScenery, phase: "fall" });
+      const spoutStarted = metrics?.begin();
       spout.paint(ink, fade);
+      metrics?.end("spoutUpdate", spoutStarted);
       if (config.activity) drawActivityBadges(ink, scene.whales, width, height, {
         dark: document.body.hasAttribute("data-ds-dark-theme"),
         opacity: config.opacity,
@@ -5944,29 +6118,81 @@
         ink.fill();
       }
     }
+    function canAnimate() {
+      return !disposed && config.enabled && config.speed > 0 && !scrolling && !document.hidden && !reduced.matches && width > 0 && height > 0 && scene;
+    }
+    function cancelContinuous() {
+      if (scheduled?.kind === "raf") cancelAnimationFrame(scheduled.handle);
+      else if (scheduled?.kind === "timer") clearTimeout(scheduled.handle);
+      scheduled = null;
+      previous = null;
+    }
+    function cancelRefresh() {
+      cancelAnimationFrame(refreshRaf);
+      refreshRaf = 0;
+      refreshCause = null;
+    }
+    function scheduleContinuous() {
+      if (scheduled || !canAnimate()) return;
+      const policy = resourcePolicy(config.resourceMode);
+      if (policy.scheduler === "timer") {
+        if (previous === null) previous = performance.now();
+        scheduled = { kind: "timer", handle: setTimeout(() => frame(performance.now()), policy.drawIntervalMs) };
+      } else scheduled = { kind: "raf", handle: requestAnimationFrame(frame) };
+    }
     function frame(now) {
-      raf = 0;
-      if (disposed || scrolling || document.hidden || reduced.matches || !width || !height || !scene) return;
-      if (previous !== null) {
-        simulation.advance(Math.min(0.1, (now - previous) / 1e3));
+      const started = metrics?.begin();
+      const kind = scheduled?.kind;
+      scheduled = null;
+      try {
+        if (!canAnimate()) return;
+        if (previous !== null) simulation.advance(Math.min(0.1, (now - previous) / 1e3));
+        previous = now;
+        const paintAt = performance.now();
+        if (paintAt - lastPaint >= resourcePolicy(config.resourceMode).drawIntervalMs - 1e-7) {
+          draw("animation");
+          lastPaint = paintAt;
+        }
+        scheduleContinuous();
+      } finally {
+        metrics?.end("wakeup", started, kind);
       }
-      previous = now;
-      if (now - lastPaint >= 1e3 / 30) {
-        draw();
-        lastPaint = now;
+    }
+    function requestRefresh(cause, immediate = false) {
+      if (disposed || !config.enabled || scrolling || document.hidden || !width || !height) return;
+      refreshCause = cause;
+      if (refreshRaf) return;
+      if (immediate) {
+        draw(cause);
+        lastPaint = performance.now();
+        refreshCause = null;
       }
-      raf = requestAnimationFrame(frame);
+      refreshRaf = requestAnimationFrame(() => {
+        refreshRaf = 0;
+        const started = metrics?.begin();
+        const cause2 = refreshCause;
+        refreshCause = null;
+        try {
+          if (cause2) {
+            draw(cause2);
+            lastPaint = performance.now();
+          }
+        } finally {
+          metrics?.end("refreshWakeup", started, cause2);
+        }
+      });
     }
     function sync() {
-      cancelAnimationFrame(raf);
-      raf = 0;
-      previous = null;
+      cancelContinuous();
+      cancelRefresh();
+      if (document.hidden || !config.enabled) leaveScrollPause();
       lastPaint = -Infinity;
       measuredAt = -Infinity;
       readingTextDirty = true;
-      if (!disposed && !scrolling && !document.hidden && width && height) {
+      observeScene(!disposed && config.enabled && !scrolling && !document.hidden);
+      if (!disposed && config.enabled && !scrolling && !document.hidden && width && height) {
         draw();
-        if (!reduced.matches) raf = requestAnimationFrame(frame);
+        scheduleContinuous();
       }
     }
     function update(nextConfig) {
@@ -5974,11 +6200,17 @@
       const next = normalizeLayerConfig(nextConfig);
       const changes = diffWhaleConfig(config, next);
       if (noChange(changes)) return;
+      const schedulerChanged = config.resourceMode !== next.resourceMode || config.enabled !== next.enabled || config.speed === 0 !== (next.speed === 0);
+      if (schedulerChanged) {
+        cancelContinuous();
+        cancelRefresh();
+      }
       const sceneRebuilt = simulation.update(next);
       Object.assign(config, next);
       if (config.readingEffect === "none") readingProtection.dispose();
-      const wasPaused = scrolling && !config.pauseOnScroll;
-      if (wasPaused) leaveScrollPause();
+      const wasPaused = scrolling && (!config.pauseOnScroll || !config.enabled);
+      if (wasPaused) leaveScrollPause(false);
+      observeScene(config.enabled && !scrolling && !document.hidden);
       if (sceneRebuilt) {
         scene = simulation.scene;
         poses = scene.whales.map(() => ({}));
@@ -5987,37 +6219,42 @@
       }
       if (sceneRebuilt || changes.metrics) {
         painter = createWhalePainter(scene, config);
-        metrics = measureGlyphs();
-        if (width && height) grid = createDepthGrid(width, height, config.glyphSize, metrics);
+        glyphMetrics = measureGlyphs();
+        if (width && height) grid = createDepthGrid(width, height, config.glyphSize, glyphMetrics);
       } else if (changes.palette) {
         painter = createWhalePainter(scene, config);
       }
       if (changes.glass || changes.composer) {
         measuredAt = -Infinity;
         readingTextDirty = true;
-        if (!scrolling && width && height) measure();
+        if (config.enabled && !document.hidden && !scrolling && width && height) measure();
       }
       if (changes.palette) sceneryPalette = createInkPalette(config.color);
       if (viewport) resize();
       lastPaint = -Infinity;
       if (!scrolling && !document.hidden && width && height) {
-        if (!reduced.matches && !raf) raf = requestAnimationFrame(frame);
-        draw();
+        scheduleContinuous();
+        draw("config");
         lastPaint = performance.now();
+      }
+      if (!config.enabled) {
+        cancelContinuous();
+        cancelRefresh();
       }
       if (wasPaused) revealLayer();
     }
     function finishScroll() {
       scrollTimer = 0;
       if (disposed) return;
-      leaveScrollPause();
+      leaveScrollPause(false);
       sync();
       revealLayer();
     }
-    function leaveScrollPause() {
+    function leaveScrollPause(reveal = true) {
       clearTimeout(scrollTimer);
       scrollTimer = 0;
       scrolling = false;
+      if (reveal) revealLayer();
     }
     function revealLayer() {
       if (canvas.style) {
@@ -6026,40 +6263,39 @@
       }
     }
     function onScroll(event) {
-      if (demo || disposed || document.hidden || event?.ctrlKey) return;
+      if (demo || disposed || !config.enabled || document.hidden || event?.ctrlKey) return;
       const target = event?.target;
       if (target && target !== document && target !== document.body && target !== document.documentElement && !readingRoots.some((root) => root === target || root.contains?.(target))) return;
       readingTextDirty = true;
       if (!config.pauseOnScroll) {
-        if (reduced.matches) onForegroundChange();
+        if (!canAnimate()) onForegroundChange();
         return;
       }
       measuredAt = -Infinity;
       if (!scrolling) {
         scrolling = true;
-        cancelAnimationFrame(raf);
-        cancelAnimationFrame(foregroundRaf);
-        raf = foregroundRaf = 0;
-        previous = null;
+        observeScene(false);
+        cancelContinuous();
+        cancelRefresh();
         if (canvas.style) {
           canvas.style.transition = "none";
           canvas.style.opacity = "0";
         }
       }
       clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(finishScroll, SCROLL_IDLE_MS);
+      scrollTimer = setTimeout(() => {
+        const started = metrics?.begin();
+        try {
+          finishScroll();
+        } finally {
+          metrics?.end("scrollWakeup", started);
+        }
+      }, SCROLL_IDLE_MS);
     }
     function onForegroundChange() {
       measuredAt = -Infinity;
       readingTextDirty = true;
-      if (disposed || scrolling || document.hidden || !reduced.matches || foregroundRaf) return;
-      foregroundRaf = requestAnimationFrame(() => {
-        foregroundRaf = 0;
-        if (!disposed && !document.hidden) {
-          draw();
-          lastPaint = performance.now();
-        }
-      });
+      requestRefresh("foreground");
     }
     function resize() {
       const rect = canvas.getBoundingClientRect();
@@ -6082,26 +6318,40 @@
       canvas.width = pixels.width;
       canvas.height = pixels.height;
       ink.setTransform(ratio, 0, 0, ratio, offsetX, offsetY);
-      grid = createDepthGrid(width, height, config.glyphSize, metrics);
+      grid = createDepthGrid(width, height, config.glyphSize, glyphMetrics);
       simulation.resize(width, height);
       measuredAt = -Infinity;
       sync();
     }
     const observer = new ResizeObserver(resize);
     const themeObserver = new MutationObserver(sync);
-    const foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+    let foregroundObserver = null, observing = false;
     const readingObserver = demo ? null : new MutationObserver((records) => {
       if (!records || records.some((record2) => record2.target !== canvas)) onForegroundChange();
     });
-    readingObserver?.observe(document.body, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["class", "style", "hidden"]
-    });
-    observer.observe(canvas);
-    themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+    function observeScene(active) {
+      if (observing === active) return;
+      observing = active;
+      if (active) {
+        foregroundObserver = demo ? null : observeForeground(canvas, onForegroundChange);
+        readingObserver?.observe(document.body, {
+          childList: true,
+          characterData: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["class", "style", "hidden"]
+        });
+        observer.observe(canvas);
+        themeObserver.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+      } else {
+        observer.disconnect();
+        foregroundObserver?.dispose();
+        foregroundObserver = null;
+        readingObserver?.disconnect();
+        themeObserver.disconnect();
+      }
+    }
+    observeScene(config.enabled && !document.hidden);
     document.addEventListener("visibilitychange", sync);
     reduced.addEventListener("change", sync);
     reducedTransparency.addEventListener("change", sync);
@@ -6117,15 +6367,10 @@
       spout.detach();
       simulation.dispose();
       disposed = true;
-      cancelAnimationFrame(raf);
-      cancelAnimationFrame(foregroundRaf);
-      foregroundRaf = 0;
-      raf = 0;
-      observer.disconnect();
-      foregroundObserver?.dispose();
-      readingObserver?.disconnect();
+      cancelContinuous();
+      cancelRefresh();
+      observeScene(false);
       readingProtection?.dispose();
-      themeObserver.disconnect();
       document.removeEventListener("visibilitychange", sync);
       reduced.removeEventListener("change", sync);
       reducedTransparency.removeEventListener("change", sync);
@@ -6161,8 +6406,7 @@
     }
     function setActivity(snapshot) {
       if (disposed) return;
-      simulation.setActivity(snapshot);
-      if (!document.hidden && width && height) draw();
+      if (simulation.setActivity(snapshot)) requestRefresh("activity", true);
     }
     function setDictation(snapshot, levelSource) {
       if (disposed) return;
@@ -6170,6 +6414,72 @@
       if (!document.hidden && width && height) draw();
     }
     return { update, setActivity, setDictation, dispose };
+  }
+
+  // src/activity-ui.js
+  function createActivityAnnouncer({ announce, schedule = setTimeout, cancel = clearTimeout, delay = 120 }) {
+    let scope = null, timer = null, lastEvent = 0, serial = 0;
+    const pending = /* @__PURE__ */ new Map();
+    function clear() {
+      if (timer !== null) cancel(timer);
+      timer = null;
+      pending.clear();
+      lastEvent = 0;
+      announce({ serial: ++serial, entities: [] });
+    }
+    function update(presentation) {
+      const nextScope = presentation.enabled ? presentation.scope : null;
+      if (nextScope !== scope) {
+        clear();
+        scope = nextScope;
+      }
+      if (!scope) return;
+      const current = new Map(presentation.entities.map((entity) => [entity.key, entity]));
+      for (const [key, entity] of pending) if (current.has(entity.key)) {
+        pending.set(key, { ...entity, label: current.get(entity.key).label });
+      }
+      for (const entity of presentation.transitions) {
+        if (entity.event <= lastEvent) continue;
+        lastEvent = entity.event;
+        pending.set(`${entity.key}:${entity.kind}`, entity);
+      }
+      if (pending.size && timer === null) timer = schedule(() => {
+        timer = null;
+        const entities = [...pending.values()];
+        pending.clear();
+        announce({ serial: ++serial, entities });
+      }, delay);
+    }
+    return { update, dispose() {
+      clear();
+      scope = null;
+    } };
+  }
+  function createLegendPreference(form) {
+    let dismissed = false;
+    return {
+      get seen() {
+        if (dismissed) return true;
+        try {
+          const snapshot = form.getSnapshot();
+          return snapshot.status === "ready" && snapshot.value?.legendSeen === true;
+        } catch {
+          return false;
+        }
+      },
+      async dismiss() {
+        dismissed = true;
+        try {
+          const snapshot = form.getSnapshot();
+          if (snapshot.status !== "ready" || !snapshot.writable) return false;
+          if (snapshot.value?.legendSeen === true) return true;
+          if (typeof form.set === "function") return await form.set("legendSeen", true);
+          return await form.mutate([{ op: "set", path: ["legendSeen"], value: true }], snapshot.revision);
+        } catch {
+          return false;
+        }
+      }
+    };
   }
 
   // src/settings.js
@@ -6197,11 +6507,52 @@
     const t = ctx.locale.bind("asciiWhales");
     const useForm = () => React.useSyncExternalStore(formSubscribe, formSnapshot, formSnapshot);
     const jobs = createJobsBridge();
+    const labelOf = (entity) => entity.label || t(entity.type === "job" ? "activityJob" : entity.type === "subagent" ? "activitySubagent" : "activitySession");
+    const statusOf = (entity) => t({
+      running: "activityRunning",
+      waiting: "activityWaiting",
+      idle: "activityIdle",
+      completed: "activityCompleted",
+      failed: "activityFailed",
+      unavailable: "activityUnavailable"
+    }[entity.kind]);
+    function Legend({ onClose }) {
+      const returnFocus = React.useRef(null);
+      React.useEffect(() => {
+        returnFocus.current = document.activeElement;
+      }, []);
+      function close() {
+        const result = onClose();
+        if (returnFocus.current?.isConnected) returnFocus.current.focus();
+        return result;
+      }
+      return h(
+        "section",
+        { className: "aw-legend", "aria-label": t("activityLegend") },
+        h("h3", null, t("activityLegend")),
+        h("ul", null, ...[
+          ["···", "activityRunning"],
+          ["!", "activityWaiting"],
+          ["", "activityIdle"],
+          ["✓", "activityCompleted"],
+          ["×", "activityFailed"],
+          ["?", "activityUnavailable"]
+        ].map(([symbol, key]) => h("li", { key }, symbol && h("span", { "aria-hidden": true }, `${symbol} `), t(key)))),
+        h("p", null, t("activityLegendNote")),
+        h("button", {
+          type: "button",
+          onClick: close,
+          onFocus: (event) => {
+            if (event.relatedTarget?.isConnected) returnFocus.current = event.relatedTarget;
+          }
+        }, t("activityLegendClose"))
+      );
+    }
     ctx.inject?.(["jobs"], (child) => child.effect(() => jobs.attach(child.jobs)));
     const dictation = createDictationBridge();
     ctx.inject?.(["dictation"], (child) => child.effect(() => dictation.attach(child.dictation)));
     ctx.effect(() => dictation.attachFallback(() => ctx.get?.("dictation")));
-    function Canvas({ config, activity = EMPTY_ACTIVITY, dictation: dictationState = null, dictationLevel = () => 0 }) {
+    function Canvas({ config, activity = EMPTY_ACTIVITY, dictation: dictationState = null, dictationLevel = () => 0, onActivityChange }) {
       const ref = React.useRef(null);
       const configRef = React.useRef(config);
       const activityRef = React.useRef(activity);
@@ -6209,7 +6560,7 @@
       const levelRef = React.useRef(dictationLevel);
       const layer = React.useRef(null);
       React.useEffect(() => {
-        const instance = createWhaleLayer(ref.current, configRef.current);
+        const instance = createWhaleLayer(ref.current, configRef.current, { onActivityChange });
         instance.setActivity(activityRef.current);
         instance.setDictation(dictationRef.current, levelRef.current);
         layer.current = instance;
@@ -6301,13 +6652,27 @@
     }
     function Overlay(props) {
       const panelId = props.usePanelInfo((s) => s.activePanelId);
+      const language = React.useSyncExternalStore(localeSubscribe, localeSnapshot, localeSnapshot);
+      const [presentation, setPresentation] = React.useState(null);
+      const [announcement, setAnnouncement] = React.useState({ serial: 0, entities: [] });
+      const legendPreference = React.useMemo(() => createLegendPreference(form), []);
+      const [legendDismissed, setLegendDismissed] = React.useState(false);
+      const announcer = React.useMemo(() => createActivityAnnouncer({ announce: setAnnouncement }), []);
+      const receiveActivity = React.useCallback((value) => {
+        setPresentation(value);
+        announcer.update(value);
+      }, [announcer]);
+      React.useEffect(() => () => announcer.dispose(), [announcer]);
       const snapshot = useForm();
       const signature = snapshot.status === "ready" ? configSignature(snapshot.value) : "";
       const config = React.useMemo(() => normalizeConfig(snapshot.value ?? {}), [signature]);
       const list = props.useSessions?.((state) => state);
       const statuses = props.useSessionStatus?.((state) => state);
       const jobSnapshot = React.useSyncExternalStore(jobs.subscribe, jobs.getSnapshot, jobs.getSnapshot);
-      const nextActivity = React.useMemo(() => readActivitySnapshot(list, statuses, jobSnapshot), [list, statuses, jobSnapshot]);
+      const nextActivity = React.useMemo(() => {
+        const value = readActivitySnapshot(list, statuses, jobSnapshot);
+        return { ...value, entities: value.entities.map((entity) => ({ ...entity, label: labelOf(entity) })) };
+      }, [list, statuses, jobSnapshot, language]);
       const activityKey = JSON.stringify(nextActivity);
       const activity = React.useMemo(() => nextActivity, [activityKey]);
       const dictationSnapshot = React.useSyncExternalStore(dictation.subscribe, dictation.getSnapshot, dictation.getSnapshot);
@@ -6318,17 +6683,75 @@
         jobs.watch(visible && config.activity ? scope : null);
         return () => jobs.watch(null);
       }, [visible, config.activity, scope]);
+      React.useEffect(() => {
+        if (!visible || !config.activity) announcer.update({ enabled: false, scope: null });
+      }, [visible, config.activity, scope, announcer]);
       if (!visible) return null;
-      return h("div", { "aria-hidden": true, style: {
-        position: "absolute",
-        left: "var(--dsh-windows-sidebar-width, var(--ascii-whale-inset, 280px))",
-        top: "var(--dsh-frame-top-clearance, 0px)",
-        right: 0,
-        bottom: 0,
-        "--ascii-whale-inset": `${config.leftInset}px`,
-        pointerEvents: "none",
-        overflow: "hidden"
-      } }, h(Canvas, { config, activity, dictation: dictationState, dictationLevel: dictation.level }));
+      const current = config.activity && presentation?.enabled && presentation.scope === activity.scope ? presentation : null;
+      return h(
+        "div",
+        { className: "aw-overlay", style: {
+          position: "absolute",
+          left: "var(--dsh-windows-sidebar-width, var(--ascii-whale-inset, 280px))",
+          top: "var(--dsh-frame-top-clearance, 0px)",
+          right: 0,
+          bottom: 0,
+          "--ascii-whale-inset": `${config.leftInset}px`,
+          pointerEvents: "none",
+          overflow: "hidden"
+        } },
+        h("style", null, ACTIVITY_CSS),
+        h(
+          "div",
+          { "aria-hidden": true, style: { position: "absolute", inset: 0 } },
+          h(Canvas, {
+            config,
+            activity: config.activity ? activity : EMPTY_ACTIVITY,
+            dictation: dictationState,
+            dictationLevel: dictation.level,
+            onActivityChange: receiveActivity
+          })
+        ),
+        config.activity && h(
+          "aside",
+          { className: "aw-activity" },
+          !legendDismissed && !legendPreference.seen && h(Legend, { onClose: () => {
+            setLegendDismissed(true);
+            return legendPreference.dismiss();
+          } }),
+          current && h(
+            "details",
+            { className: "aw-activity-summary" },
+            h("summary", null, t("activitySummary")),
+            h(
+              "section",
+              { "aria-label": t("activitySummary") },
+              current.availability.currentSession === "unavailable" && h("p", null, t("activityScopeUnavailable")),
+              current.availability.liveStatus === "unavailable" && h("p", null, t("activityWaitingUnavailable")),
+              current.availability.jobs === "unavailable" && h("p", null, t("activityJobsUnavailable")),
+              current.availability.jobs === "unknown" && h("p", null, t("activityJobsUnknown")),
+              h("p", null, t("activityOverflow"), " ", current.overflow.length),
+              h("ul", null, ...current.entities.map((entity) => h(
+                "li",
+                { key: entity.key },
+                labelOf(entity),
+                " · ",
+                statusOf(entity),
+                entity.waitingAvailable === false && h("span", null, " · ", t("activityWaitingUnavailable"))
+              )))
+            )
+          )
+        ),
+        h(
+          "div",
+          { className: "aw-sr-only", "aria-live": "polite", "aria-atomic": true, "aria-label": t("activityAnnouncements") },
+          config.activity && h(
+            "span",
+            { key: announcement.serial },
+            announcement.entities.map((entity) => `${labelOf(entity)} · ${statusOf(entity)}`).join("; ")
+          )
+        )
+      );
     }
     function Settings() {
       const snapshot = useForm();
@@ -6336,6 +6759,7 @@
       const [editor, setEditor] = React.useState(() => snapshot.status === "ready" ? createConfigEditor(snapshot) : null);
       const [saving, setSaving] = React.useState(false);
       const [notice, setNotice] = React.useState("");
+      const [showLegend, setShowLegend] = React.useState(false);
       const dictationPresent = React.useSyncExternalStore(dictation.subscribePresence, dictation.hasProvider, dictation.hasProvider);
       const dirty = editor?.dirty ?? false;
       React.useEffect(() => {
@@ -6495,10 +6919,11 @@
         );
       }
       const groups = [
-        { id: "appearance", fields: ["renderStyle", "fillMode", "text", "color", "opacity", "glyphSize"] },
-        { id: "school", fields: ["species", "count", "whaleSize", "speed", "activity", "dictationEcho", "spout"] },
+        { id: "appearance", fields: ["renderStyle", "fillMode", "color", "opacity", "glyphSize"] },
+        { id: "school", fields: ["species", "count", "whaleSize", "speed", "dictationEcho", "spout"] },
         { id: "reading", fields: ["readingEffect", "glass", "glassStrength", "quietCenter", "composerAvoid"] },
-        { id: "sea", fields: ["seaGrid", "wind", "clouds", "ripples", "rain", "rainIntensity"] }
+        { id: "sea", fields: ["seaGrid", "wind", "clouds", "ripples", "rain", "rainIntensity"] },
+        { id: "layout", fields: ["leftInset", "pauseOnScroll"] }
       ];
       return h(
         "form",
@@ -6515,18 +6940,56 @@
         h(
           "div",
           { className: "aw-options", role: "region", "aria-label": t("settingsOptions"), tabIndex: 0 },
-          h("div", { className: "aw-groups" }, ...groups.map((group) => h(
-            "fieldset",
-            { className: "aw-group", key: group.id },
-            h("legend", null, t(`${group.id}Group`)),
-            h("p", { className: "aw-group-note" }, t(`${group.id}Description`)),
-            ...group.fields.map(renderField)
-          ))),
+          h(
+            "div",
+            { className: "aw-primary aw-group" },
+            h(
+              "div",
+              { className: "aw-row" },
+              h(
+                "div",
+                { className: "aw-copy" },
+                h("label", { htmlFor: `${prefix}-preset` }, t("scenePreset")),
+                h("p", { id: `${prefix}-preset-hint` }, t("presetDescription"))
+              ),
+              h(
+                "select",
+                {
+                  id: `${prefix}-preset`,
+                  className: "aw-select",
+                  disabled,
+                  value: matchPreset(editor.draft),
+                  "aria-describedby": `${prefix}-preset-hint`,
+                  onChange: (event) => {
+                    setEditor((current) => current.applyPreset(event.target.value));
+                    setNotice("");
+                  }
+                },
+                h("option", { value: "custom", disabled: true }, t("preset_custom")),
+                ...Object.keys(PRESETS).map((id) => h("option", { key: id, value: id }, t(`preset_${id}`)))
+              )
+            ),
+            renderField("resourceMode"),
+            renderField("text"),
+            renderField("activity"),
+            h("button", {
+              type: "button",
+              "aria-expanded": showLegend,
+              onClick: () => setShowLegend((value) => !value)
+            }, t("activityLegendOpen")),
+            showLegend && h(Legend, { onClose: () => setShowLegend(false) })
+          ),
           h(
             "details",
             { className: "aw-advanced" },
             h("summary", null, t("advancedGroup")),
-            h("div", { className: "aw-advanced-body" }, renderField("leftInset"), renderField("pauseOnScroll"))
+            h("div", { className: "aw-advanced-body aw-groups" }, ...groups.map((group) => h(
+              "fieldset",
+              { className: "aw-group", key: group.id },
+              h("legend", null, t(`${group.id}Group`)),
+              h("p", { className: "aw-group-note" }, t(`${group.id}Description`)),
+              ...group.fields.map(renderField)
+            )))
           ),
           notice && h("p", { className: "aw-notice", role: notice === "saved" ? "status" : "alert", "aria-live": "polite" }, t(notice))
         ),
@@ -6590,6 +7053,16 @@
       key: "@local/dsh-ascii-ocean"
     }, Settings));
   }
+  var ACTIVITY_CSS = `
+.aw-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.aw-activity{position:absolute;right:16px;top:12px;max-width:min(360px,calc(100% - 32px));max-height:calc(100% - 24px);overflow:auto;color:var(--dsw-alias-label-primary,#1d2633);font:13px/1.5 system-ui,sans-serif}
+.aw-activity-summary,.aw-legend{pointer-events:auto;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,#c9d2de);border-radius:12px;padding:12px;margin-bottom:8px;overflow-wrap:anywhere}
+.aw-activity-summary summary{cursor:pointer}.aw-legend h3{font-size:14px;margin:0 0 8px}.aw-legend ul,.aw-activity-summary ul{padding-left:20px;margin:8px 0}.aw-legend p{margin:8px 0}
+.aw-legend button,.aw-activity-summary button{font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:6px;min-height:36px;padding:4px 10px;cursor:pointer}
+.aw-overlay :focus-visible{outline:3px solid #007aff;outline-offset:3px}
+body[data-ds-dark-theme] .aw-activity{color:var(--dsw-alias-label-primary,#edf1f7)}
+body[data-ds-dark-theme] .aw-activity-summary,body[data-ds-dark-theme] .aw-activity .aw-legend{background:var(--dsw-alias-bg-layer-1,#242c36)}
+`;
   var SETTINGS_CSS = `
 .aw-settings{--aw-accent:#007aff;--aw-ink:var(--dsw-alias-label-primary,#1d2633);--aw-muted:var(--dsw-alias-label-secondary,#647184);--aw-surface:var(--dsw-alias-bg-layer-1,#fff);--aw-line:var(--dsw-alias-border-l1,#e3e7ed);--aw-rail:rgba(120,135,155,.22);--aw-inset:rgba(120,135,155,.09);color:var(--aw-ink);font:inherit;width:100%;max-width:1280px;min-width:0;margin-inline:auto;padding:8px 0 24px;container-type:inline-size;box-sizing:border-box}
 .aw-settings *{box-sizing:border-box}
@@ -6654,13 +7127,12 @@
 .aw-settings .aw-switch[aria-checked=true] .aw-switch-knob{transform:translateX(20px)}
 .aw-settings .aw-advanced{margin-top:20px;border:1px solid var(--aw-line);border-radius:16px;background:var(--aw-surface)}
 .aw-settings .aw-advanced summary{padding:16px 22px;font-size:13px;font-weight:550;cursor:pointer}
-.aw-settings .aw-advanced-body{padding:0 22px 5px}
-.aw-settings .aw-advanced .aw-row{flex-wrap:nowrap}
-.aw-settings .aw-advanced .aw-copy{flex:1 1 0}
+.aw-settings .aw-advanced-body{padding:0 12px 12px}
 .aw-settings .aw-pixel-input{display:flex;align-items:center;gap:8px;flex:0 0 116px;color:var(--aw-muted);font-size:12px}
 .aw-settings .aw-pixel-input input{min-width:0;width:84px;padding:8px;border:1px solid var(--aw-line);border-radius:8px;background:var(--aw-inset);font-variant-numeric:tabular-nums}
 .aw-settings .aw-actions{position:sticky;bottom:0;z-index:4;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;padding:14px 0;background:var(--aw-surface);border-top:1px solid var(--aw-line)}
 .aw-settings .aw-save-state{font-size:12px;line-height:1.4;color:var(--aw-muted)}
+.aw-settings .aw-primary{padding-bottom:0}
 .aw-settings .aw-action-buttons{display:flex;flex-wrap:wrap;gap:8px}
 .aw-settings .aw-action-buttons button{min-height:38px;padding:8px 14px;font-size:12px;font-weight:500;line-height:1.4;border:1px solid var(--aw-line);border-radius:10px;background:var(--aw-inset)}
 .aw-settings .aw-action-buttons .aw-save{color:#fff;border-color:var(--aw-accent);background:var(--aw-accent);padding-inline:22px}
@@ -6710,7 +7182,6 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
 .aw-settings .aw-preview{padding:8px 12px;margin-bottom:8px}
 .aw-settings .aw-preview-card canvas{height:clamp(56px,calc(var(--aw-height,500px) * .22),150px)}
 .aw-settings .aw-actions{gap:6px;padding-block:6px}
-.aw-settings .aw-save-state{display:none}
 .aw-settings .aw-action-buttons{margin-left:auto}
 }
 @container(max-width:760px){
@@ -6742,6 +7213,15 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       seaGroup: "Sea & weather",
       seaDescription: "Choose the squared sea, wind, clouds, swimming wakes and rain.",
       advancedGroup: "Advanced settings",
+      layoutGroup: "Layout & scrolling",
+      layoutDescription: "Adjust browser spacing and scrolling behavior.",
+      scenePreset: "Scene preset",
+      presetDescription: "Adjust count, speed, opacity, color and sea effects in the draft. Keeps your text and reading preferences. Save to apply. Default scene differs from restoring all defaults.",
+      preset_custom: "Custom",
+      preset_default: "Default",
+      preset_rainy: "Rainy",
+      preset_minimal: "Minimal",
+      preset_night: "Night voyage",
       unsavedDraft: "Unsaved changes, shown in the preview only",
       savedDraft: "Changes preview immediately. Save to apply to the background.",
       none: "Off",
@@ -6751,6 +7231,10 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       countHint: "1 to 8 whales with different sizes and depths.",
       text: "Whale body text",
       textHint: "Repeats these characters to form each whale. Spaces are ignored. Leave blank to use 探索未至之境 (the default phrase, “explore the uncharted”). Up to 40 characters.",
+      resourceMode: "Resource mode",
+      resourceModeHint: "Economy uses fewer animation updates and drifts at 75% of your saved swimming speed. Keeps scene settings and task updates. Reduced motion takes priority.",
+      standard: "Standard",
+      economy: "Economy",
       speed: "Swimming speed",
       speedHint: "0.3 to 2. Default 0.65. Scales cruising, turning and tail beats, with glides between strokes.",
       opacity: "Background opacity",
@@ -6805,7 +7289,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       seaGridHint: "A faint frame around every character cell fills the whole sea, and the whale tiles share the same lattice; the grid fades with background concentration. On by default.",
       save: "Save",
       saving: "Saving…",
-      reset: "Restore defaults",
+      reset: "Restore all defaults",
       discard: "Reload saved values",
       loading: "Loading whale settings…",
       unavailable: "Whale settings are unavailable.",
@@ -6831,7 +7315,27 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       humpback: "Humpback",
       sperm: "Sperm",
       fin: "Fin",
-      bowhead: "Bowhead"
+      bowhead: "Bowhead",
+      activityLegend: "Task state legend",
+      activityLegendOpen: "Show task state legend",
+      activityLegendClose: "Close legend",
+      activityLegendNote: "Idle does not mean success. Results appear only after an observed background task finishes or fails. Cancelled, stopped and missing tasks do not imply success. Whales do not replace the host task history or answer for you.",
+      activitySummary: "Current task states",
+      activityAnnouncements: "New task updates",
+      activityRunning: "Running",
+      activityWaiting: "Waiting for you",
+      activityIdle: "Idle or stopped this turn",
+      activityCompleted: "Background task completed",
+      activityFailed: "Background task failed",
+      activityUnavailable: "State unavailable",
+      activityScopeUnavailable: "Current session state is unavailable.",
+      activityWaitingUnavailable: "Waiting information is unavailable.",
+      activityJobsUnavailable: "Background task states are unavailable.",
+      activityJobsUnknown: "Current background tasks are unknown.",
+      activityOverflow: "Tasks without their own whale",
+      activitySession: "Session",
+      activitySubagent: "Subagent",
+      activityJob: "Background task"
     }
   };
 
@@ -6858,6 +7362,15 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       seaGroup: "海面与天气",
       seaDescription: "按喜好开关方格、风纹、云影、尾流和雨水。",
       advancedGroup: "高级设置",
+      layoutGroup: "布局与滚动",
+      layoutDescription: "调整浏览器留白与滚动暂退。",
+      scenePreset: "场景预设",
+      presetDescription: "一次调整鲸数、游速、浓度、配色和海面效果，仅改草稿。保留文字与阅读偏好，保存后应用。默认场景与恢复全部默认值不同。",
+      preset_custom: "自定义",
+      preset_default: "默认",
+      preset_rainy: "雨天",
+      preset_minimal: "极简",
+      preset_night: "夜航",
       unsavedDraft: "有未保存的调整，仅在预览中显示",
       savedDraft: "调整会即时预览，保存后应用到背景",
       none: "关闭",
@@ -6867,6 +7380,10 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       countHint: "1 至 8 条，大小与远近各有不同。",
       text: "鱼身文字",
       textHint: "重复使用这些字组成鲸鱼；留空使用探索未至之境。忽略空白，最多 40 个字符。",
+      resourceMode: "资源档位",
+      resourceModeHint: "省资源档减少动画更新，以已保存游速的 75% 慢漂移。保留场景设置，任务提示及时更新。系统减少动态效果优先。",
+      standard: "标准",
+      economy: "省资源",
       speed: "游动速度",
       speedHint: "0.3 至 2，默认 0.65。巡游、转弯与摆尾同步放缓，摆尾之间有自然滑行。",
       opacity: "背景浓度",
@@ -6921,7 +7438,7 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       seaGridHint: "整片海面按字格铺满浅色方格，鲸体的字格与它共用同一套格线；方格随背景浓度一起变淡。默认开启。",
       save: "保存",
       saving: "保存中…",
-      reset: "恢复默认值",
+      reset: "恢复全部默认值",
       discard: "重新载入已保存值",
       loading: "正在读取蓝鲸设置…",
       unavailable: "蓝鲸设置暂不可用。",
@@ -6947,7 +7464,27 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
       humpback: "座头鲸",
       sperm: "抹香鲸",
       fin: "长须鲸",
-      bowhead: "弓头鲸"
+      bowhead: "弓头鲸",
+      activityLegend: "任务状态图例",
+      activityLegendOpen: "查看任务状态图例",
+      activityLegendClose: "关闭图例",
+      activityLegendNote: "空闲不等于成功。只有已观察到运行的后台任务转为完成或失败时才显示结果。取消、停止和消失不表示成功。鲸群不替代宿主任务记录，也不会代你回答或审批。",
+      activitySummary: "当前任务状态",
+      activityAnnouncements: "任务新变化",
+      activityRunning: "运行中",
+      activityWaiting: "等待你处理",
+      activityIdle: "空闲或本轮停止",
+      activityCompleted: "后台任务完成",
+      activityFailed: "后台任务失败",
+      activityUnavailable: "状态不可用",
+      activityScopeUnavailable: "当前会话状态不可用。",
+      activityWaitingUnavailable: "等待信息不可用。",
+      activityJobsUnavailable: "后台任务状态不可用。",
+      activityJobsUnknown: "当前后台任务名单未知。",
+      activityOverflow: "未单独分配鲸鱼的任务数",
+      activitySession: "会话",
+      activitySubagent: "子代理",
+      activityJob: "后台任务"
     }
   };
 

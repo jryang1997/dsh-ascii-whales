@@ -17,6 +17,7 @@ let dictationState = null, dictationLevel = 0;
 
 function readConfig() {
   return { ...DEFAULTS,
+    resourceMode: el('resourceMode').value,
     species: el('species').value, renderStyle: el('renderStyle').value,
     fillMode: el('fillMode').value, text: el('text').value, color: el('color').value,
     count: Math.round(readNumber('count', 1, 8, 3)),
@@ -83,7 +84,7 @@ function changeOption(id, value) {
   apply();
 }
 
-for (const id of ['readingEffect', 'renderStyle', 'fillMode', 'text', 'species', 'count', 'whaleSize', 'speed', 'color', 'rainIntensity']) {
+for (const id of ['resourceMode', 'readingEffect', 'renderStyle', 'fillMode', 'text', 'species', 'count', 'whaleSize', 'speed', 'color', 'rainIntensity']) {
   el(id).addEventListener('input', apply);
   el(id).addEventListener('change', apply);
 }

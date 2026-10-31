@@ -84,16 +84,16 @@ function attributes(text) {
   return Object.fromEntries([...text.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(match => [match[1], match[2] ?? '']));
 }
 
-function environment(html, initial, seed, reducedMotion) {
+export function environment(html = '', initial = {}, seed = 42, reducedMotion = false) {
   const viewport = { left: 0, top: 0, width: 800, height: 600 };
-  const controls = new Map(), samples = [], canvases = [], themeObservers = new Set(), media = new Map();
+  const controls = new Map(), samples = [], canvases = [], themeObservers = new Set(), resizeObservers = new Set(), media = new Map();
   const clock = { now: 1000, next: 1, queue: new Map(), timers: new Map() };
   let random = seed >>> 0;
   const math = Object.create(Math);
   math.random = () => { random = (Math.imul(random, 1664525) + 1013904223) >>> 0; return random / 4294967296; };
   const transparent = { backgroundColor: 'rgba(0, 0, 0, 0)', borderRadius: '0px', position: 'static',
     visibility: 'visible', display: 'block', getPropertyValue: () => '' };
-  const element = (rect, radius = 0, opaque = false) => eventTarget({ children: [],
+  const element = (rect, radius = 0, opaque = false) => eventTarget({ children: [], style: { setProperty() {} },
     getBoundingClientRect: () => ({ ...rect }),
     __style: { ...transparent, backgroundColor: opaque ? 'rgb(255, 255, 255)' : transparent.backgroundColor,
       borderTopLeftRadius: `${radius}px`, borderTopRightRadius: `${radius}px`,
@@ -156,7 +156,7 @@ function environment(html, initial, seed, reducedMotion) {
     cancelAnimationFrame(id) { clock.queue.delete(id); },
     setTimeout(callback, delay) { const id = clock.next++; clock.timers.set(id, { callback, due: clock.now + delay }); return id; },
     clearTimeout(id) { clock.timers.delete(id); },
-    ResizeObserver: class { constructor(callback) { this.callback = callback; } observe() {} disconnect() {} },
+    ResizeObserver: class { constructor(callback) { this.callback = callback; } observe() { resizeObservers.add(this); } disconnect() { resizeObservers.delete(this); } },
     MutationObserver: class {
       constructor(callback) { this.callback = callback; }
       observe() { themeObservers.add(this); }
@@ -165,7 +165,26 @@ function environment(html, initial, seed, reducedMotion) {
     getComputedStyle: node => node.__style || transparent,
   };
   return {
-    globals, document, window, controls, canvases,
+    globals, document, window, controls, canvases, clock,
+    pending: () => ({ raf: clock.queue.size, timers: clock.timers.size }),
+    observersActive: () => ({ resize: resizeObservers.size, mutation: themeObservers.size }),
+    elapse(milliseconds, hz = 60) {
+      const target = clock.now + milliseconds;
+      let nextFrame = clock.now + 1000 / hz;
+      while (clock.now < target - 1e-7) {
+        const due = Math.min(...[...clock.timers.values()].map(timer => timer.due));
+        const next = Math.min(target, nextFrame, due);
+        clock.now = next;
+        for (const [id, timer] of [...clock.timers]) if (timer.due <= clock.now + 1e-7) {
+          clock.timers.delete(id); timer.callback();
+        }
+        if (nextFrame <= clock.now + 1e-7) {
+          nextFrame += 1000 / hz;
+          const callbacks = [...clock.queue.values()]; clock.queue.clear();
+          for (const callback of callbacks) callback(clock.now);
+        }
+      }
+    },
     advance(frames = 1) {
       for (let i = 0; i < frames; i++) {
         clock.now += 1000 / 60;
@@ -189,33 +208,57 @@ function environment(html, initial, seed, reducedMotion) {
 // passive effects, dependency-aware effects/memo and external-store updates.
 function reactAdapter(env) {
   const fibers = new Map();
-  let current = null, cursor = 0, pending = [], root = null, active = true;
+  let current = null, cursor = 0, pending = [], root = null, active = true, rendering = false, requested = false;
+  let visited, text = [], elements = [];
+  const cleanup = fiber => { for (const state of fiber.hooks) state.cleanup?.(); };
   const hook = create => { const index = cursor++; return current.hooks[index] ??= create(); };
-  function renderNode(vnode, path) {
-    if (vnode == null || typeof vnode !== 'object') return;
+  function renderNode(vnode, path, ancestors = []) {
+    if (vnode == null || typeof vnode === 'boolean') return;
+    if (typeof vnode !== 'object') { text.push({ text: String(vnode), ancestors }); return; }
+    visited.add(path);
     let fiber = fibers.get(path);
-    if (!fiber || fiber.type !== vnode.type) { fiber = { type: vnode.type, hooks: [] }; fibers.set(path, fiber); }
+    if (fiber && fiber.type !== vnode.type) { cleanup(fiber); fiber = null; }
+    if (!fiber) { fiber = { type: vnode.type, hooks: [] }; fibers.set(path, fiber); }
     if (typeof vnode.type === 'function') {
       const saved = current, savedCursor = cursor;
       current = fiber; cursor = 0;
       const child = vnode.type(vnode.props);
       current = saved; cursor = savedCursor;
-      renderNode(child, `${path}.render`);
+      renderNode(child, `${path}.render`, ancestors);
     } else {
+      if (vnode.type === 'style') return;
       fiber.node ??= env.document.createElement(vnode.type);
       if (vnode.type === 'canvas') env.liveCanvas = fiber.node;
       if (vnode.props.ref) vnode.props.ref.current = fiber.node;
-      for (const [index, child] of vnode.props.children.entries()) renderNode(child, `${path}.${index}`);
+      elements.push({ type: vnode.type, props: vnode.props, ancestors });
+      for (const [index, child] of vnode.props.children.entries()) {
+        renderNode(child, `${path}.${child?.props?.key ?? index}`, [...ancestors, vnode.props]);
+      }
     }
   }
   function render() {
     if (!active) return;
-    pending = [];
-    renderNode(root, 'root');
-    for (const effect of pending) { effect.cleanup?.(); effect.cleanup = effect.run(); }
+    if (rendering) { requested = true; return; }
+    rendering = true;
+    do {
+      requested = false; pending = []; visited = new Set(); text = []; elements = [];
+      renderNode(root, 'root');
+      for (const [path, fiber] of fibers) if (!visited.has(path)) { cleanup(fiber); fibers.delete(path); }
+      for (const effect of pending) { effect.cleanup?.(); effect.cleanup = effect.run(); }
+    } while (requested);
+    rendering = false;
   }
   const React = {
-    createElement(type, props, ...children) { return { type, props: { ...props, children } }; },
+    createElement(type, props, ...children) { return { type, props: { ...props, children: children.flat(Infinity) } }; },
+    useState(initial) {
+      const state = hook(() => ({ value: typeof initial === 'function' ? initial() : initial }));
+      return [state.value, value => {
+        const next = typeof value === 'function' ? value(state.value) : value;
+        if (!Object.is(next, state.value)) { state.value = next; render(); }
+      }];
+    },
+    useCallback(callback, deps) { return React.useMemo(() => callback, deps); },
+    useId() { return hook(() => `id-${fibers.size}-${cursor}`).toString(); },
     useRef(initial) { return hook(() => ({ current: initial })); },
     useMemo(factory, deps) {
       const state = hook(() => ({}));
@@ -233,6 +276,8 @@ function reactAdapter(env) {
   };
   return {
     React,
+    text: () => text,
+    elements: () => elements,
     mount(view, props) { root = React.createElement(view, props); render(); },
     dispose() {
       active = false;
@@ -257,10 +302,32 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
   const expectedInitial = readConfig();
   for (const [key, value] of Object.entries(initial)) if (key in expectedInitial) expectedInitial[key] = value;
   const host = environment(previewHtml, initial, seed, reducedMotion);
-  let snapshot = { status: 'ready', writable: true, revision: 1, value: expectedInitial };
-  const subscribers = new Set(), slots = new Map();
+  const storage = options.storage ?? new Map();
+  host.window.location = { origin: options.origin ?? 'http://fixture.invalid' };
+  Object.defineProperty(host.window, 'localStorage', { get() {
+    if (options.storageFailure) throw new Error('Storage denied');
+    return { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
+  } });
+  let snapshot = { status: 'ready', writable: options.writable ?? true, revision: 1,
+    value: { ...expectedInitial, ...(options.legendSeen === undefined ? {} : { legendSeen: options.legendSeen }) } };
+  const subscribers = new Set(), slots = new Map(), formWrites = [];
+  const form = options.form ?? {
+    getSnapshot: () => snapshot,
+    subscribe(callback) { subscribers.add(callback); return () => subscribers.delete(callback); },
+    async mutate(ops, revision) {
+      formWrites.push(copy(ops));
+      if (options.preferenceWriteFailure && ops.some(op => op.path[0] === 'legendSeen')) throw new Error('Preference write failed');
+      if (!snapshot.writable || revision !== snapshot.revision) return false;
+      const value = { ...snapshot.value };
+      for (const op of ops) value[op.path[0]] = op.value;
+      snapshot = { ...snapshot, value, revision: revision + 1 };
+      for (const subscriber of [...subscribers]) subscriber();
+      return true;
+    },
+  };
   const adapter = reactAdapter(host);
   const pluginCleanups = [], watchedJobs = new Map();
+  let detachJobs;
   function store(initialValue) {
     let value = initialValue;
     const listeners = new Set();
@@ -286,9 +353,8 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
     if (name !== 'react') throw new Error(`Unexpected host dependency: ${name}`);
     return adapter.React;
   }).apply({
-    configForms: { get() { return { getSnapshot: () => snapshot,
-      subscribe(callback) { subscribers.add(callback); return () => subscribers.delete(callback); } }; } },
-    locale: { register() {}, bind: () => key => key },
+    configForms: { get: () => form },
+    locale: { register() {}, bind: () => key => key, subscribe: () => () => {}, getSnapshot: () => 'en' },
     effect,
     get: name => options.dictation && name === 'dictation' ? dictationFace : undefined,
     inject(names, callback) {
@@ -296,8 +362,8 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
         callback({ effect, dictation: dictationFace });
         return;
       }
-      if (!options.activity || names[0] !== 'jobs') return;
-      callback({ effect, jobs: { state: activityJobs, watchRows(id) {
+      if (!options.activity || options.activity.jobsUnavailable || names[0] !== 'jobs') return;
+      callback({ effect(callback) { detachJobs = effect(callback); return detachJobs; }, jobs: { state: activityJobs, watchRows(id) {
         watchedJobs.set(id, (watchedJobs.get(id) ?? 0) + 1);
         return () => { const refs = watchedJobs.get(id) - 1; if (refs) watchedJobs.set(id, refs); else watchedJobs.delete(id); };
       } } });
@@ -306,14 +372,43 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
   });
   const overlay = slots.get('shell.overlay');
   if (!overlay) throw new Error('Client did not register the public overlay slot');
-  adapter.mount(overlay, { usePanelInfo: selector => selector({ activePanelId: 'conversation' }),
-    ...(options.activity ? { useSessions: useSource(activityList), useSessionStatus: useSource(activityStatuses) } : {}) });
+  const overlayProps = { usePanelInfo: selector => selector({ activePanelId: 'conversation' }),
+    ...(options.activity ? { useSessions: useSource(activityList),
+      ...(!options.activity.statusUnavailable ? { useSessionStatus: useSource(activityStatuses) } : {}) } : {}) };
+  adapter.mount(() => adapter.React.createElement('div', null, adapter.React.createElement(overlay, overlayProps),
+    options.settings && adapter.React.createElement(slots.get('plugins.bundle.config'))));
   const live = preview.controls.get('live');
   const hostLive = host.liveCanvas;
   return {
     snapshots() { return { host: host.snapshot(hostLive), preview: preview.snapshot(live) }; },
     config: readConfig,
-    configs() { return { host: copy(snapshot.value), preview: readConfig() }; },
+    hostText({ live = false, summary = false } = {}) {
+      return adapter.text().filter(row => !row.ancestors.some(p => p['aria-hidden'] === true)
+        && (!live || row.ancestors.some(p => p['aria-live'] === 'polite'))
+        && (!summary || row.ancestors.some(p => p['aria-label'] === 'activitySummary')))
+        .map(row => row.text).join(' ').replace(/\s+/g, ' ').trim();
+    },
+    form, formWrites,
+    async submitSettings() {
+      const element = adapter.elements().find(row => row.type === 'form');
+      if (!element) throw new Error('Settings are not mounted');
+      await element.props.onSubmit({ preventDefault() {} });
+    },
+    editSetting(key, value) {
+      const element = adapter.elements().find(row => row.type === 'input'
+        && row.ancestors.some(props => props['data-aw-field'] === key));
+      if (!element) throw new Error(`No input for ${key}`);
+      element.props.onChange({ target: { value } });
+    },
+    hostElements: () => adapter.elements(),
+    click(label) {
+      const element = adapter.elements().find(row => row.type === 'button' && row.props.children.includes(label));
+      if (!element) throw new Error(`No button ${label}`);
+      return element.props.onClick();
+    },
+    setHidden(value) { host.document.hidden = value; host.document.dispatchEvent({ type: 'visibilitychange' }); },
+    setReducedMotion(value) { host.setReducedMotion(value); },
+    configs() { return { host: copy(form.getSnapshot().value), preview: readConfig() }; },
     advance(frames) { host.advance(frames); preview.advance(frames); },
     update(patch) {
       for (const [key, value] of Object.entries(patch)) {
@@ -339,6 +434,7 @@ export function createArtifactPair({ client, previewHtml }, initial = {}, option
       if (next.statuses) activityStatuses.set(next.statuses);
       if (next.rows) activityJobs.set({ rows: next.rows });
     },
+    detachJobs() { detachJobs?.(); },
     setDictation(next, level = dictationLevel) {
       if (!options.dictation) throw new Error('Dictation provider adapter was not enabled');
       dictationLevel = level;

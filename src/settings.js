@@ -1,7 +1,9 @@
 import { FIELDS, normalizeConfig, configSignature } from './model.js';
 import { createConfigEditor } from './config-editor.js';
+import { PRESETS, matchPreset } from './presets.js';
 import { createWhaleLayer } from './engine.js';
 import { EMPTY_ACTIVITY, currentSessionId, readActivitySnapshot, createJobsBridge } from './activity.js';
+import { createActivityAnnouncer, createLegendPreference } from './activity-ui.js';
 import { createDictationBridge } from './dictation.js';
 
 /** The preview always shows the school, whatever the saved switches say. */
@@ -36,7 +38,26 @@ export function registerWhales(ctx, React, dictionaries) {
   const t = ctx.locale.bind('asciiWhales');
   const useForm = () => React.useSyncExternalStore(formSubscribe, formSnapshot, formSnapshot);
   const jobs = createJobsBridge();
-  // Jobs are optional: absent services keep the original decorative background.
+  const labelOf = entity => entity.label || t(entity.type === 'job' ? 'activityJob' : entity.type === 'subagent' ? 'activitySubagent' : 'activitySession');
+  const statusOf = entity => t({ running: 'activityRunning', waiting: 'activityWaiting', idle: 'activityIdle',
+    completed: 'activityCompleted', failed: 'activityFailed', unavailable: 'activityUnavailable' }[entity.kind]);
+  function Legend({ onClose }) {
+    const returnFocus = React.useRef(null);
+    React.useEffect(() => { returnFocus.current = document.activeElement; }, []);
+    function close() {
+      const result = onClose();
+      if (returnFocus.current?.isConnected) returnFocus.current.focus();
+      return result;
+    }
+    return h('section', { className: 'aw-legend', 'aria-label': t('activityLegend') },
+      h('h3', null, t('activityLegend')),
+      h('ul', null, ...[['···', 'activityRunning'], ['!', 'activityWaiting'], ['', 'activityIdle'],
+        ['✓', 'activityCompleted'], ['×', 'activityFailed'], ['?', 'activityUnavailable']].map(([symbol, key]) =>
+        h('li', { key }, symbol && h('span', { 'aria-hidden': true }, `${symbol} `), t(key)))),
+      h('p', null, t('activityLegendNote')),
+      h('button', { type: 'button', onClick: close,
+        onFocus: event => { if (event.relatedTarget?.isConnected) returnFocus.current = event.relatedTarget; } }, t('activityLegendClose')));
+  }
   ctx.inject?.(['jobs'], child => child.effect(() => jobs.attach(child.jobs)));
   const dictation = createDictationBridge();
   // The dictation service is optional the same way: when the other plugin is
@@ -57,7 +78,7 @@ export function registerWhales(ctx, React, dictionaries) {
    * So the layer lives for as long as the canvas node and only the update effect
    * reacts to configuration changes.
    */
-  function Canvas({ config, activity = EMPTY_ACTIVITY, dictation: dictationState = null, dictationLevel = () => 0 }) {
+  function Canvas({ config, activity = EMPTY_ACTIVITY, dictation: dictationState = null, dictationLevel = () => 0, onActivityChange }) {
     const ref = React.useRef(null);
     const configRef = React.useRef(config);
     const activityRef = React.useRef(activity);
@@ -65,7 +86,7 @@ export function registerWhales(ctx, React, dictionaries) {
     const levelRef = React.useRef(dictationLevel);
     const layer = React.useRef(null);
     React.useEffect(() => {
-      const instance = createWhaleLayer(ref.current, configRef.current);
+      const instance = createWhaleLayer(ref.current, configRef.current, { onActivityChange });
       instance.setActivity(activityRef.current);
       instance.setDictation(dictationRef.current, levelRef.current);
       layer.current = instance;
@@ -155,6 +176,17 @@ export function registerWhales(ctx, React, dictionaries) {
 
   function Overlay(props) {
     const panelId = props.usePanelInfo(s => s.activePanelId);
+    const language = React.useSyncExternalStore(localeSubscribe, localeSnapshot, localeSnapshot);
+    const [presentation, setPresentation] = React.useState(null);
+    const [announcement, setAnnouncement] = React.useState({ serial: 0, entities: [] });
+    const legendPreference = React.useMemo(() => createLegendPreference(form), []);
+    const [legendDismissed, setLegendDismissed] = React.useState(false);
+    const announcer = React.useMemo(() => createActivityAnnouncer({ announce: setAnnouncement }), []);
+    const receiveActivity = React.useCallback(value => {
+      setPresentation(value);
+      announcer.update(value);
+    }, [announcer]);
+    React.useEffect(() => () => announcer.dispose(), [announcer]);
     const snapshot = useForm();
     // Compare content, not references: an unchanged settings document must keep
     // the very same config object, so the update effect does not even fire.
@@ -163,7 +195,10 @@ export function registerWhales(ctx, React, dictionaries) {
     const list = props.useSessions?.(state => state);
     const statuses = props.useSessionStatus?.(state => state);
     const jobSnapshot = React.useSyncExternalStore(jobs.subscribe, jobs.getSnapshot, jobs.getSnapshot);
-    const nextActivity = React.useMemo(() => readActivitySnapshot(list, statuses, jobSnapshot), [list, statuses, jobSnapshot]);
+    const nextActivity = React.useMemo(() => {
+      const value = readActivitySnapshot(list, statuses, jobSnapshot);
+      return { ...value, entities: value.entities.map(entity => ({ ...entity, label: labelOf(entity) })) };
+    }, [list, statuses, jobSnapshot, language]);
     const activityKey = JSON.stringify(nextActivity);
     const activity = React.useMemo(() => nextActivity, [activityKey]);
     const dictationSnapshot = React.useSyncExternalStore(dictation.subscribe, dictation.getSnapshot, dictation.getSnapshot);
@@ -179,12 +214,39 @@ export function registerWhales(ctx, React, dictionaries) {
       jobs.watch(visible && config.activity ? scope : null);
       return () => jobs.watch(null);
     }, [visible, config.activity, scope]);
+    React.useEffect(() => {
+      if (!visible || !config.activity) announcer.update({ enabled: false, scope: null });
+    }, [visible, config.activity, scope, announcer]);
     if (!visible) return null;
-    return h('div', { 'aria-hidden': true, style: {
+    const current = config.activity && presentation?.enabled && presentation.scope === activity.scope ? presentation : null;
+    return h('div', { className: 'aw-overlay', style: {
       position: 'absolute', left: 'var(--dsh-windows-sidebar-width, var(--ascii-whale-inset, 280px))',
       top: 'var(--dsh-frame-top-clearance, 0px)', right: 0, bottom: 0,
       '--ascii-whale-inset': `${config.leftInset}px`, pointerEvents: 'none', overflow: 'hidden',
-    } }, h(Canvas, { config, activity, dictation: dictationState, dictationLevel: dictation.level }));
+    } },
+    h('style', null, ACTIVITY_CSS),
+    h('div', { 'aria-hidden': true, style: { position: 'absolute', inset: 0 } },
+      h(Canvas, { config, activity: config.activity ? activity : EMPTY_ACTIVITY,
+        dictation: dictationState, dictationLevel: dictation.level, onActivityChange: receiveActivity })),
+    config.activity && h('aside', { className: 'aw-activity' },
+      !legendDismissed && !legendPreference.seen && h(Legend, { onClose: () => {
+        setLegendDismissed(true);
+        return legendPreference.dismiss();
+      } }),
+      current && h('details', { className: 'aw-activity-summary' },
+        h('summary', null, t('activitySummary')),
+        h('section', { 'aria-label': t('activitySummary') },
+          current.availability.currentSession === 'unavailable' && h('p', null, t('activityScopeUnavailable')),
+          current.availability.liveStatus === 'unavailable' && h('p', null, t('activityWaitingUnavailable')),
+          current.availability.jobs === 'unavailable' && h('p', null, t('activityJobsUnavailable')),
+          current.availability.jobs === 'unknown' && h('p', null, t('activityJobsUnknown')),
+          h('p', null, t('activityOverflow'), ' ', current.overflow.length),
+          h('ul', null, ...current.entities.map(entity => h('li', { key: entity.key },
+            labelOf(entity), ' · ', statusOf(entity),
+            entity.waitingAvailable === false && h('span', null, ' · ', t('activityWaitingUnavailable')))))))),
+    h('div', { className: 'aw-sr-only', 'aria-live': 'polite', 'aria-atomic': true, 'aria-label': t('activityAnnouncements') },
+      config.activity && h('span', { key: announcement.serial },
+        announcement.entities.map(entity => `${labelOf(entity)} · ${statusOf(entity)}`).join('; '))));
   }
 
   function Settings() {
@@ -193,6 +255,7 @@ export function registerWhales(ctx, React, dictionaries) {
     const [editor, setEditor] = React.useState(() => snapshot.status === 'ready' ? createConfigEditor(snapshot) : null);
     const [saving, setSaving] = React.useState(false);
     const [notice, setNotice] = React.useState('');
+    const [showLegend, setShowLegend] = React.useState(false);
     // The switch is always visible, but its hint tells the truth when the other
     // plugin is not installed. Presence is bridge state, not a settings field.
     const dictationPresent = React.useSyncExternalStore(dictation.subscribePresence, dictation.hasProvider, dictation.hasProvider);
@@ -291,10 +354,11 @@ export function registerWhales(ctx, React, dictionaries) {
           h('p', { id: hint }, t(copy))), control);
     }
     const groups = [
-      { id: 'appearance', fields: ['renderStyle', 'fillMode', 'text', 'color', 'opacity', 'glyphSize'] },
-      { id: 'school', fields: ['species', 'count', 'whaleSize', 'speed', 'activity', 'dictationEcho', 'spout'] },
+      { id: 'appearance', fields: ['renderStyle', 'fillMode', 'color', 'opacity', 'glyphSize'] },
+      { id: 'school', fields: ['species', 'count', 'whaleSize', 'speed', 'dictationEcho', 'spout'] },
       { id: 'reading', fields: ['readingEffect', 'glass', 'glassStrength', 'quietCenter', 'composerAvoid'] },
       { id: 'sea', fields: ['seaGrid', 'wind', 'clouds', 'ripples', 'rain', 'rainIntensity'] },
+      { id: 'layout', fields: ['leftInset', 'pauseOnScroll'] },
     ];
     return h('form', { ref: viewportRef, className: 'aw-settings', onSubmit: save },
       h('style', null, SETTINGS_CSS),
@@ -304,12 +368,25 @@ export function registerWhales(ctx, React, dictionaries) {
       !snapshot.writable && h('p', { role: 'status', className: 'aw-notice' }, t('readOnly')),
       h(LivePreview, { draft: editor.draft }),
       h('div', { className: 'aw-options', role: 'region', 'aria-label': t('settingsOptions'), tabIndex: 0 },
-      h('div', { className: 'aw-groups' }, ...groups.map(group => h('fieldset', { className: 'aw-group', key: group.id },
-        h('legend', null, t(`${group.id}Group`)),
-        h('p', { className: 'aw-group-note' }, t(`${group.id}Description`)),
-        ...group.fields.map(renderField)))),
+      h('div', { className: 'aw-primary aw-group' },
+        h('div', { className: 'aw-row' },
+          h('div', { className: 'aw-copy' }, h('label', { htmlFor: `${prefix}-preset` }, t('scenePreset')),
+            h('p', { id: `${prefix}-preset-hint` }, t('presetDescription'))),
+          h('select', { id: `${prefix}-preset`, className: 'aw-select', disabled, value: matchPreset(editor.draft),
+            'aria-describedby': `${prefix}-preset-hint`, onChange: event => {
+              setEditor(current => current.applyPreset(event.target.value));
+              setNotice('');
+            } }, h('option', { value: 'custom', disabled: true }, t('preset_custom')),
+          ...Object.keys(PRESETS).map(id => h('option', { key: id, value: id }, t(`preset_${id}`))))),
+        renderField('resourceMode'), renderField('text'), renderField('activity'),
+        h('button', { type: 'button', 'aria-expanded': showLegend,
+          onClick: () => setShowLegend(value => !value) }, t('activityLegendOpen')),
+        showLegend && h(Legend, { onClose: () => setShowLegend(false) })),
       h('details', { className: 'aw-advanced' }, h('summary', null, t('advancedGroup')),
-        h('div', { className: 'aw-advanced-body' }, renderField('leftInset'), renderField('pauseOnScroll'))),
+        h('div', { className: 'aw-advanced-body aw-groups' }, ...groups.map(group => h('fieldset', { className: 'aw-group', key: group.id },
+          h('legend', null, t(`${group.id}Group`)),
+          h('p', { className: 'aw-group-note' }, t(`${group.id}Description`)),
+          ...group.fields.map(renderField))))),
       notice && h('p', { className: 'aw-notice', role: notice === 'saved' ? 'status' : 'alert', 'aria-live': 'polite' }, t(notice))),
       h('footer', { className: 'aw-actions' },
         h('div', { className: 'aw-save-state', role: 'status', 'aria-live': 'polite' }, t(dirty ? 'unsavedDraft' : 'savedDraft')),
@@ -346,6 +423,17 @@ export function registerWhales(ctx, React, dictionaries) {
     name: 'plugins.bundle.config', key: '@local/dsh-ascii-ocean',
   }, Settings));
 }
+
+const ACTIVITY_CSS = `
+.aw-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.aw-activity{position:absolute;right:16px;top:12px;max-width:min(360px,calc(100% - 32px));max-height:calc(100% - 24px);overflow:auto;color:var(--dsw-alias-label-primary,#1d2633);font:13px/1.5 system-ui,sans-serif}
+.aw-activity-summary,.aw-legend{pointer-events:auto;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,#c9d2de);border-radius:12px;padding:12px;margin-bottom:8px;overflow-wrap:anywhere}
+.aw-activity-summary summary{cursor:pointer}.aw-legend h3{font-size:14px;margin:0 0 8px}.aw-legend ul,.aw-activity-summary ul{padding-left:20px;margin:8px 0}.aw-legend p{margin:8px 0}
+.aw-legend button,.aw-activity-summary button{font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:6px;min-height:36px;padding:4px 10px;cursor:pointer}
+.aw-overlay :focus-visible{outline:3px solid #007aff;outline-offset:3px}
+body[data-ds-dark-theme] .aw-activity{color:var(--dsw-alias-label-primary,#edf1f7)}
+body[data-ds-dark-theme] .aw-activity-summary,body[data-ds-dark-theme] .aw-activity .aw-legend{background:var(--dsw-alias-bg-layer-1,#242c36)}
+`;
 
 const SETTINGS_CSS = `
 .aw-settings{--aw-accent:#007aff;--aw-ink:var(--dsw-alias-label-primary,#1d2633);--aw-muted:var(--dsw-alias-label-secondary,#647184);--aw-surface:var(--dsw-alias-bg-layer-1,#fff);--aw-line:var(--dsw-alias-border-l1,#e3e7ed);--aw-rail:rgba(120,135,155,.22);--aw-inset:rgba(120,135,155,.09);color:var(--aw-ink);font:inherit;width:100%;max-width:1280px;min-width:0;margin-inline:auto;padding:8px 0 24px;container-type:inline-size;box-sizing:border-box}
@@ -411,13 +499,12 @@ const SETTINGS_CSS = `
 .aw-settings .aw-switch[aria-checked=true] .aw-switch-knob{transform:translateX(20px)}
 .aw-settings .aw-advanced{margin-top:20px;border:1px solid var(--aw-line);border-radius:16px;background:var(--aw-surface)}
 .aw-settings .aw-advanced summary{padding:16px 22px;font-size:13px;font-weight:550;cursor:pointer}
-.aw-settings .aw-advanced-body{padding:0 22px 5px}
-.aw-settings .aw-advanced .aw-row{flex-wrap:nowrap}
-.aw-settings .aw-advanced .aw-copy{flex:1 1 0}
+.aw-settings .aw-advanced-body{padding:0 12px 12px}
 .aw-settings .aw-pixel-input{display:flex;align-items:center;gap:8px;flex:0 0 116px;color:var(--aw-muted);font-size:12px}
 .aw-settings .aw-pixel-input input{min-width:0;width:84px;padding:8px;border:1px solid var(--aw-line);border-radius:8px;background:var(--aw-inset);font-variant-numeric:tabular-nums}
 .aw-settings .aw-actions{position:sticky;bottom:0;z-index:4;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;padding:14px 0;background:var(--aw-surface);border-top:1px solid var(--aw-line)}
 .aw-settings .aw-save-state{font-size:12px;line-height:1.4;color:var(--aw-muted)}
+.aw-settings .aw-primary{padding-bottom:0}
 .aw-settings .aw-action-buttons{display:flex;flex-wrap:wrap;gap:8px}
 .aw-settings .aw-action-buttons button{min-height:38px;padding:8px 14px;font-size:12px;font-weight:500;line-height:1.4;border:1px solid var(--aw-line);border-radius:10px;background:var(--aw-inset)}
 .aw-settings .aw-action-buttons .aw-save{color:#fff;border-color:var(--aw-accent);background:var(--aw-accent);padding-inline:22px}
@@ -467,7 +554,6 @@ body[data-ds-dark-theme] .aw-settings .aw-select option{color:#e8edf5;background
 .aw-settings .aw-preview{padding:8px 12px;margin-bottom:8px}
 .aw-settings .aw-preview-card canvas{height:clamp(56px,calc(var(--aw-height,500px) * .22),150px)}
 .aw-settings .aw-actions{gap:6px;padding-block:6px}
-.aw-settings .aw-save-state{display:none}
 .aw-settings .aw-action-buttons{margin-left:auto}
 }
 @container(max-width:760px){

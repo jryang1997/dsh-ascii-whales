@@ -40,6 +40,7 @@ GitHub Actions 在 Windows 与 Linux 使用锁定依赖运行同一条验证命�
 浏览器操作先读取当前 `ego-browser skill`，再核对所用 Page、当前 URL、viewport 和窗口状态。
 窗口最小化、页面隐藏或目标已失效时，先恢复并重新读取页面状态，再进行指针操作或截图。
 按工具返回的 target/window 信息操作，不猜 target 标识。逻辑测试可在无需可见窗口时单独执行。
+当前宿主没有可用浏览器技能或认证通道时，把该项如实记为未测，不伪造点击、截图或宿主证据；真实宿主验收的待办、阻塞条件与证据矩阵见 [host-acceptance.md](./host-acceptance.md)。
 
 分别记录三种证据，缺少任一项就如实标为未测：
 

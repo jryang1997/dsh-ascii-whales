@@ -42,6 +42,28 @@ test('root snapshots prioritize real pending interactions and include unopened d
   assert.equal(readActivitySnapshot(undefined), EMPTY_ACTIVITY);
 });
 
+test('current tree includes idle and unknown descendants alongside independently active sessions only', () => {
+  const list = fixture();
+  Object.assign(list.byId, {
+    waiting: { id: 'waiting', running: false },
+    missing: { id: 'missing' },
+    idleChild: { id: 'idleChild', parentId: 'main' },
+  });
+  const statuses = new Map([['waiting', { pendingInteraction: { kind: 'question' } }],
+    ['idleChild', { running: false }]]);
+  const snapshot = readActivitySnapshot(list, statuses, { rows: { main: [], other: [{ id: 'private', status: 'running' }] } });
+  assert.deepEqual(snapshot.entities.map(e => [e.key, e.kind]), [
+    ['session:main', 'running'], ['session:child', 'running'], ['session:other', 'running'],
+    ['session:waiting', 'waiting'], ['session:idleChild', 'idle'], ['session:nested', 'unavailable'],
+  ]);
+  const tracker = createActivityTracker(), school = whales(6);
+  tracker.update(snapshot); tracker.apply(school, 0);
+  const bindings = school.map(w => w.activity.key);
+  assert.equal(bindings[0], 'session:main');
+  tracker.update({ ...snapshot, entities: [...snapshot.entities].reverse() }); tracker.apply(school, 1);
+  assert.deepEqual(school.map(w => w.activity.key), bindings);
+});
+
 test('entity seats survive list reorder, higher priority arrivals, count and scene changes', () => {
   const tracker = createActivityTracker(), school = whales(3);
   tracker.update(snapshot(entity('agent:a'), entity('agent:b'))); tracker.apply(school, 0);
@@ -118,21 +140,40 @@ test('job reminder deadlines survive body reconstruction after a long-running sc
 });
 
 test('the optional jobs bridge shares one roster, releases on session changes and follows no output', () => {
-  let value = { rows: {} }, listener, subscriptions = 0, releases = 0, notifications = 0;
+  let value = { rows: {} }, listener, subscriptions = 0, releases = 0, notified;
   const watched = [];
   const service = { state: { getSnapshot: () => value,
     subscribe(callback) { listener = callback; subscriptions++; return () => subscriptions--; } },
     watchRows(id) { watched.push(id); return () => releases++; } };
   const jobs = createJobsBridge();
-  const unsubscribe = jobs.subscribe(() => notifications++);
-  jobs.watch('main'); const detach = jobs.attach(service);
+  const unsubscribe = jobs.subscribe(() => { notified = jobs.getSnapshot(); });
+  const detach = jobs.attach(service);
+  assert.equal(subscriptions, 0, 'an unwatched jobs service has no active subscription');
+  jobs.watch('main');
   jobs.watch('main'); assert.deepEqual(watched, ['main']);
   value = { rows: { main: [{ id: 'build', status: 'running' }] } }; listener();
-  assert.equal(jobs.getSnapshot(), value);
+  assert.equal(jobs.getSnapshot(), value); assert.equal(notified, value);
   jobs.watch('other'); assert.deepEqual(watched, ['main', 'other']); assert.equal(releases, 1);
-  jobs.watch(null); assert.equal(releases, 2);
-  detach(); assert.equal(subscriptions, 0); assert.deepEqual(jobs.getSnapshot(), { rows: {} });
-  assert.equal(notifications, 3); unsubscribe();
+  jobs.watch(null); assert.equal(releases, 2); assert.equal(subscriptions, 0);
+  detach(); assert.equal(subscriptions, 0); assert.deepEqual(jobs.getSnapshot(), { rows: {}, available: false });
+  unsubscribe();
+});
+
+test('an attached bridge without a roster remains unknown until explicit rows arrive or service detaches', () => {
+  let value = null, listener;
+  const service = { state: { getSnapshot: () => value,
+    subscribe(callback) { listener = callback; return () => {}; } }, watchRows: () => () => {} };
+  const jobs = createJobsBridge();
+  const detach = jobs.attach(service);
+  jobs.watch('main');
+  const availability = () => readActivitySnapshot(fixture(), new Map(), jobs.getSnapshot()).availability.jobs;
+  assert.equal(availability(), 'unknown');
+  value = { rows: { main: [] } }; listener();
+  assert.equal(availability(), 'available');
+  value = { rows: {} }; listener();
+  assert.equal(availability(), 'unknown');
+  detach();
+  assert.equal(availability(), 'unavailable');
 });
 
 test('state changes retain the real simulation and resume bindings after config rebuilds', () => {

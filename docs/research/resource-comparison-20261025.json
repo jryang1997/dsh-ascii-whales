@@ -1,0 +1,5294 @@
+{
+  "schemaVersion": 3,
+  "kind": "full-comparison",
+  "surface": "Controlled simulated Chrome file fixture. NOT actual DSH.",
+  "runStatus": "passed",
+  "verdict": "inconclusive; no performance benefit or energy claim",
+  "fullComparison": "measured-controlled-only",
+  "buildHash": "7d46cca603779f2b92e06e403af7a1f9795fc8691f65d66bd5bc416ecf6a2f6e",
+  "gitHead": "10372bd3077cc0d3ae5f89943e942a760abf170f",
+  "browser": "Chrome/155.0.8059.85",
+  "headless": true,
+  "logicalProcessors": 16,
+  "protocol": {
+    "warmupMs": 30000,
+    "sampleMs": 60000,
+    "rounds": 5,
+    "conditions": [
+      "off",
+      "standard",
+      "economy"
+    ],
+    "seed": 20261025
+  },
+  "completeness": {
+    "complete": true,
+    "expected": 45,
+    "received": 45,
+    "valid": 45,
+    "issueCount": 0
+  },
+  "cpuComparable": true,
+  "cpuScope": "Isolated Chrome browser tree including renderer, browser, GPU and utility CPU plus fixture and CDP overhead. Not plugin-exclusive CPU. Single-core percent; machine percent divides by logical processors.",
+  "groups": [
+    {
+      "scenario": "idle",
+      "condition": "off",
+      "rounds": 5,
+      "cpuSingleCorePercent": {
+        "measured": 5,
+        "median": 0.10831469098422995,
+        "range": [
+          0.09762340528700343,
+          0.23985070797868274
+        ]
+      },
+      "cpuMachinePercent": {
+        "measured": 5,
+        "median": 0.006769668186514372,
+        "range": [
+          0.0061014628304377145,
+          0.014990669248667671
+        ]
+      },
+      "browserLayoutMs": {
+        "measured": 5,
+        "median": 0,
+        "range": [
+          0,
+          0
+        ]
+      },
+      "work": {
+        "wakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "refreshWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "scrollWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "advance": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "motionStep": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "waterUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "atmosphereUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "rainUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "rainStep": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "spoutUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "draw": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "layout": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "drawIntervalMs": {
+        "measured": 0,
+        "median": null,
+        "range": null
+      }
+    },
+    {
+      "scenario": "idle",
+      "condition": "standard",
+      "rounds": 5,
+      "cpuSingleCorePercent": {
+        "measured": 5,
+        "median": 42.52045638091022,
+        "range": [
+          41.87303853557239,
+          51.43573435839789
+        ]
+      },
+      "cpuMachinePercent": {
+        "measured": 5,
+        "median": 2.6575285238068886,
+        "range": [
+          2.6170649084732744,
+          3.214733397399868
+        ]
+      },
+      "browserLayoutMs": {
+        "measured": 5,
+        "median": 0,
+        "range": [
+          0,
+          0
+        ]
+      },
+      "work": {
+        "wakeup": {
+          "count": {
+            "measured": 5,
+            "median": 9596,
+            "range": [
+              9338,
+              9598
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 12369.400000452995,
+            "range": [
+              12265.90000078082,
+              14811.300000146031
+            ]
+          }
+        },
+        "refreshWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "scrollWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "advance": {
+          "count": {
+            "measured": 5,
+            "median": 9596,
+            "range": [
+              9338,
+              9598
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 351.19999976456165,
+            "range": [
+              336.9000001400709,
+              416.30000023543835
+            ]
+          }
+        },
+        "motionStep": {
+          "count": {
+            "measured": 5,
+            "median": 3600,
+            "range": [
+              3600,
+              3601
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 196.79999992251396,
+            "range": [
+              187.7999999076128,
+              234.90000009536743
+            ]
+          }
+        },
+        "waterUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 9596,
+            "range": [
+              9338,
+              9598
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 71.59999993443489,
+            "range": [
+              66.20000010728836,
+              81.19999997317791
+            ]
+          }
+        },
+        "atmosphereUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 3600,
+            "range": [
+              3600,
+              3601
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0.699999988079071,
+            "range": [
+              0.29999998211860657,
+              1.4000000357627869
+            ]
+          }
+        },
+        "rainUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 3600,
+            "range": [
+              3600,
+              3601
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 9.7000000923872,
+            "range": [
+              8.700000122189522,
+              14.200000032782555
+            ]
+          }
+        },
+        "rainStep": {
+          "count": {
+            "measured": 5,
+            "median": 3602,
+            "range": [
+              3602,
+              3603
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 7.700000032782555,
+            "range": [
+              6.199999958276749,
+              9.600000008940697
+            ]
+          }
+        },
+        "spoutUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 1600,
+            "range": [
+              1600,
+              1600
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 23.099999845027924,
+            "range": [
+              21.7999999076128,
+              27.399999976158142
+            ]
+          }
+        },
+        "draw": {
+          "count": {
+            "measured": 5,
+            "median": 1600,
+            "range": [
+              1600,
+              1600
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 11850.100000187755,
+            "range": [
+              11765.900000244379,
+              14208.800000116229
+            ]
+          }
+        },
+        "layout": {
+          "count": {
+            "measured": 5,
+            "median": 400,
+            "range": [
+              400,
+              400
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 120.29999993741512,
+            "range": [
+              113.09999994933605,
+              145.39999988675117
+            ]
+          }
+        }
+      },
+      "drawIntervalMs": {
+        "measured": 7995,
+        "median": 37.5,
+        "range": [
+          29.799999997019768,
+          46.3999999910593
+        ]
+      }
+    },
+    {
+      "scenario": "idle",
+      "condition": "economy",
+      "rounds": 5,
+      "cpuSingleCorePercent": {
+        "measured": 5,
+        "median": 19.799583062753754,
+        "range": [
+          19.7274703199812,
+          20.457823786068623
+        ]
+      },
+      "cpuMachinePercent": {
+        "measured": 5,
+        "median": 1.2374739414221096,
+        "range": [
+          1.232966894998825,
+          1.278613986629289
+        ]
+      },
+      "browserLayoutMs": {
+        "measured": 5,
+        "median": 0,
+        "range": [
+          0,
+          0
+        ]
+      },
+      "work": {
+        "wakeup": {
+          "count": {
+            "measured": 5,
+            "median": 768,
+            "range": [
+              759,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 6242.799999922514,
+            "range": [
+              6172.500000059605,
+              6456.299999982119
+            ]
+          }
+        },
+        "refreshWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "scrollWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "advance": {
+          "count": {
+            "measured": 5,
+            "median": 768,
+            "range": [
+              759,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 105.30000011622906,
+            "range": [
+              98.90000009536743,
+              108.09999984502792
+            ]
+          }
+        },
+        "motionStep": {
+          "count": {
+            "measured": 5,
+            "median": 1800,
+            "range": [
+              1799,
+              1801
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 80.39999988675117,
+            "range": [
+              73.90000006556511,
+              82.19999992847443
+            ]
+          }
+        },
+        "waterUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 768,
+            "range": [
+              759,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 12.7000000923872,
+            "range": [
+              11.700000077486038,
+              14.99999988079071
+            ]
+          }
+        },
+        "atmosphereUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 768,
+            "range": [
+              759,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0.20000001788139343,
+            "range": [
+              0.09999999403953552,
+              0.3999999761581421
+            ]
+          }
+        },
+        "rainUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 768,
+            "range": [
+              759,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 2.0999999940395355,
+            "range": [
+              1.6000000536441803,
+              3.4999999701976776
+            ]
+          }
+        },
+        "rainStep": {
+          "count": {
+            "measured": 5,
+            "median": 1032,
+            "range": [
+              1030,
+              1041
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 1.5999999642372131,
+            "range": [
+              1.3000000566244125,
+              2.9999999701976776
+            ]
+          }
+        },
+        "spoutUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 768,
+            "range": [
+              759,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 9.700000077486038,
+            "range": [
+              9.299999982118607,
+              10.499999940395355
+            ]
+          }
+        },
+        "draw": {
+          "count": {
+            "measured": 5,
+            "median": 768,
+            "range": [
+              759,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 6120.000000298023,
+            "range": [
+              6056.0000000447035,
+              6332.999999925494
+            ]
+          }
+        },
+        "layout": {
+          "count": {
+            "measured": 5,
+            "median": 384,
+            "range": [
+              379,
+              385
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 118.9000001847744,
+            "range": [
+              116.99999991059303,
+              128.4000000655651
+            ]
+          }
+        }
+      },
+      "drawIntervalMs": {
+        "measured": 3827,
+        "median": 78.40000000596046,
+        "range": [
+          72.79999999701977,
+          100.69999998807907
+        ]
+      }
+    },
+    {
+      "scenario": "append",
+      "condition": "off",
+      "rounds": 5,
+      "cpuSingleCorePercent": {
+        "measured": 5,
+        "median": 0.8811876329417873,
+        "range": [
+          0.8664053923179291,
+          0.983925403524101
+        ]
+      },
+      "cpuMachinePercent": {
+        "measured": 5,
+        "median": 0.055074227058861704,
+        "range": [
+          0.05415033701987057,
+          0.06149533772025631
+        ]
+      },
+      "browserLayoutMs": {
+        "measured": 5,
+        "median": 129.754,
+        "range": [
+          125.34700000000001,
+          129.874
+        ]
+      },
+      "work": {
+        "wakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "refreshWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "scrollWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "advance": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "motionStep": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "waterUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "atmosphereUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "rainUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "rainStep": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "spoutUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "draw": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "layout": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "drawIntervalMs": {
+        "measured": 0,
+        "median": null,
+        "range": null
+      }
+    },
+    {
+      "scenario": "append",
+      "condition": "standard",
+      "rounds": 5,
+      "cpuSingleCorePercent": {
+        "measured": 5,
+        "median": 45.52478776064161,
+        "range": [
+          45.016820032877256,
+          46.81672229955912
+        ]
+      },
+      "cpuMachinePercent": {
+        "measured": 5,
+        "median": 2.8452992350401005,
+        "range": [
+          2.8135512520548285,
+          2.926045143722445
+        ]
+      },
+      "browserLayoutMs": {
+        "measured": 5,
+        "median": 120.639,
+        "range": [
+          118.49,
+          123.075
+        ]
+      },
+      "work": {
+        "wakeup": {
+          "count": {
+            "measured": 5,
+            "median": 9589,
+            "range": [
+              9515,
+              9590
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 10956.70000012219,
+            "range": [
+              10900.700000226498,
+              11333.400000140071
+            ]
+          }
+        },
+        "refreshWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 239,
+            "range": [
+              239,
+              239
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 2236.5999999791384,
+            "range": [
+              2221.8999999910593,
+              2308.5999999195337
+            ]
+          }
+        },
+        "scrollWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "advance": {
+          "count": {
+            "measured": 5,
+            "median": 9589,
+            "range": [
+              9515,
+              9590
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 352.00000013411045,
+            "range": [
+              348.5999998599291,
+              367.89999973773956
+            ]
+          }
+        },
+        "motionStep": {
+          "count": {
+            "measured": 5,
+            "median": 3600,
+            "range": [
+              3600,
+              3601
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 199.99999952316284,
+            "range": [
+              195.69999979436398,
+              205.79999989271164
+            ]
+          }
+        },
+        "waterUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 9589,
+            "range": [
+              9515,
+              9590
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 70.30000029504299,
+            "range": [
+              66.1000000834465,
+              71.700000166893
+            ]
+          }
+        },
+        "atmosphereUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 3600,
+            "range": [
+              3599,
+              3601
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 1,
+            "range": [
+              0.5,
+              1.4999999850988388
+            ]
+          }
+        },
+        "rainUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 3600,
+            "range": [
+              3599,
+              3601
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 9.199999898672104,
+            "range": [
+              7.000000074505806,
+              10.600000083446503
+            ]
+          }
+        },
+        "rainStep": {
+          "count": {
+            "measured": 5,
+            "median": 3602,
+            "range": [
+              3602,
+              3603
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 6.999999940395355,
+            "range": [
+              5.4000000804662704,
+              8.2000000923872
+            ]
+          }
+        },
+        "spoutUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 1680,
+            "range": [
+              1679,
+              1680
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 21.900000110268593,
+            "range": [
+              21.099999994039536,
+              24.199999824166298
+            ]
+          }
+        },
+        "draw": {
+          "count": {
+            "measured": 5,
+            "median": 1680,
+            "range": [
+              1679,
+              1680
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 12658.299999922514,
+            "range": [
+              12609.499999955297,
+              13116.700000196695
+            ]
+          }
+        },
+        "layout": {
+          "count": {
+            "measured": 5,
+            "median": 480,
+            "range": [
+              480,
+              480
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 243.4000001847744,
+            "range": [
+              233.59999994933605,
+              251.29999987781048
+            ]
+          }
+        }
+      },
+      "drawIntervalMs": {
+        "measured": 7199,
+        "median": 37.70000000298023,
+        "range": [
+          26.599999994039536,
+          83
+        ]
+      }
+    },
+    {
+      "scenario": "append",
+      "condition": "economy",
+      "rounds": 5,
+      "cpuSingleCorePercent": {
+        "measured": 5,
+        "median": 19.824497637243308,
+        "range": [
+          19.506920413062932,
+          20.046497031880453
+        ]
+      },
+      "cpuMachinePercent": {
+        "measured": 5,
+        "median": 1.2390311023277067,
+        "range": [
+          1.2191825258164333,
+          1.2529060644925283
+        ]
+      },
+      "browserLayoutMs": {
+        "measured": 5,
+        "median": 125.84699999999998,
+        "range": [
+          123.897,
+          128.058
+        ]
+      },
+      "work": {
+        "wakeup": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              769,
+              770
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 4385.000000149012,
+            "range": [
+              4315.200000047684,
+              4429.900000065565
+            ]
+          }
+        },
+        "refreshWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 239,
+            "range": [
+              239,
+              239
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 1740.5,
+            "range": [
+              1710.3000000864267,
+              1763.299999922514
+            ]
+          }
+        },
+        "scrollWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "advance": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              769,
+              770
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 100.50000013411045,
+            "range": [
+              97.30000030994415,
+              105.50000014901161
+            ]
+          }
+        },
+        "motionStep": {
+          "count": {
+            "measured": 5,
+            "median": 1801,
+            "range": [
+              1799,
+              1801
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 77.40000019967556,
+            "range": [
+              74.00000028312206,
+              79.60000014305115
+            ]
+          }
+        },
+        "waterUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              769,
+              770
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 11.300000086426735,
+            "range": [
+              10.999999940395355,
+              12.899999886751175
+            ]
+          }
+        },
+        "atmosphereUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              769,
+              770
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0.30000001192092896,
+            "range": [
+              0.09999999403953552,
+              0.4000000059604645
+            ]
+          }
+        },
+        "rainUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              769,
+              770
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 2.2999999821186066,
+            "range": [
+              2.200000062584877,
+              2.7999999821186066
+            ]
+          }
+        },
+        "rainStep": {
+          "count": {
+            "measured": 5,
+            "median": 1031,
+            "range": [
+              1030,
+              1032
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 1.8999999910593033,
+            "range": [
+              1.5999999642372131,
+              2.2000000029802322
+            ]
+          }
+        },
+        "spoutUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 772,
+            "range": [
+              772,
+              776
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 10.199999943375587,
+            "range": [
+              8.700000002980232,
+              10.600000068545341
+            ]
+          }
+        },
+        "draw": {
+          "count": {
+            "measured": 5,
+            "median": 772,
+            "range": [
+              772,
+              776
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 6005.60000012815,
+            "range": [
+              5919.199999958277,
+              6079.3999998271465
+            ]
+          }
+        },
+        "layout": {
+          "count": {
+            "measured": 5,
+            "median": 480,
+            "range": [
+              480,
+              480
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 229,
+            "range": [
+              226.39999997615814,
+              230.79999993741512
+            ]
+          }
+        }
+      },
+      "drawIntervalMs": {
+        "measured": 2667,
+        "median": 80.90000000596046,
+        "range": [
+          72.5,
+          166.8999999910593
+        ]
+      }
+    },
+    {
+      "scenario": "scroll",
+      "condition": "off",
+      "rounds": 5,
+      "cpuSingleCorePercent": {
+        "measured": 5,
+        "median": 7.2287184794048445,
+        "range": [
+          7.022880615552668,
+          7.368431403903856
+        ]
+      },
+      "cpuMachinePercent": {
+        "measured": 5,
+        "median": 0.4517949049628028,
+        "range": [
+          0.43893003847204176,
+          0.460526962743991
+        ]
+      },
+      "browserLayoutMs": {
+        "measured": 5,
+        "median": 0,
+        "range": [
+          0,
+          0
+        ]
+      },
+      "work": {
+        "wakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "refreshWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "scrollWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "advance": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "motionStep": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "waterUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "atmosphereUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "rainUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "rainStep": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "spoutUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "draw": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "layout": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "drawIntervalMs": {
+        "measured": 0,
+        "median": null,
+        "range": null
+      }
+    },
+    {
+      "scenario": "scroll",
+      "condition": "standard",
+      "rounds": 5,
+      "cpuSingleCorePercent": {
+        "measured": 5,
+        "median": 48.402891182123334,
+        "range": [
+          47.37188297682926,
+          49.19631983990144
+        ]
+      },
+      "cpuMachinePercent": {
+        "measured": 5,
+        "median": 3.0251806988827084,
+        "range": [
+          2.960742686051829,
+          3.07476998999384
+        ]
+      },
+      "browserLayoutMs": {
+        "measured": 5,
+        "median": 0,
+        "range": [
+          0,
+          0
+        ]
+      },
+      "work": {
+        "wakeup": {
+          "count": {
+            "measured": 5,
+            "median": 9592,
+            "range": [
+              9591,
+              9599
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 12475.900000080466,
+            "range": [
+              12349.000000342727,
+              12681.000000342727
+            ]
+          }
+        },
+        "refreshWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "scrollWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "advance": {
+          "count": {
+            "measured": 5,
+            "median": 9592,
+            "range": [
+              9591,
+              9599
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 344.3000000268221,
+            "range": [
+              336.90000024437904,
+              361.90000027418137
+            ]
+          }
+        },
+        "motionStep": {
+          "count": {
+            "measured": 5,
+            "median": 3600,
+            "range": [
+              3600,
+              3601
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 197.09999980032444,
+            "range": [
+              188.6000002026558,
+              204.20000004768372
+            ]
+          }
+        },
+        "waterUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 9592,
+            "range": [
+              9591,
+              9599
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 71.5000002682209,
+            "range": [
+              61.60000005364418,
+              74.10000005364418
+            ]
+          }
+        },
+        "atmosphereUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 3600,
+            "range": [
+              3600,
+              3601
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0.4000000059604645,
+            "range": [
+              0.10000000894069672,
+              0.7999999970197678
+            ]
+          }
+        },
+        "rainUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 3600,
+            "range": [
+              3600,
+              3601
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 8.999999970197678,
+            "range": [
+              7.900000050663948,
+              11.19999997317791
+            ]
+          }
+        },
+        "rainStep": {
+          "count": {
+            "measured": 5,
+            "median": 3602,
+            "range": [
+              3602,
+              3603
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 7.299999952316284,
+            "range": [
+              5.700000047683716,
+              8.700000032782555
+            ]
+          }
+        },
+        "spoutUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 1600,
+            "range": [
+              1600,
+              1600
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 23.49999998509884,
+            "range": [
+              21.799999922513962,
+              23.69999995827675
+            ]
+          }
+        },
+        "draw": {
+          "count": {
+            "measured": 5,
+            "median": 1600,
+            "range": [
+              1600,
+              1600
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 11969.000000089407,
+            "range": [
+              11859.199999853969,
+              12153.200000554323
+            ]
+          }
+        },
+        "layout": {
+          "count": {
+            "measured": 5,
+            "median": 400,
+            "range": [
+              400,
+              400
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 220.10000030696392,
+            "range": [
+              210.40000005066395,
+              226.1999998241663
+            ]
+          }
+        }
+      },
+      "drawIntervalMs": {
+        "measured": 7995,
+        "median": 37.5,
+        "range": [
+          29.599999994039536,
+          45.599999994039536
+        ]
+      }
+    },
+    {
+      "scenario": "scroll",
+      "condition": "economy",
+      "rounds": 5,
+      "cpuSingleCorePercent": {
+        "measured": 5,
+        "median": 27.37002581400291,
+        "range": [
+          27.122493941676478,
+          27.703154879718184
+        ]
+      },
+      "cpuMachinePercent": {
+        "measured": 5,
+        "median": 1.710626613375182,
+        "range": [
+          1.6951558713547799,
+          1.7314471799823865
+        ]
+      },
+      "browserLayoutMs": {
+        "measured": 5,
+        "median": 0,
+        "range": [
+          0,
+          0
+        ]
+      },
+      "work": {
+        "wakeup": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              767,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 6259.9000000059605,
+            "range": [
+              6203.400000095367,
+              6269.399999961257
+            ]
+          }
+        },
+        "refreshWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "scrollWakeup": {
+          "count": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0
+            ]
+          }
+        },
+        "advance": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              767,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 95.59999956190586,
+            "range": [
+              93.20000003278255,
+              97.90000024437904
+            ]
+          }
+        },
+        "motionStep": {
+          "count": {
+            "measured": 5,
+            "median": 1800,
+            "range": [
+              1798,
+              1801
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 73.3999999910593,
+            "range": [
+              69.60000002384186,
+              73.79999981820583
+            ]
+          }
+        },
+        "waterUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              767,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 11.599999830126762,
+            "range": [
+              10.50000011920929,
+              12.89999994635582
+            ]
+          }
+        },
+        "atmosphereUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              767,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 0,
+            "range": [
+              0,
+              0.10000000894069672
+            ]
+          }
+        },
+        "rainUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              767,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 1.9999999403953552,
+            "range": [
+              1.4000000208616257,
+              2.099999964237213
+            ]
+          }
+        },
+        "rainStep": {
+          "count": {
+            "measured": 5,
+            "median": 1032,
+            "range": [
+              1031,
+              1032
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 1.399999976158142,
+            "range": [
+              1.1000000089406967,
+              1.600000038743019
+            ]
+          }
+        },
+        "spoutUpdate": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              767,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 10.499999955296516,
+            "range": [
+              9.500000044703484,
+              10.699999988079071
+            ]
+          }
+        },
+        "draw": {
+          "count": {
+            "measured": 5,
+            "median": 769,
+            "range": [
+              767,
+              769
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 6145.399999782443,
+            "range": [
+              6093.200000226498,
+              6158.4999999552965
+            ]
+          }
+        },
+        "layout": {
+          "count": {
+            "measured": 5,
+            "median": 384,
+            "range": [
+              383,
+              385
+            ]
+          },
+          "durationMs": {
+            "measured": 5,
+            "median": 207.80000013113022,
+            "range": [
+              203.19999992847443,
+              209.19999986886978
+            ]
+          }
+        }
+      },
+      "drawIntervalMs": {
+        "measured": 3836,
+        "median": 78,
+        "range": [
+          72.59999999403954,
+          91.80000001192093
+        ]
+      }
+    }
+  ],
+  "rendererStatusProbe": [
+    {
+      "condition": "standard",
+      "reduced": false,
+      "mode": "normal",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        0,
+        0.20000000298023224
+      ],
+      "canvasRangeMs": [
+        5.100000008940697,
+        6.700000002980232
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "standard",
+      "reduced": false,
+      "mode": "burst",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        4.899999991059303,
+        8.200000002980232
+      ],
+      "canvasRangeMs": [
+        4.5999999940395355,
+        7.800000011920929
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "standard",
+      "reduced": false,
+      "mode": "paused",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        0,
+        0.10000000894069672
+      ],
+      "canvasRangeMs": [
+        4.700000002980232,
+        7.899999991059303
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "standard",
+      "reduced": true,
+      "mode": "normal",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        0,
+        0.10000000894069672
+      ],
+      "canvasRangeMs": [
+        4.899999991059303,
+        7.800000011920929
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "standard",
+      "reduced": true,
+      "mode": "burst",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        4.9000000059604645,
+        7
+      ],
+      "canvasRangeMs": [
+        4.600000008940697,
+        6.699999988079071
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "standard",
+      "reduced": true,
+      "mode": "paused",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        0,
+        0.10000000894069672
+      ],
+      "canvasRangeMs": [
+        4.5,
+        5.5999999940395355
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "economy",
+      "reduced": false,
+      "mode": "normal",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        0,
+        0.20000000298023224
+      ],
+      "canvasRangeMs": [
+        5.200000002980232,
+        8.600000008940697
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "economy",
+      "reduced": false,
+      "mode": "burst",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        5.399999991059303,
+        8.700000002980232
+      ],
+      "canvasRangeMs": [
+        5,
+        8.400000005960464
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "economy",
+      "reduced": false,
+      "mode": "paused",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        0,
+        0.19999998807907104
+      ],
+      "canvasRangeMs": [
+        4.700000002980232,
+        7.199999988079071
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "economy",
+      "reduced": true,
+      "mode": "normal",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        0,
+        0.10000000894069672
+      ],
+      "canvasRangeMs": [
+        4.799999997019768,
+        8.099999994039536
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "economy",
+      "reduced": true,
+      "mode": "burst",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        4.899999991059303,
+        6.800000011920929
+      ],
+      "canvasRangeMs": [
+        4.700000002980232,
+        6.4000000059604645
+      ],
+      "withinProbeThreshold": true
+    },
+    {
+      "condition": "economy",
+      "reduced": true,
+      "mode": "paused",
+      "probes": 15,
+      "mirrorTextMeasured": 15,
+      "canvasMeasured": 15,
+      "mirrorTextRangeMs": [
+        0,
+        0.20000000298023224
+      ],
+      "canvasRangeMs": [
+        4.5999999940395355,
+        8.099999994039536
+      ],
+      "withinProbeThreshold": true
+    }
+  ],
+  "rendererProbeEndpoint": "Synchronous DOM mirror write and actual renderer draw completion. Not a React commit measurement or formal G2-04 acceptance.",
+  "formalReactCommitLatency": "unmeasured",
+  "rounds": [
+    {
+      "scenario": "idle",
+      "condition": "off",
+      "round": 1,
+      "order": 1,
+      "durationMs": 60015.60000000894,
+      "cpuSingleCorePercent": 0.23985070797868274,
+      "cpuMachinePercent": 0.014990669248667671,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "standard",
+      "round": 1,
+      "order": 2,
+      "durationMs": 60000.59999999404,
+      "cpuSingleCorePercent": 41.87303853557239,
+      "cpuMachinePercent": 2.6170649084732744,
+      "work": {
+        "wakeup": {
+          "count": 9597,
+          "durationMs": 12265.90000078082
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9597,
+          "durationMs": 336.9000001400709
+        },
+        "motionStep": {
+          "count": 3601,
+          "durationMs": 187.7999999076128
+        },
+        "waterUpdate": {
+          "count": 9597,
+          "durationMs": 66.20000010728836
+        },
+        "atmosphereUpdate": {
+          "count": 3601,
+          "durationMs": 0.29999998211860657
+        },
+        "rainUpdate": {
+          "count": 3601,
+          "durationMs": 10.200000032782555
+        },
+        "rainStep": {
+          "count": 3603,
+          "durationMs": 8.700000017881393
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 22.700000017881393
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 11765.900000244379
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 113.09999994933605
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "economy",
+      "round": 1,
+      "order": 3,
+      "durationMs": 60012.09999999404,
+      "cpuSingleCorePercent": 19.7274703199812,
+      "cpuMachinePercent": 1.232966894998825,
+      "work": {
+        "wakeup": {
+          "count": 769,
+          "durationMs": 6199.499999731779
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 769,
+          "durationMs": 105.20000019669533
+        },
+        "motionStep": {
+          "count": 1799,
+          "durationMs": 82.19999992847443
+        },
+        "waterUpdate": {
+          "count": 769,
+          "durationMs": 11.700000077486038
+        },
+        "atmosphereUpdate": {
+          "count": 769,
+          "durationMs": 0.20000001788139343
+        },
+        "rainUpdate": {
+          "count": 769,
+          "durationMs": 2.900000050663948
+        },
+        "rainStep": {
+          "count": 1030,
+          "durationMs": 2.5000000298023224
+        },
+        "spoutUpdate": {
+          "count": 769,
+          "durationMs": 9.299999982118607
+        },
+        "draw": {
+          "count": 769,
+          "durationMs": 6077.999999627471
+        },
+        "layout": {
+          "count": 385,
+          "durationMs": 116.99999991059303
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "off",
+      "round": 1,
+      "order": 1,
+      "durationMs": 60007.09999999404,
+      "cpuSingleCorePercent": 0.8825040302256573,
+      "cpuMachinePercent": 0.05515650188910358,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "standard",
+      "round": 1,
+      "order": 2,
+      "durationMs": 60001.70000000298,
+      "cpuSingleCorePercent": 46.81672229955912,
+      "cpuMachinePercent": 2.926045143722445,
+      "work": {
+        "wakeup": {
+          "count": 9515,
+          "durationMs": 11333.400000140071
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 2308.5999999195337
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9515,
+          "durationMs": 362.29999977350235
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 205.79999989271164
+        },
+        "waterUpdate": {
+          "count": 9515,
+          "durationMs": 71.09999994933605
+        },
+        "atmosphereUpdate": {
+          "count": 3599,
+          "durationMs": 1
+        },
+        "rainUpdate": {
+          "count": 3599,
+          "durationMs": 9.199999898672104
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 6.899999961256981
+        },
+        "spoutUpdate": {
+          "count": 1679,
+          "durationMs": 21.900000110268593
+        },
+        "draw": {
+          "count": 1679,
+          "durationMs": 13116.700000196695
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 251.29999987781048
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "economy",
+      "round": 1,
+      "order": 3,
+      "durationMs": 60001,
+      "cpuSingleCorePercent": 20.046497031880453,
+      "cpuMachinePercent": 1.2529060644925283,
+      "work": {
+        "wakeup": {
+          "count": 770,
+          "durationMs": 4429.900000065565
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 1763.299999922514
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 770,
+          "durationMs": 97.30000030994415
+        },
+        "motionStep": {
+          "count": 1801,
+          "durationMs": 74.00000028312206
+        },
+        "waterUpdate": {
+          "count": 770,
+          "durationMs": 11.300000086426735
+        },
+        "atmosphereUpdate": {
+          "count": 770,
+          "durationMs": 0.19999998807907104
+        },
+        "rainUpdate": {
+          "count": 770,
+          "durationMs": 2.2999999821186066
+        },
+        "rainStep": {
+          "count": 1031,
+          "durationMs": 1.7999999970197678
+        },
+        "spoutUpdate": {
+          "count": 776,
+          "durationMs": 10.199999988079071
+        },
+        "draw": {
+          "count": 776,
+          "durationMs": 6079.3999998271465
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 230.79999993741512
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "off",
+      "round": 1,
+      "order": 1,
+      "durationMs": 60013.79999999702,
+      "cpuSingleCorePercent": 7.368431403903856,
+      "cpuMachinePercent": 0.460526962743991,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "standard",
+      "round": 1,
+      "order": 2,
+      "durationMs": 60007,
+      "cpuSingleCorePercent": 48.691645050769566,
+      "cpuMachinePercent": 3.043227815673098,
+      "work": {
+        "wakeup": {
+          "count": 9592,
+          "durationMs": 12627.700000047684
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9592,
+          "durationMs": 361.90000027418137
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 204.20000004768372
+        },
+        "waterUpdate": {
+          "count": 9592,
+          "durationMs": 71.5000002682209
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 0.7000000029802322
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 8.399999976158142
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 6.700000032782555
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 23.69999995827675
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 12103.300000101328
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 226.1999998241663
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "economy",
+      "round": 1,
+      "order": 3,
+      "durationMs": 60008.59999999404,
+      "cpuSingleCorePercent": 27.703154879718184,
+      "cpuMachinePercent": 1.7314471799823865,
+      "work": {
+        "wakeup": {
+          "count": 769,
+          "durationMs": 6261.300000026822
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 769,
+          "durationMs": 93.20000003278255
+        },
+        "motionStep": {
+          "count": 1801,
+          "durationMs": 72.59999990463257
+        },
+        "waterUpdate": {
+          "count": 769,
+          "durationMs": 10.50000011920929
+        },
+        "atmosphereUpdate": {
+          "count": 769,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 769,
+          "durationMs": 1.800000011920929
+        },
+        "rainStep": {
+          "count": 1032,
+          "durationMs": 1.2000000327825546
+        },
+        "spoutUpdate": {
+          "count": 769,
+          "durationMs": 10.500000014901161
+        },
+        "draw": {
+          "count": 769,
+          "durationMs": 6151.8999999165535
+        },
+        "layout": {
+          "count": 385,
+          "durationMs": 209.19999986886978
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "standard",
+      "round": 2,
+      "order": 1,
+      "durationMs": 60001.5,
+      "cpuSingleCorePercent": 51.43573435839789,
+      "cpuMachinePercent": 3.214733397399868,
+      "work": {
+        "wakeup": {
+          "count": 9338,
+          "durationMs": 14811.300000146031
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9338,
+          "durationMs": 416.30000023543835
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 234.90000009536743
+        },
+        "waterUpdate": {
+          "count": 9338,
+          "durationMs": 81.19999997317791
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 1.4000000357627869
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 14.200000032782555
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 9.600000008940697
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 27.399999976158142
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 14208.800000116229
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 145.39999988675117
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "economy",
+      "round": 2,
+      "order": 2,
+      "durationMs": 60001.10000000894,
+      "cpuSingleCorePercent": 19.91979285966202,
+      "cpuMachinePercent": 1.2449870537288763,
+      "work": {
+        "wakeup": {
+          "count": 768,
+          "durationMs": 6277.900000035763
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 768,
+          "durationMs": 108.09999984502792
+        },
+        "motionStep": {
+          "count": 1799,
+          "durationMs": 82.09999991953373
+        },
+        "waterUpdate": {
+          "count": 768,
+          "durationMs": 14.99999988079071
+        },
+        "atmosphereUpdate": {
+          "count": 768,
+          "durationMs": 0.09999999403953552
+        },
+        "rainUpdate": {
+          "count": 768,
+          "durationMs": 2.0000000298023224
+        },
+        "rainStep": {
+          "count": 1031,
+          "durationMs": 1.5000000149011612
+        },
+        "spoutUpdate": {
+          "count": 768,
+          "durationMs": 9.700000002980232
+        },
+        "draw": {
+          "count": 768,
+          "durationMs": 6150.200000166893
+        },
+        "layout": {
+          "count": 384,
+          "durationMs": 118.9000001847744
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "off",
+      "round": 2,
+      "order": 3,
+      "durationMs": 60013.90000000596,
+      "cpuSingleCorePercent": 0.10831469098422995,
+      "cpuMachinePercent": 0.006769668186514372,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "standard",
+      "round": 2,
+      "order": 1,
+      "durationMs": 60000.90000000596,
+      "cpuSingleCorePercent": 45.64294767895519,
+      "cpuMachinePercent": 2.8526842299346993,
+      "work": {
+        "wakeup": {
+          "count": 9589,
+          "durationMs": 10995.299999922514
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 2258.8000000715256
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9589,
+          "durationMs": 367.89999973773956
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 205.19999958574772
+        },
+        "waterUpdate": {
+          "count": 9589,
+          "durationMs": 71.700000166893
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 0.5
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 10.600000083446503
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 8.000000059604645
+        },
+        "spoutUpdate": {
+          "count": 1680,
+          "durationMs": 21.099999994039536
+        },
+        "draw": {
+          "count": 1680,
+          "durationMs": 12711.299999982119
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 243.9000000357628
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "economy",
+      "round": 2,
+      "order": 2,
+      "durationMs": 60005.09999999404,
+      "cpuSingleCorePercent": 19.72758829068738,
+      "cpuMachinePercent": 1.2329742681679612,
+      "work": {
+        "wakeup": {
+          "count": 769,
+          "durationMs": 4418.900000035763
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 1710.3000000864267
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 769,
+          "durationMs": 100.39999988675117
+        },
+        "motionStep": {
+          "count": 1801,
+          "durationMs": 76.39999988675117
+        },
+        "waterUpdate": {
+          "count": 769,
+          "durationMs": 10.999999940395355
+        },
+        "atmosphereUpdate": {
+          "count": 769,
+          "durationMs": 0.4000000059604645
+        },
+        "rainUpdate": {
+          "count": 769,
+          "durationMs": 2.7999999821186066
+        },
+        "rainStep": {
+          "count": 1032,
+          "durationMs": 1.8999999910593033
+        },
+        "spoutUpdate": {
+          "count": 775,
+          "durationMs": 10.199999943375587
+        },
+        "draw": {
+          "count": 775,
+          "durationMs": 6005.60000012815
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 229.00000001490116
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "off",
+      "round": 2,
+      "order": 3,
+      "durationMs": 60013.70000000298,
+      "cpuSingleCorePercent": 0.8664053923179291,
+      "cpuMachinePercent": 0.05415033701987057,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "standard",
+      "round": 2,
+      "order": 1,
+      "durationMs": 60006.40000000596,
+      "cpuSingleCorePercent": 49.19631983990144,
+      "cpuMachinePercent": 3.07476998999384,
+      "work": {
+        "wakeup": {
+          "count": 9592,
+          "durationMs": 12681.000000342727
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9592,
+          "durationMs": 358.5999995172024
+        },
+        "motionStep": {
+          "count": 3601,
+          "durationMs": 197.09999980032444
+        },
+        "waterUpdate": {
+          "count": 9592,
+          "durationMs": 74.10000005364418
+        },
+        "atmosphereUpdate": {
+          "count": 3601,
+          "durationMs": 0.7999999970197678
+        },
+        "rainUpdate": {
+          "count": 3601,
+          "durationMs": 11.19999997317791
+        },
+        "rainStep": {
+          "count": 3603,
+          "durationMs": 8.700000032782555
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 23.49999998509884
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 12153.200000554323
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 224.50000005960464
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "economy",
+      "round": 2,
+      "order": 2,
+      "durationMs": 60014.80000001192,
+      "cpuSingleCorePercent": 27.37002581400291,
+      "cpuMachinePercent": 1.710626613375182,
+      "work": {
+        "wakeup": {
+          "count": 769,
+          "durationMs": 6269.399999961257
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 769,
+          "durationMs": 95.80000008642673
+        },
+        "motionStep": {
+          "count": 1801,
+          "durationMs": 73.3999999910593
+        },
+        "waterUpdate": {
+          "count": 769,
+          "durationMs": 11.100000083446503
+        },
+        "atmosphereUpdate": {
+          "count": 769,
+          "durationMs": 0.10000000894069672
+        },
+        "rainUpdate": {
+          "count": 769,
+          "durationMs": 1.4000000208616257
+        },
+        "rainStep": {
+          "count": 1032,
+          "durationMs": 1.1000000089406967
+        },
+        "spoutUpdate": {
+          "count": 769,
+          "durationMs": 10.499999955296516
+        },
+        "draw": {
+          "count": 769,
+          "durationMs": 6158.4999999552965
+        },
+        "layout": {
+          "count": 384,
+          "durationMs": 208.89999990165234
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "off",
+      "round": 2,
+      "order": 3,
+      "durationMs": 60008,
+      "cpuSingleCorePercent": 7.2287184794048445,
+      "cpuMachinePercent": 0.4517949049628028,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "economy",
+      "round": 3,
+      "order": 1,
+      "durationMs": 60014.5,
+      "cpuSingleCorePercent": 20.457823786068623,
+      "cpuMachinePercent": 1.278613986629289,
+      "work": {
+        "wakeup": {
+          "count": 759,
+          "durationMs": 6456.299999982119
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 759,
+          "durationMs": 105.30000011622906
+        },
+        "motionStep": {
+          "count": 1800,
+          "durationMs": 79.60000005364418
+        },
+        "waterUpdate": {
+          "count": 759,
+          "durationMs": 13.20000010728836
+        },
+        "atmosphereUpdate": {
+          "count": 759,
+          "durationMs": 0.20000000298023224
+        },
+        "rainUpdate": {
+          "count": 759,
+          "durationMs": 1.6000000536441803
+        },
+        "rainStep": {
+          "count": 1041,
+          "durationMs": 1.3000000566244125
+        },
+        "spoutUpdate": {
+          "count": 759,
+          "durationMs": 10.499999940395355
+        },
+        "draw": {
+          "count": 759,
+          "durationMs": 6332.999999925494
+        },
+        "layout": {
+          "count": 379,
+          "durationMs": 128.4000000655651
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "off",
+      "round": 3,
+      "order": 2,
+      "durationMs": 60005.5,
+      "cpuSingleCorePercent": 0.12186224100789671,
+      "cpuMachinePercent": 0.007616390062993544,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "standard",
+      "round": 3,
+      "order": 3,
+      "durationMs": 60003,
+      "cpuSingleCorePercent": 42.52045638091022,
+      "cpuMachinePercent": 2.6575285238068886,
+      "work": {
+        "wakeup": {
+          "count": 9596,
+          "durationMs": 12369.400000452995
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9596,
+          "durationMs": 351.3000000566244
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 198.59999994933605
+        },
+        "waterUpdate": {
+          "count": 9596,
+          "durationMs": 72.30000008642673
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 0.4999999850988388
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 8.799999982118607
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 6.199999958276749
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 21.7999999076128
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 11850.100000187755
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 120.29999993741512
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "economy",
+      "round": 3,
+      "order": 1,
+      "durationMs": 60013.90000000596,
+      "cpuSingleCorePercent": 19.824497637243308,
+      "cpuMachinePercent": 1.2390311023277067,
+      "work": {
+        "wakeup": {
+          "count": 769,
+          "durationMs": 4373.799999967217
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 1740.5
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 769,
+          "durationMs": 105.50000014901161
+        },
+        "motionStep": {
+          "count": 1799,
+          "durationMs": 79.60000014305115
+        },
+        "waterUpdate": {
+          "count": 769,
+          "durationMs": 12.899999886751175
+        },
+        "atmosphereUpdate": {
+          "count": 769,
+          "durationMs": 0.3999999910593033
+        },
+        "rainUpdate": {
+          "count": 769,
+          "durationMs": 2.200000062584877
+        },
+        "rainStep": {
+          "count": 1030,
+          "durationMs": 2.1000000536441803
+        },
+        "spoutUpdate": {
+          "count": 772,
+          "durationMs": 10.600000068545341
+        },
+        "draw": {
+          "count": 772,
+          "durationMs": 5987.999999806285
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 229
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "off",
+      "round": 3,
+      "order": 2,
+      "durationMs": 60001.29999999702,
+      "cpuSingleCorePercent": 0.983925403524101,
+      "cpuMachinePercent": 0.06149533772025631,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "standard",
+      "round": 3,
+      "order": 3,
+      "durationMs": 60002.59999999404,
+      "cpuSingleCorePercent": 45.016820032877256,
+      "cpuMachinePercent": 2.8135512520548285,
+      "work": {
+        "wakeup": {
+          "count": 9590,
+          "durationMs": 10900.700000226498
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 2236.5999999791384
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9590,
+          "durationMs": 352.00000013411045
+        },
+        "motionStep": {
+          "count": 3601,
+          "durationMs": 195.69999979436398
+        },
+        "waterUpdate": {
+          "count": 9590,
+          "durationMs": 70.30000029504299
+        },
+        "atmosphereUpdate": {
+          "count": 3601,
+          "durationMs": 1.4999999850988388
+        },
+        "rainUpdate": {
+          "count": 3601,
+          "durationMs": 9.700000122189522
+        },
+        "rainStep": {
+          "count": 3603,
+          "durationMs": 8.2000000923872
+        },
+        "spoutUpdate": {
+          "count": 1680,
+          "durationMs": 22.700000077486038
+        },
+        "draw": {
+          "count": 1680,
+          "durationMs": 12612.099999904633
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 237.60000009834766
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "economy",
+      "round": 3,
+      "order": 1,
+      "durationMs": 60011.40000000596,
+      "cpuSingleCorePercent": 27.327263974825765,
+      "cpuMachinePercent": 1.7079539984266103,
+      "work": {
+        "wakeup": {
+          "count": 767,
+          "durationMs": 6254.099999949336
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 767,
+          "durationMs": 95.59999956190586
+        },
+        "motionStep": {
+          "count": 1798,
+          "durationMs": 73.79999981820583
+        },
+        "waterUpdate": {
+          "count": 767,
+          "durationMs": 11.599999830126762
+        },
+        "atmosphereUpdate": {
+          "count": 767,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 767,
+          "durationMs": 2.099999964237213
+        },
+        "rainStep": {
+          "count": 1031,
+          "durationMs": 1.399999976158142
+        },
+        "spoutUpdate": {
+          "count": 767,
+          "durationMs": 10.699999988079071
+        },
+        "draw": {
+          "count": 767,
+          "durationMs": 6142.500000402331
+        },
+        "layout": {
+          "count": 383,
+          "durationMs": 204.30000007152557
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "off",
+      "round": 3,
+      "order": 2,
+      "durationMs": 60002.29999999702,
+      "cpuSingleCorePercent": 7.146245215293251,
+      "cpuMachinePercent": 0.4466403259558282,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "standard",
+      "round": 3,
+      "order": 3,
+      "durationMs": 60005.90000000596,
+      "cpuSingleCorePercent": 48.187354703002654,
+      "cpuMachinePercent": 3.011709668937666,
+      "work": {
+        "wakeup": {
+          "count": 9595,
+          "durationMs": 12469.700000405312
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9595,
+          "durationMs": 339.5000004321337
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 188.6000002026558
+        },
+        "waterUpdate": {
+          "count": 9595,
+          "durationMs": 73.40000015497208
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 0.29999999701976776
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 7.900000050663948
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 5.700000047683716
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 23.400000244379044
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 11969.000000089407
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 210.40000005066395
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "off",
+      "round": 4,
+      "order": 1,
+      "durationMs": 60002,
+      "cpuSingleCorePercent": 0.10205112495902927,
+      "cpuMachinePercent": 0.006378195309939329,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "standard",
+      "round": 4,
+      "order": 2,
+      "durationMs": 60003.09999999404,
+      "cpuSingleCorePercent": 43.01129982091545,
+      "cpuMachinePercent": 2.6882062388072154,
+      "work": {
+        "wakeup": {
+          "count": 9595,
+          "durationMs": 12465.700000628829
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9595,
+          "durationMs": 351.19999976456165
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 196.79999992251396
+        },
+        "waterUpdate": {
+          "count": 9595,
+          "durationMs": 67.59999988973141
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 0.699999988079071
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 9.7000000923872
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 7.700000032782555
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 23.2999999076128
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 11946.50000025332
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 121.29999995231628
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "economy",
+      "round": 4,
+      "order": 3,
+      "durationMs": 60010.39999999106,
+      "cpuSingleCorePercent": 19.799583062753754,
+      "cpuMachinePercent": 1.2374739414221096,
+      "work": {
+        "wakeup": {
+          "count": 768,
+          "durationMs": 6172.500000059605
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 768,
+          "durationMs": 98.90000009536743
+        },
+        "motionStep": {
+          "count": 1800,
+          "durationMs": 73.90000006556511
+        },
+        "waterUpdate": {
+          "count": 768,
+          "durationMs": 12.7000000923872
+        },
+        "atmosphereUpdate": {
+          "count": 768,
+          "durationMs": 0.29999999701976776
+        },
+        "rainUpdate": {
+          "count": 768,
+          "durationMs": 2.0999999940395355
+        },
+        "rainStep": {
+          "count": 1032,
+          "durationMs": 1.5999999642372131
+        },
+        "spoutUpdate": {
+          "count": 768,
+          "durationMs": 10.39999994635582
+        },
+        "draw": {
+          "count": 768,
+          "durationMs": 6056.0000000447035
+        },
+        "layout": {
+          "count": 384,
+          "durationMs": 117.80000001192093
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "off",
+      "round": 4,
+      "order": 1,
+      "durationMs": 60013.09999999404,
+      "cpuSingleCorePercent": 0.8811876329417873,
+      "cpuMachinePercent": 0.055074227058861704,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "standard",
+      "round": 4,
+      "order": 2,
+      "durationMs": 60001.5,
+      "cpuSingleCorePercent": 45.52478776064161,
+      "cpuMachinePercent": 2.8452992350401005,
+      "work": {
+        "wakeup": {
+          "count": 9589,
+          "durationMs": 10956.70000012219
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 2221.8999999910593
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9589,
+          "durationMs": 350.3000000566244
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 199.1999996751547
+        },
+        "waterUpdate": {
+          "count": 9589,
+          "durationMs": 70.3000001758337
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 0.8000000417232513
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 9.099999904632568
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 6.999999940395355
+        },
+        "spoutUpdate": {
+          "count": 1680,
+          "durationMs": 21.199999794363976
+        },
+        "draw": {
+          "count": 1680,
+          "durationMs": 12658.299999922514
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 243.4000001847744
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "economy",
+      "round": 4,
+      "order": 3,
+      "durationMs": 60009,
+      "cpuSingleCorePercent": 20.003953784138233,
+      "cpuMachinePercent": 1.2502471115086395,
+      "work": {
+        "wakeup": {
+          "count": 769,
+          "durationMs": 4385.000000149012
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 1753.300000026822
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 769,
+          "durationMs": 100.50000013411045
+        },
+        "motionStep": {
+          "count": 1799,
+          "durationMs": 77.40000019967556
+        },
+        "waterUpdate": {
+          "count": 769,
+          "durationMs": 11.999999925494194
+        },
+        "atmosphereUpdate": {
+          "count": 769,
+          "durationMs": 0.30000001192092896
+        },
+        "rainUpdate": {
+          "count": 769,
+          "durationMs": 2.2999999970197678
+        },
+        "rainStep": {
+          "count": 1030,
+          "durationMs": 2.2000000029802322
+        },
+        "spoutUpdate": {
+          "count": 772,
+          "durationMs": 9.599999964237213
+        },
+        "draw": {
+          "count": 772,
+          "durationMs": 6018.400000035763
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 227.40000009536743
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "off",
+      "round": 4,
+      "order": 1,
+      "durationMs": 60008.39999999106,
+      "cpuSingleCorePercent": 7.331011607437729,
+      "cpuMachinePercent": 0.45818822546485805,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "standard",
+      "round": 4,
+      "order": 2,
+      "durationMs": 60006.59999999404,
+      "cpuSingleCorePercent": 48.402891182123334,
+      "cpuMachinePercent": 3.0251806988827084,
+      "work": {
+        "wakeup": {
+          "count": 9591,
+          "durationMs": 12475.900000080466
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9591,
+          "durationMs": 344.3000000268221
+        },
+        "motionStep": {
+          "count": 3601,
+          "durationMs": 198.60000009834766
+        },
+        "waterUpdate": {
+          "count": 9591,
+          "durationMs": 67.89999993145466
+        },
+        "atmosphereUpdate": {
+          "count": 3601,
+          "durationMs": 0.10000000894069672
+        },
+        "rainUpdate": {
+          "count": 3601,
+          "durationMs": 10.699999988079071
+        },
+        "rainStep": {
+          "count": 3603,
+          "durationMs": 8.69999997317791
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 23.500000149011612
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 11963.700000226498
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 220.10000030696392
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "economy",
+      "round": 4,
+      "order": 3,
+      "durationMs": 60002.29999999702,
+      "cpuSingleCorePercent": 27.69849369331734,
+      "cpuMachinePercent": 1.7311558558323337,
+      "work": {
+        "wakeup": {
+          "count": 769,
+          "durationMs": 6259.9000000059605
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 769,
+          "durationMs": 97.90000024437904
+        },
+        "motionStep": {
+          "count": 1800,
+          "durationMs": 73.60000017285347
+        },
+        "waterUpdate": {
+          "count": 769,
+          "durationMs": 12.89999994635582
+        },
+        "atmosphereUpdate": {
+          "count": 769,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 769,
+          "durationMs": 2.0000000596046448
+        },
+        "rainStep": {
+          "count": 1031,
+          "durationMs": 1.600000038743019
+        },
+        "spoutUpdate": {
+          "count": 769,
+          "durationMs": 9.500000044703484
+        },
+        "draw": {
+          "count": 769,
+          "durationMs": 6145.399999782443
+        },
+        "layout": {
+          "count": 385,
+          "durationMs": 203.19999992847443
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "standard",
+      "round": 5,
+      "order": 1,
+      "durationMs": 60000.79999999702,
+      "cpuSingleCorePercent": 42.38553078658723,
+      "cpuMachinePercent": 2.649095674161702,
+      "work": {
+        "wakeup": {
+          "count": 9598,
+          "durationMs": 12328.100000053644
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9598,
+          "durationMs": 339.8999999910593
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 191.00000013411045
+        },
+        "waterUpdate": {
+          "count": 9598,
+          "durationMs": 71.59999993443489
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 1.0000000298023224
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 8.700000122189522
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 6.700000122189522
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 23.099999845027924
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 11815.199999973178
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 113.69999998807907
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "economy",
+      "round": 5,
+      "order": 2,
+      "durationMs": 60009.40000000596,
+      "cpuSingleCorePercent": 19.798944943525566,
+      "cpuMachinePercent": 1.2374340589703479,
+      "work": {
+        "wakeup": {
+          "count": 768,
+          "durationMs": 6242.799999922514
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 768,
+          "durationMs": 106.59999963641167
+        },
+        "motionStep": {
+          "count": 1801,
+          "durationMs": 80.39999988675117
+        },
+        "waterUpdate": {
+          "count": 768,
+          "durationMs": 12.699999958276749
+        },
+        "atmosphereUpdate": {
+          "count": 768,
+          "durationMs": 0.3999999761581421
+        },
+        "rainUpdate": {
+          "count": 768,
+          "durationMs": 3.4999999701976776
+        },
+        "rainStep": {
+          "count": 1033,
+          "durationMs": 2.9999999701976776
+        },
+        "spoutUpdate": {
+          "count": 768,
+          "durationMs": 9.700000077486038
+        },
+        "draw": {
+          "count": 768,
+          "durationMs": 6120.000000298023
+        },
+        "layout": {
+          "count": 384,
+          "durationMs": 120.10000006854534
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "idle",
+      "condition": "off",
+      "round": 5,
+      "order": 3,
+      "durationMs": 60008.40000000596,
+      "cpuSingleCorePercent": 0.09762340528700343,
+      "cpuMachinePercent": 0.0061014628304377145,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "standard",
+      "round": 5,
+      "order": 1,
+      "durationMs": 60001.80000001192,
+      "cpuSingleCorePercent": 45.01825883628318,
+      "cpuMachinePercent": 2.813641177267699,
+      "work": {
+        "wakeup": {
+          "count": 9590,
+          "durationMs": 10902.799999564886
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 2222.999999836087
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9590,
+          "durationMs": 348.5999998599291
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 199.99999952316284
+        },
+        "waterUpdate": {
+          "count": 9590,
+          "durationMs": 66.1000000834465
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 1.4999999850988388
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 7.000000074505806
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 5.4000000804662704
+        },
+        "spoutUpdate": {
+          "count": 1680,
+          "durationMs": 24.199999824166298
+        },
+        "draw": {
+          "count": 1680,
+          "durationMs": 12609.499999955297
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 233.59999994933605
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "economy",
+      "round": 5,
+      "order": 2,
+      "durationMs": 60002.79999999702,
+      "cpuSingleCorePercent": 19.506920413062932,
+      "cpuMachinePercent": 1.2191825258164333,
+      "work": {
+        "wakeup": {
+          "count": 770,
+          "durationMs": 4315.200000047684
+        },
+        "refreshWakeup": {
+          "count": 239,
+          "durationMs": 1721.7000000476837
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 770,
+          "durationMs": 100.8000001013279
+        },
+        "motionStep": {
+          "count": 1801,
+          "durationMs": 78.70000015199184
+        },
+        "waterUpdate": {
+          "count": 770,
+          "durationMs": 11.100000038743019
+        },
+        "atmosphereUpdate": {
+          "count": 770,
+          "durationMs": 0.09999999403953552
+        },
+        "rainUpdate": {
+          "count": 770,
+          "durationMs": 2.299999952316284
+        },
+        "rainStep": {
+          "count": 1031,
+          "durationMs": 1.5999999642372131
+        },
+        "spoutUpdate": {
+          "count": 772,
+          "durationMs": 8.700000002980232
+        },
+        "draw": {
+          "count": 772,
+          "durationMs": 5919.199999958277
+        },
+        "layout": {
+          "count": 480,
+          "durationMs": 226.39999997615814
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "append",
+      "condition": "off",
+      "round": 5,
+      "order": 3,
+      "durationMs": 60010.59999999404,
+      "cpuSingleCorePercent": 0.8779142171378974,
+      "cpuMachinePercent": 0.05486963857111859,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "standard",
+      "round": 5,
+      "order": 1,
+      "durationMs": 60000.59999999404,
+      "cpuSingleCorePercent": 47.37188297682926,
+      "cpuMachinePercent": 2.960742686051829,
+      "work": {
+        "wakeup": {
+          "count": 9599,
+          "durationMs": 12349.000000342727
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 9599,
+          "durationMs": 336.90000024437904
+        },
+        "motionStep": {
+          "count": 3600,
+          "durationMs": 188.80000014603138
+        },
+        "waterUpdate": {
+          "count": 9599,
+          "durationMs": 61.60000005364418
+        },
+        "atmosphereUpdate": {
+          "count": 3600,
+          "durationMs": 0.4000000059604645
+        },
+        "rainUpdate": {
+          "count": 3600,
+          "durationMs": 8.999999970197678
+        },
+        "rainStep": {
+          "count": 3602,
+          "durationMs": 7.299999952316284
+        },
+        "spoutUpdate": {
+          "count": 1600,
+          "durationMs": 21.799999922513962
+        },
+        "draw": {
+          "count": 1600,
+          "durationMs": 11859.199999853969
+        },
+        "layout": {
+          "count": 400,
+          "durationMs": 215.50000013411045
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "economy",
+      "round": 5,
+      "order": 2,
+      "durationMs": 60013,
+      "cpuSingleCorePercent": 27.122493941676478,
+      "cpuMachinePercent": 1.6951558713547799,
+      "work": {
+        "wakeup": {
+          "count": 767,
+          "durationMs": 6203.400000095367
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 767,
+          "durationMs": 94.29999989271164
+        },
+        "motionStep": {
+          "count": 1799,
+          "durationMs": 69.60000002384186
+        },
+        "waterUpdate": {
+          "count": 767,
+          "durationMs": 12.7999999076128
+        },
+        "atmosphereUpdate": {
+          "count": 767,
+          "durationMs": 0.09999999403953552
+        },
+        "rainUpdate": {
+          "count": 767,
+          "durationMs": 1.9999999403953552
+        },
+        "rainStep": {
+          "count": 1032,
+          "durationMs": 1.5999999642372131
+        },
+        "spoutUpdate": {
+          "count": 767,
+          "durationMs": 10.399999916553497
+        },
+        "draw": {
+          "count": 767,
+          "durationMs": 6093.200000226498
+        },
+        "layout": {
+          "count": 384,
+          "durationMs": 207.80000013113022
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    },
+    {
+      "scenario": "scroll",
+      "condition": "off",
+      "round": 5,
+      "order": 3,
+      "durationMs": 60011.19999998808,
+      "cpuSingleCorePercent": 7.022880615552668,
+      "cpuMachinePercent": 0.43893003847204176,
+      "work": {
+        "wakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "refreshWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "scrollWakeup": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "advance": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "motionStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "waterUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "atmosphereUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "rainStep": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "spoutUpdate": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "draw": {
+          "count": 0,
+          "durationMs": 0
+        },
+        "layout": {
+          "count": 0,
+          "durationMs": 0
+        }
+      },
+      "longTaskCount": 0,
+      "errorCount": 0
+    }
+  ],
+  "gpuUtilization": null,
+  "energy": null,
+  "evidence": {
+    "limiterProfile": "unmeasured; separate unreported profiling run required",
+    "actualDSH": "unmeasured",
+    "screenReader": "unmeasured",
+    "physicalRefreshRate": "unmeasured",
+    "powerMode": "operator record retained locally; excluded from shareable report"
+  },
+  "limitations": [
+    "Renderer status probe times a synchronous DOM mirror, not a mounted React commit. Formal G2-04 remains unmeasured here.",
+    "Smoke validates execution only.",
+    "Counts, nested synchronous work durations and browser CPU measure different scopes.",
+    "Full repeated runs and an independent limiter profile are required before any benefit verdict.",
+    "GPU process CPU does not measure GPU utilization.",
+    "No power, battery or endurance measurement.",
+    "Raw environment, paths, task text, process IDs and inventory stay local."
+  ]
+}
