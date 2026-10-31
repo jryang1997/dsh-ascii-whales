@@ -13,7 +13,10 @@ const scenes = {
 test('each scene applies the full approved combination regardless of previous scenes and preserves every other draft value', () => {
   const draft = { ...DEFAULTS, enabled: false, text: '我的鲸', fillMode: 'ascii', species: 'blue', renderStyle: 'cells',
     glyphSize: 8, whaleSize: 1.2, leftInset: 140, activity: false, quietCenter: false, readingEffect: 'blur',
-    glass: false, glassStrength: 0.7, composerAvoid: true, pauseOnScroll: true, resourceMode: 'eco', future: { untouched: true } };
+    glass: false, glassStrength: 0.7, composerAvoid: true, pauseOnScroll: true, resourceMode: 'eco',
+    // 1.0 fields are protected draft values, not scene-owned parameters: an
+    // off switch must survive every scene combination.
+    seaGrid: false, dictationEcho: false, future: { untouched: true } };
   const original = structuredClone(draft);
   for (const [target, values] of Object.entries(scenes)) {
     for (const previous of Object.keys(scenes)) {
