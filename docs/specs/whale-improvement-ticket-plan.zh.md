@@ -6,12 +6,12 @@
 
 ## 逐票交付与直接阻塞
 
-1. [01：任务状态图例与等价无障碍提示](../../.scratch/whale-improvements/issues/01-activity-legend-accessibility.md)。无阻塞。交付首次图例、可查询状态、重要转换播报、能力缺失降级及实际读屏验证。
-2. [02：场景预设与配置草稿保留](../../.scratch/whale-improvements/issues/02-scene-presets.md)。无阻塞。交付四场景、草稿预览与保存、高级设置收敛以及配置保留。
-3. [03：任务价值介绍与真实状态演示](../../.scratch/whale-improvements/issues/03-task-introduction-demo.md)。阻塞于 01、02。交付对应实际交互的中英文介绍、真实录屏、静态图例与第一组集成验收。文案可先准备，完成验收等待交互。
-4. [04：可复现测量入口与标准档基线](../../.scratch/whale-improvements/issues/04-resource-baseline.md)。无阻塞。交付可运行的关闭与标准两条件基线、真实工作计数、原始结果及复跑方式，不伪造未来省资源结果。
-5. [05：可切换的省资源模式与真实暂停](../../.scratch/whale-improvements/issues/05-resource-mode.md)。阻塞于 04。交付可保存的资源选择、低频慢漂移、真实暂停及实际工作减少证明。完整场景和等价文本组合验收由 06 负责。
-6. [06：三条件资源比较与跨功能验收报告](../../.scratch/whale-improvements/issues/06-resource-comparison-report.md)。阻塞于 01、02、05。交付关闭、标准、省资源完整比较，场景与状态组合验收，以及中英文资源报告。04 是传递依赖，不重复列边。
+1. [#1 任务状态图例与等价无障碍提示](https://github.com/jryang1997/dsh-ascii-whales/issues/1)。无阻塞。交付首次图例、可查询状态、重要转换播报、能力缺失降级及实际读屏验证。
+2. [#2 场景预设与配置草稿保留](https://github.com/jryang1997/dsh-ascii-whales/issues/2)。无阻塞。交付四场景、草稿预览与保存、高级设置收敛以及配置保留。
+3. [#3 任务价值介绍与真实状态演示](https://github.com/jryang1997/dsh-ascii-whales/issues/3)。阻塞于 01、02。交付对应实际交互的中英文介绍、真实录屏、静态图例与第一组集成验收。文案可先准备，完成验收等待交互。
+4. [#4 可复现测量入口与标准档基线](https://github.com/jryang1997/dsh-ascii-whales/issues/4)。无阻塞。交付可运行的关闭与标准两条件基线、真实工作计数、原始结果及复跑方式，不伪造未来省资源结果。
+5. [#5 可切换的省资源模式与真实暂停](https://github.com/jryang1997/dsh-ascii-whales/issues/5)。阻塞于 04。交付可保存的资源选择、低频慢漂移、真实暂停及实际工作减少证明。完整场景和等价文本组合验收由 06 负责。
+6. [#6 三条件资源比较与跨功能验收报告](https://github.com/jryang1997/dsh-ascii-whales/issues/6)。阻塞于 01、02、05。交付关闭、标准、省资源完整比较，场景与状态组合验收，以及中英文资源报告。04 是传递依赖，不重复列边。
 
 第一组为 01、02、03，第二组为 04、05、06。第二组按产品优先级后置，04 可提前准备工具和基线。图中无阻塞不等于已批准实施。
 
