@@ -309,7 +309,7 @@
 - 六票实施、22 项验收映射与复核证据：[六票实施与验收记录](../specs/whale-implementation-evidence.zh.md)。
 - 状态演示的素材身份、构建散列与复跑：[演示来源与验收记录](./TASK-DEMO.md)。
 - 资源档位的调度、时钟与倍率规则：[资源档位运行规则](../resource-mode.zh.md)。
-- 三条件测量与公开报告：[三条件测量](../measurement.zh.md)、[中文报告](./RESOURCE-COMPARISON.zh.md)、[English report](./RESOURCE-COMPARISON.en.md)、[公开数据](./resource-comparison-20261025.json)。
+- 三条件测量与公开报告：[三条件测量](../measurement.zh.md)、[中文报告](./RESOURCE-COMPARISON.zh.md)、[English report](./RESOURCE-COMPARISON.en.md)、[公开数据](./resource-comparison-20261031.json)（合并后构建；旧构建数据保留为 `resource-comparison-20261025.json`）。
 - 本地交付与未测边界：[本地交付状态](../resource-report-status.md)。
 
 1.0.0 的听写修正机制与验证范围见 [CHANGELOG 1.0.0](../../CHANGELOG.md) 与 [听写聚集研究](./DICTATION-GATHER.md)；方格海面见上一节。

@@ -39,13 +39,13 @@
 
 先从 **场景预设** 选择默认、雨天、极简或夜航，再按需展开 **高级设置**。场景只改配置草稿和预览，点击 **保存** 才应用到正式背景。用 **重新载入已保存值** 放弃草稿。详见[设置](#设置)。
 
-**资源档位**独立于场景。省资源档减少持续调度、内部推进与绘制，并保持任务提示的独立时钟。2026-10-25 的 45 样本受控 headless Chrome 比较中，省资源档观察到较低 CPU；关闭插件占用最低。下表为隔离 Chrome 整棵进程树的单核等效 CPU 中位数（%，每格 n = 5），含夹具与 CDP 开销，不是插件独占占用。
+**资源档位**独立于场景。省资源档减少持续调度、内部推进与绘制，并保持任务提示的独立时钟。2026-10-31 在合并 1.0.0 后的构建上做的 45 样本受控 headless Chrome 比较中，省资源档观察到较低 CPU；关闭插件占用最低。下表为隔离 Chrome 整棵进程树的单核等效 CPU 中位数（%，每格 n = 5），含夹具与 CDP 开销，不是插件独占占用。
 
 | 模拟场景 | 关闭 | 标准档 | 省资源档 |
 | --- | --- | --- | --- |
-| 静置 | 0.108 | 42.520 | 19.800 |
-| 追加文本 | 0.881 | 45.525 | 19.824 |
-| 滚动 | 7.229 | 48.403 | 27.370 |
+| 静置 | 0.093 | 46.106 | 23.581 |
+| 追加文本 | 0.886 | 48.898 | 25.158 |
+| 滚动 | 7.129 | 51.163 | 27.883 |
 
 16 个逻辑处理器下，单核等效值除以 16 才是整机归一化百分比。范围、实际工作量和独立诊断见[完整资源报告](./docs/research/RESOURCE-COMPARISON.zh.md)。实际 DSH 资源收益、GPU 利用率和能耗仍未测，不能据此推算续航或通用加速。复跑方式见[三条件测量](./docs/measurement.zh.md)，验收范围见[本地报告状态](./docs/resource-report-status.md)。
 
@@ -258,7 +258,7 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
-修改浏览器源码后，先用 `pnpm build` 和 `pnpm preview` 更新两个生成产物，再运行 `pnpm verify`。验证只检查、不重建，过期产物会直接失败。测试只递归发现 `tests/` 下的 `*.test.js`，排除隐藏目录与 `node_modules/`；不会扫描仓库中的临时备份、参考项目或 worktree 副本。GitHub Actions 在 Windows 与 Linux 执行同一验证入口。
+修改浏览器源码后，先用 `pnpm build` 和 `pnpm preview` 更新两个生成产物，再运行 `pnpm verify`。验证只检查、不重建，过期产物会直接失败。测试发现覆盖根目录与 `src/`、`tests/`、`scripts/`、`preview/` 的 `*.test.js`／`*.test.mjs`，排除隐藏目录与 `node_modules/`；不会扫描仓库中的临时备份、参考项目或 worktree 副本。GitHub Actions 在 Windows 与 Linux 执行同一验证入口。
 
 验证、打包与审查共用开发依赖 [@jryang1997/dsh-plugin-kit](https://github.com/jryang1997/dsh-plugin-kit)（v1.0.0 固定 tag，`dshPluginKit` 配置在 [package.json](./package.json)）：`pnpm check` 跑清单、locale、README、版本与语法检查，`pnpm test` 发现并运行测试，`pnpm verify` 依次检查静态项、生成物、发布包、截图清单和测试。`pnpm --silent review:snapshot --base <ref>` 输出包含新增文件的 JSON 审查清单；`pnpm --silent agent:probe` 探测当前命令进程能否读取入口文件。派单前的原生工具读取预检、审查范围与浏览器证据要求见 [工程说明](./docs/agents/engineering.md)。
 

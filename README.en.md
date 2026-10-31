@@ -39,13 +39,13 @@ Cancellation, stopping, disconnection, and disappearing tasks do not imply succe
 
 Start with **Scene preset** and choose Default, Rainy, Minimal, or Night voyage. Open **Advanced settings** for individual controls. A preset changes the draft and preview; **Save** applies it to the conversation background. **Reload saved values** discards the draft. See [Settings](#settings).
 
-**Resource mode** is independent of scene presets. Economy reduces continuous scheduling, internal integration, and drawing while keeping task-prompt time independent. In the 45-sample controlled headless Chrome comparison on 2026-10-25, economy observed lower CPU; turning the plugin off used the least CPU. The table shows median single-core-equivalent CPU percentages for the isolated Chrome process tree (n = 5 per cell), including fixture and CDP overhead, rather than plugin-exclusive CPU.
+**Resource mode** is independent of scene presets. Economy reduces continuous scheduling, internal integration, and drawing while keeping task-prompt time independent. In the 45-sample controlled headless Chrome comparison on 2026-10-31, run on the build after the 1.0.0 merge, economy observed lower CPU; turning the plugin off used the least CPU. The table shows median single-core-equivalent CPU percentages for the isolated Chrome process tree (n = 5 per cell), including fixture and CDP overhead, rather than plugin-exclusive CPU.
 
 | Simulated scenario | Off | Standard | Economy |
 | --- | --- | --- | --- |
-| Idle | 0.108 | 42.520 | 19.800 |
-| Append | 0.881 | 45.525 | 19.824 |
-| Scroll | 7.229 | 48.403 | 27.370 |
+| Idle | 0.093 | 46.106 | 23.581 |
+| Append | 0.886 | 48.898 | 25.158 |
+| Scroll | 7.129 | 51.163 | 27.883 |
 
 With 16 logical processors, divide these values by 16 for whole-machine normalized percentages. See the [full resource report](./docs/research/RESOURCE-COMPARISON.en.md) for ranges, actual work, and independent diagnostics. Actual DSH resource benefits, GPU utilization, and energy remain unmeasured; these observations do not establish battery gains or a general speedup. See the [three-condition method](./docs/measurement.en.md) and [local evidence status](./docs/resource-report-status.md).
 
@@ -255,7 +255,7 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
-After changing browser sources, run `pnpm build` and `pnpm preview` to update both artifacts, then run `pnpm verify`. Verification checks committed output without rebuilding it, so stale artifacts fail. Test discovery recursively includes `*.test.js` under `tests/`, excluding hidden directories and `node_modules/`. It does not scan repository backups, reference projects, or worktree copies. GitHub Actions runs the same verification on Windows and Linux.
+After changing browser sources, run `pnpm build` and `pnpm preview` to update both artifacts, then run `pnpm verify`. Verification checks committed output without rebuilding it, so stale artifacts fail. Test discovery includes `*.test.js` / `*.test.mjs` in the repository root and under `src/`, `tests/`, `scripts/` and `preview/`, excluding hidden directories and `node_modules/`. It does not scan repository backups, reference projects, or worktree copies. GitHub Actions runs the same verification on Windows and Linux.
 
 Verification, packaging, and review share the dev dependency [@jryang1997/dsh-plugin-kit](https://github.com/jryang1997/dsh-plugin-kit) (pinned to tag v1.0.0, configured under `dshPluginKit` in [package.json](./package.json)): `pnpm check` runs manifest, locale, README, version, and syntax checks; `pnpm test` discovers and runs tests; `pnpm verify` checks static items, artifacts, the published tarball, the screenshots manifest, and tests. `pnpm --silent review:snapshot --base <ref>` outputs a JSON review inventory including untracked files. `pnpm --silent agent:probe` checks whether its process can read the entry files. See the [engineering guide](./docs/agents/engineering.md) for native-tool read preflight, review scope, and browser evidence requirements.
 

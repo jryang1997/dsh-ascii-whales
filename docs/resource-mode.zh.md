@@ -30,4 +30,4 @@ node scripts/resource-smoke.mjs
 
 文本探针只记录夹具 `onActivityChange` 同步写入 DOM 镜像的时刻，没有执行 React。Canvas 探针记录正式渲染器完成绘制的时刻。两者只能证明渲染器路径的诊断阈值，不能判定正式 G2-04 文本提交预算通过。逻辑测试使用模拟 React 适配器和可控时钟，覆盖设置草稿、生成产物、60／120 Hz 时钟、调度通道、提示截止时间、避让和长时间下潜。真实 React 提交由独立挂载夹具另行观察，实际 DSH 与读屏仍未验证。
 
-此入口仅证明候选构建执行了较少工作，不报告 CPU、GPU 利用率、功率、续航或完整资源收益。[三条件入口](./measurement.zh.md)现已支持 OFF、标准和省资源，完整收益判断仍需最终构建的重复采样与独立剖析。实际 DSH 的插件来源、保存交互和 reader 验收仍待宿主可访问后验证。独立 Chrome 或 Ego 夹具不能替代这些证据。
+此入口仅证明候选构建执行了较少工作，不报告 CPU、GPU 利用率、功率、续航或完整资源收益。[三条件入口](./measurement.zh.md)现已支持 OFF、标准和省资源；合并 1.0.0 后的构建已按同一入口重跑完整 45 单元采样与独立剖析，结果见[中文报告](./research/RESOURCE-COMPARISON.zh.md)与[交付状态](./resource-report-status.md)。实际 DSH 的插件来源、保存交互和 reader 验收仍待宿主可访问后验证。独立 Chrome 或 Ego 夹具不能替代这些证据。
