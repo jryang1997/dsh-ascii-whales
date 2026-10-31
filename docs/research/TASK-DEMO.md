@@ -10,7 +10,7 @@ The bilingual introduction and simulated assets are prepared. **Issue #3 is not 
 
 The new assets use the formal plugin artifact in an isolated file fixture. The fixture supplies simulated host stores and a local config form. The state badges, text summary, legend, presets, and editor come from the production components. No user conversation or installed-host content is captured.
 
-- 本轮生成时的 HEAD 基线为 `593fea43b4bf35aa87b99f34b466c9cd97b81aba`。修复后实际正式客户端 SHA-256 为 `8932eee48492cb7338c7a15e2043fc922407b2bfa4460ca9f9aece219f8dd518`。每张图顶部显示基线与客户端散列前缀，13 个当前源文件散列记录实际输入。
+- 本轮生成时的 HEAD 基线为合并提交 `336b41a10a150860fef501badb52708de7641a51` 之后的构建（含绘制节流修正）。实际正式客户端 SHA-256 为 `d962c6ed4e73f3c080acdaaf18042e9f2503314cfb484ad8db03623352c19965`。每张图顶部显示基线与客户端散列前缀，13 个当前源文件散列记录实际输入。
 - 浏览器版本、源文件散列、React 输入与校验和、逐帧配置、图片散列和检查结果见[生成清单](../images/status-demo-manifest.json)。生成脚本记录执行时的 HEAD，并单独散列当前实际源码，不将未提交脚本冒充基线内容。
 - 固定随机种子为 `20261025`，视口为 1280 × 1000，像素比为 1，浅色主题，系统减少动态效果开启。此配置用于静态状态演示，不证明游动、下潜或性能。图中的画布宽度受夹具布局约束，为右侧图例预留空间。
 - 状态图关闭阅读减淡、毛玻璃、文字边缘效果、云影与风纹，浓度为 0.85，便于辨认徽记。设置图使用默认场景和既有阅读保护。每帧实际表单值随清单保存。
@@ -18,7 +18,7 @@ The new assets use the formal plugin artifact in an isolated file fixture. The f
 
 The four GIF frames are still captures of successive simulated states, each held for 1.8 seconds. They are **not motion recordings**. The formal renderer remains static under reduced motion while state changes still redraw the badges. Build demo and Check demo are distinct background tasks. The session becomes idle after waiting; it never receives a success badge. Historical completed tasks are not injected as new results.
 
-本轮在资源档位及审查修复完成后重新生成全部状态与设置素材，并核对当前源文件散列。The assets were regenerated after resource-mode and accepted review fixes. Their manifest records the current source hashes. 后续源码再次变化时，仍需按下方命令重新生成，不能沿用旧截图冒充新构建。
+本轮在资源档位及审查修复完成后重新生成全部状态与设置素材，并核对当前源文件散列。2026-10-31 又按合并 1.0.0 后的构建（`336b41a`）整体重生成一次，清单中的源码散列已与当前文件一致。The assets were regenerated after resource-mode, the accepted review fixes and the 1.0.0 merge; their manifest records the current source hashes. 后续源码再次变化时，仍需按下方命令重新生成，不能沿用旧截图冒充新构建。
 
 ## 静态帧 / Still frames
 
@@ -62,6 +62,6 @@ The packaging script verifies all source PNG hashes and dimensions, then checks 
 | G1-11 介绍与状态素材 | 双语任务价值前置、静态图例、正式渲染器模拟四状态、两个独立后台结果、逐帧构建与条件记录 | **真实已安装 DSH 录屏**，需记录插件来源、构建、宿主版本、主题及条件 |
 | G1-12 构建与证据 | 构建和预览一致性由 `pnpm verify` 检查；夹具逻辑与截图单列，不能据此宣布全部通过 | 真实宿主可见窗口的指针、键盘与视觉；实际浏览器加屏幕阅读器的版本、查询摘要、播报去重和焦点记录 |
 
-本轮 `pnpm build`、`pnpm preview` 与 `pnpm verify` 均通过，完整测试为 408 项通过、0 项失败。13 个源文件散列与 14 个媒体散列匹配；每份 GIF 的四帧、每帧 1800 毫秒和全部 PNG 的 1280 × 1000 尺寸通过打包校验。状态演示入口另用真实 React 18.3.1 和未修改的正式构建，在模拟宿主订阅送达后通过 MutationObserver 观测摘要提交，并在实际 Canvas 等待徽记绘制后记录同步命令完成。两档、减少动态效果开关、普通及突发事件交替五轮，共 40 次。逐次结果保存在生成清单的 `reactStatusLatency`，仅表示该受控夹具满足 250 毫秒，不是资源收益或真实宿主验收。现有 GUI 返回 401 的边界由父级确认，真实 DSH 录屏、可见窗口指针与读屏仍未验证，不能据此更新为通过。
+本轮 `pnpm build`、`pnpm preview` 与 `pnpm verify`（合并 1.0.0 之后）均通过，完整测试为 478 项通过、0 项失败、63 个测试文件。13 个源文件散列与 12 张 PNG＋2 份 GIF 的媒体散列匹配；每份 GIF 的四帧、每帧 1800 毫秒和全部 PNG 的 1280 × 1000 尺寸通过打包校验。状态演示入口另用真实 React 18.3.1 和未修改的正式构建（client `d962c6ed`），在模拟宿主订阅送达后通过 MutationObserver 观测摘要提交，并在实际 Canvas 等待徽记绘制后记录同步命令完成。两档、减少动态效果开关、普通及突发事件交替五轮，共 40 次；本次观测中摘要提交最大 13.5 毫秒、Canvas 命令完成最大 3.5 毫秒。逐次结果保存在生成清单的 `reactStatusLatency`，仅表示该受控夹具满足 250 毫秒，不是资源收益或真实宿主验收。现有 GUI 返回 401 的边界由父级确认，真实 DSH 录屏、可见窗口指针与读屏仍未验证，不能据此更新为通过。
 
 No CPU, GPU, energy, battery-life, or resource-saving result is claimed here. Final comparison data belongs to ticket 06. The reduced-motion fixture and test execution time are not performance measurements.

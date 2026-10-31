@@ -6148,9 +6148,10 @@
         if (!canAnimate()) return;
         if (previous !== null) simulation.advance(Math.min(0.1, (now - previous) / 1e3));
         previous = now;
-        if (now - lastPaint >= resourcePolicy(config.resourceMode).drawIntervalMs - 1e-7) {
+        const paintAt = performance.now();
+        if (paintAt - lastPaint >= resourcePolicy(config.resourceMode).drawIntervalMs - 1e-7) {
           draw("animation");
-          lastPaint = now;
+          lastPaint = paintAt;
         }
         scheduleContinuous();
       } finally {

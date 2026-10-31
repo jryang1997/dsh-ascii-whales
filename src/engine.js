@@ -795,9 +795,16 @@ export function createWhaleLayer(canvas, initialConfig, options = {}) {
       if (!canAnimate()) return;
       if (previous !== null) simulation.advance(Math.min(0.1, (now - previous) / 1000));
       previous = now;
-      if (now - lastPaint >= resourcePolicy(config.resourceMode).drawIntervalMs - 1e-7) {
+      // Compare paint starts on the performance clock. The requestAnimationFrame
+      // timestamp belongs to the frame, while the callback-to-first-command
+      // offset varies with how heavy the previous paint was; mixing the two let
+      // two paints land closer than the budget even though the frame timestamps
+      // did not. `lastPaint` is also written by the single-shot refresh path in
+      // `performance.now()` units, so the budget and its records share a clock.
+      const paintAt = performance.now();
+      if (paintAt - lastPaint >= resourcePolicy(config.resourceMode).drawIntervalMs - 1e-7) {
         draw('animation');
-        lastPaint = now;
+        lastPaint = paintAt;
       }
       scheduleContinuous();
     } finally { metrics?.end('wakeup', started, kind); }
